@@ -110,7 +110,7 @@ export function summarizeInstances(attribute, payload) {
  * @returns {string|undefined}
  */
 export function getAgeDecileLabel(value) {
-  const text = String(value || "").trim();
+  const text = String(value ?? "").trim();
   if (!text) {
     return undefined;
   }
