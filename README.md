@@ -1,7 +1,6 @@
 # Viz3 React Application
 
 [![CI](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/DeepPhe/DeepPhe-viz-v3/branch/main/graph/badge.svg)](https://codecov.io/gh/DeepPhe/DeepPhe-viz-v3)
 [![Accessibility](https://img.shields.io/badge/a11y-WCAG%202.1%20AA-green.svg)](https://www.w3.org/WAI/WCAG2AA-Conformance)
 ![React](https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=white)
 ![Material-UI](https://img.shields.io/badge/Material--UI-5.16-007FFF?logo=mui&logoColor=white)
@@ -78,37 +77,6 @@ Or set the environment variable:
 ```bash
 REACT_APP_DEEPPHE_API_LOCATION=http://localhost:3333 npm start
 ```
-
-## Technology Stack
-
-### Core Framework
-
-- **React 18.2** - UI library
-- **React Router 6.30** - Client-side routing
-- **CRACO 7.1** - Create React App Configuration Override
-
-### UI Components
-
-- **Material-UI 5.16** - Component library
-    - @mui/material - Core components
-    - @mui/icons-material - Icon set
-    - @mui/x-charts - Data visualization
-    - @mui/x-data-grid - Advanced tables
-- **Emotion** - CSS-in-JS styling
-
-### Data & Utilities
-
-- **D3.js 7.9** - Data manipulation
-- **Lodash 4.17** - Utility functions
-- **Chroma.js 2.4** - Color manipulation
-- **Yup 1.1** - Schema validation
-
-### Development Tools
-
-- **ESLint 8.57** - Code linting
-- **Prettier 2.8** - Code formatting
-- **eslint-plugin-jsx-a11y** - Accessibility linting
-- **@axe-core/react** - Runtime accessibility testing
 
 ## Accessibility
 
