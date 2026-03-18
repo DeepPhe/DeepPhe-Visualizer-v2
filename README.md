@@ -58,6 +58,35 @@ npm run build            # Create production build
 npm run eject            # Eject from react-scripts (one-way operation)
 ```
 
+### Docker Deployment
+
+```bash
+# Build and run with Docker Compose
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop the stack
+docker compose down
+```
+
+Manual Docker commands:
+
+```bash
+# Build image
+docker build -t viz3-react-app .
+
+# Run container
+docker run -d -p 3000:3000 --name viz3-react-app viz3-react-app
+
+# View logs
+docker logs -f viz3-react-app
+
+# Stop and remove
+docker stop viz3-react-app && docker rm viz3-react-app
+```
+
 ### Maintenance
 
 ```bash
@@ -158,4 +187,3 @@ npm install --legacy-peer-deps
 # Clean install
 npm run install:clean
 ```
-

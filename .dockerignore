@@ -1,0 +1,44 @@
+# Docker Deployment Ignore
+# Files to exclude from Docker build context
+
+node_modules/
+npm-debug.log
+.git/
+.gitignore
+.idea/
+.DS_Store
+*.md
+!README.md
+
+# Development files
+.eslintrc.json
+.prettierrc.json
+
+# Build artifacts that exist locally (will be created during Docker build)
+build/
+
+# Deployment artifacts
+viz3-deploy/
+viz3-deploy.tar.gz
+*.exe
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env.local
+.env.development
+.env.test
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+
+# Test files
+coverage/
+.nyc_output/

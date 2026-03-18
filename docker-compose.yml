@@ -1,0 +1,47 @@
+services:
+  viz3-react-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viz3-react-app
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - viz3-network
+    labels:
+      - "com.deepphe.description=Viz3 React App"
+      - "com.deepphe.version=0.1.0"
+
+  # Optional: Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: viz3-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - viz3-react-app
+    restart: unless-stopped
+    networks:
+      - viz3-network
+    profiles:
+      - with-nginx
+
+networks:
+  viz3-network:
+    driver: bridge
