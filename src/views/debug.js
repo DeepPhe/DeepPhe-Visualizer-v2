@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Box,
@@ -8,23 +8,12 @@ import {
   CircularProgress,
   IconButton,
   Link as MuiLink,
-  MenuItem,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TableSortLabel,
-  TextField,
   Typography,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { BarChart } from "@mui/x-charts/BarChart";
 import { Link as RouterLink } from "react-router-dom";
 import {
   getClasses as getAttributeClasses,
@@ -42,392 +31,29 @@ import {
   getClasses as getOmopClasses,
   getInstances as getOmopInstances,
 } from "../controllers/omap";
+import {
+  AGE_AT_DX_ATTRIBUTE,
+  ATTRIBUTES_GRID_TEMPLATE_COLUMNS,
+  GRID_TEMPLATE_COLUMNS,
+} from "../constants/debugConstants";
+import {
+  getAgeDecileDistribution,
+  getCategoryDistribution,
+  getSummaryTotalCount,
+  getAnchorId,
+  sortDistributionAlphanumerically,
+} from "../utils/dataProcessing";
+import { useDataLoader } from "../hooks/useDataLoader";
+import FilterableValueCountTable from "../components/debug/FilterableValueCountTable";
+import SectionJumpLinks from "../components/debug/SectionJumpLinks";
+import SummaryChart from "../components/debug/SummaryChart";
 
-const AGE_AT_DX_ATTRIBUTE = "AGE_AT_DX";
-const AGE_DECILE_LABELS = [
-  "0-9",
-  "10-19",
-  "20-29",
-  "30-39",
-  "40-49",
-  "50-59",
-  "60-69",
-  "70-79",
-  "80-89",
-  "90+",
-];
-const MAX_BAR_CHART_VALUES = 12;
-const CARD_GRID_TEMPLATE_COLUMNS = "repeat(auto-fit, minmax(240px, 1fr))";
 const DEFAULT_SECTION_STATE = {
   omop: false,
   attributes: false,
   concepts: false,
   cancers: false,
 };
-
-const VALUE_FIELDS_BY_ATTRIBUTE = {
-  [AGE_AT_DX_ATTRIBUTE]: ["age_at_dx", "value", "age"],
-  ETHNICITY: ["ethnicity", "value"],
-  GENDER: ["gender", "value"],
-  RACE: ["race", "value"],
-  CANCER: ["cancer", "value", "classUri"],
-};
-
-const COUNT_FIELDS = [
-  "count",
-  "patient_count",
-  "patientCount",
-  "num_patients",
-  "frequency",
-];
-
-const asRowArray = (payload) => {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-  if (Array.isArray(payload?.rows)) {
-    return payload.rows;
-  }
-  if (Array.isArray(payload?.data)) {
-    return payload.data;
-  }
-  return [];
-};
-
-const getValueFromRow = (attribute, row) => {
-  const normalizedAttribute = String(attribute || "").toUpperCase();
-  const candidateFields = VALUE_FIELDS_BY_ATTRIBUTE[normalizedAttribute] || [
-    "value",
-    "label",
-    "name",
-    "classUri",
-  ];
-
-  for (const field of candidateFields) {
-    const value = row?.[field];
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      return String(value).trim();
-    }
-  }
-
-  return undefined;
-};
-
-const getCountFromRow = (row) => {
-  for (const field of COUNT_FIELDS) {
-    const rawCount = row?.[field];
-    if (rawCount === undefined || rawCount === null || rawCount === "") {
-      continue;
-    }
-
-    const parsedCount = Number(rawCount);
-    if (Number.isFinite(parsedCount)) {
-      return parsedCount;
-    }
-  }
-
-  const patientIdsRaw = row?.patient_ids;
-  if (Array.isArray(patientIdsRaw)) {
-    return patientIdsRaw.length;
-  }
-  if (typeof patientIdsRaw === "string" && patientIdsRaw.trim()) {
-    return patientIdsRaw
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean).length;
-  }
-
-  return 1;
-};
-
-const summarizeInstances = (attribute, payload) => {
-  const rows = asRowArray(payload);
-  const countsByValue = new Map();
-
-  rows.forEach((row) => {
-    const value = getValueFromRow(attribute, row);
-    if (!value) {
-      return;
-    }
-    const count = getCountFromRow(row);
-    countsByValue.set(value, (countsByValue.get(value) || 0) + count);
-  });
-
-  return [...countsByValue.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-};
-
-const getAgeDecileLabel = (value) => {
-  const text = String(value || "").trim();
-  if (!text) {
-    return undefined;
-  }
-
-  const rangeMatch = text.match(/^(\d+)\s*-\s*(\d+)$/);
-  if (rangeMatch) {
-    const start = Number(rangeMatch[1]);
-    if (Number.isFinite(start)) {
-      const decileStart = Math.floor(start / 10) * 10;
-      return decileStart >= 90 ? "90+" : `${decileStart}-${decileStart + 9}`;
-    }
-  }
-
-  const plusMatch = text.match(/^(\d+)\+$/);
-  if (plusMatch) {
-    const start = Number(plusMatch[1]);
-    if (Number.isFinite(start)) {
-      const decileStart = Math.floor(start / 10) * 10;
-      return decileStart >= 90 ? "90+" : `${decileStart}-${decileStart + 9}`;
-    }
-  }
-
-  const firstNumberMatch = text.match(/\d+/);
-  if (!firstNumberMatch) {
-    return undefined;
-  }
-
-  const age = Number(firstNumberMatch[0]);
-  if (!Number.isFinite(age)) {
-    return undefined;
-  }
-
-  const decileStart = Math.floor(age / 10) * 10;
-  return decileStart >= 90 ? "90+" : `${decileStart}-${decileStart + 9}`;
-};
-
-const getAgeDecileDistribution = (summary = []) => {
-  const totalsByDecile = new Map(AGE_DECILE_LABELS.map((label) => [label, 0]));
-
-  summary.forEach((item) => {
-    const label = getAgeDecileLabel(item?.value);
-    if (!label || !totalsByDecile.has(label)) {
-      return;
-    }
-
-    const itemCount = Number(item?.count);
-    const safeCount = Number.isFinite(itemCount) ? itemCount : 0;
-    totalsByDecile.set(label, totalsByDecile.get(label) + safeCount);
-  });
-
-  return AGE_DECILE_LABELS.map((label) => ({
-    label,
-    count: totalsByDecile.get(label) || 0,
-  }));
-};
-
-const getCategoryDistribution = (summary = []) => {
-  return summary
-    .map((item) => ({
-      label: String(item?.value || ""),
-      count: Number(item?.count) || 0,
-    }))
-    .filter((item) => item.label);
-};
-
-const getSummaryTotalCount = (summary = []) => {
-  return summary.reduce((total, item) => total + (Number(item?.count) || 0), 0);
-};
-
-const sortDistributionAlphanumerically = (distribution = []) => {
-  return [...distribution].sort((a, b) =>
-    a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" })
-  );
-};
-
-const getAnchorId = (sectionKey, value) => {
-  const normalizedSection = String(sectionKey || "").toLowerCase();
-  const normalizedValue = String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  return `${normalizedSection}-${normalizedValue || "item"}`;
-};
-
-function FilterableValueCountTable({ rows, valueHeader = "Value", maxHeight = 280 }) {
-  const uniqueLabels = sortDistributionAlphanumerically(rows).map((item) => item.label);
-  const [searchText, setSearchText] = useState("");
-  const [selectedValue, setSelectedValue] = useState("ALL");
-  const [sortField, setSortField] = useState("value");
-  const [sortDirection, setSortDirection] = useState("asc");
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const normalizedSearch = searchText.trim().toLowerCase();
-  const filteredRows = rows.filter((row) => {
-    const label = String(row?.label || "");
-    const passesDropdown = selectedValue === "ALL" || label === selectedValue;
-    const passesSearch = label.toLowerCase().includes(normalizedSearch);
-    return passesDropdown && passesSearch;
-  });
-
-  const sortedRows = [...filteredRows].sort((a, b) => {
-    if (sortField === "count") {
-      const countDifference = (Number(a?.count) || 0) - (Number(b?.count) || 0);
-      if (countDifference !== 0) {
-        return sortDirection === "asc" ? countDifference : -countDifference;
-      }
-    }
-
-    const labelComparison = String(a?.label || "").localeCompare(String(b?.label || ""), undefined, {
-      numeric: true,
-      sensitivity: "base",
-    });
-
-    if (sortField === "value") {
-      return sortDirection === "asc" ? labelComparison : -labelComparison;
-    }
-
-    return labelComparison;
-  });
-
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection((previous) => (previous === "asc" ? "desc" : "asc"));
-      return;
-    }
-
-    setSortField(field);
-    setSortDirection(field === "count" ? "desc" : "asc");
-  };
-
-  return (
-    <Stack spacing={1.5}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems="center">
-        <TextField
-          select
-          size="small"
-          variant="outlined"
-          label="Filter"
-          value={selectedValue}
-          onChange={(event) => setSelectedValue(event.target.value)}
-          sx={{ minWidth: { xs: "100%", sm: 200 } }}
-        >
-          <MenuItem value="ALL">All values</MenuItem>
-          {uniqueLabels.map((label) => (
-            <MenuItem key={label} value={label}>
-              {label}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          size="small"
-          variant="outlined"
-          label="Search"
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-          placeholder="Type to filter (e.g. etas)"
-          fullWidth
-        />
-        <IconButton
-          onClick={() => setIsExpanded((previous) => !previous)}
-          aria-label={isExpanded ? "Collapse list" : "Expand list"}
-          title={isExpanded ? "Collapse" : "Expand"}
-        >
-          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-        </IconButton>
-      </Stack>
-      <TableContainer
-        sx={{
-          maxHeight: isExpanded ? "none" : maxHeight,
-          overflow: isExpanded ? "visible" : "auto",
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1,
-          bgcolor: "background.paper",
-        }}
-      >
-        <Table stickyHeader size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ color: "text.secondary" }}>
-                <TableSortLabel
-                  active={sortField === "value"}
-                  direction={sortField === "value" ? sortDirection : "asc"}
-                  onClick={() => handleSort("value")}
-                >
-                  {valueHeader}
-                </TableSortLabel>
-              </TableCell>
-              <TableCell align="right" sx={{ color: "text.secondary" }}>
-                <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-                  <TableSortLabel
-                    active={sortField === "count"}
-                    direction={sortField === "count" ? sortDirection : "desc"}
-                    onClick={() => handleSort("count")}
-                  >
-                    Count
-                  </TableSortLabel>
-                </Box>
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {sortedRows.length > 0 ? (
-              sortedRows.map((item) => (
-                <TableRow
-                  id={item.id || undefined}
-                  key={`${item.label}:${item.count}`}
-                  sx={{ "&:nth-of-type(odd)": { bgcolor: "action.hover" } }}
-                >
-                  <TableCell sx={{ maxWidth: 320, wordBreak: "break-word", color: "text.primary" }}>
-                    {item.label}
-                  </TableCell>
-                  <TableCell align="right" sx={{ color: "text.secondary" }}>
-                    {Number(item.count).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    No matching values.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Stack>
-  );
-}
-
-function SectionJumpLinks({ sectionKey, values, onJump }) {
-  if (!values || values.length === 0) {
-    return null;
-  }
-
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        flexWrap: "wrap",
-        columnGap: 1,
-        rowGap: 0.5,
-      }}
-    >
-      {values.map((value) => {
-        const label = String(value);
-        const targetId = getAnchorId(sectionKey, label);
-
-        return (
-          <MuiLink
-            key={`${sectionKey}:${label}`}
-            href={`#${targetId}`}
-            underline="hover"
-            variant="body2"
-            sx={{ color: "text.secondary" }}
-            onClick={onJump(sectionKey, label)}
-          >
-            {label}
-          </MuiLink>
-        );
-      })}
-    </Box>
-  );
-}
 
 function SectionTitle({ title, accent = false }) {
   return (
@@ -450,310 +76,19 @@ function SectionTitle({ title, accent = false }) {
   );
 }
 
-function SummaryChart({ distribution }) {
-  const theme = useTheme();
-  const sortedDistribution = sortDistributionAlphanumerically(distribution);
-
-  if (sortedDistribution.length > MAX_BAR_CHART_VALUES) {
-    return <FilterableValueCountTable rows={sortedDistribution} />;
-  }
-
-  return (
-    <BarChart
-      height={260}
-      grid={{ horizontal: true }}
-      yAxis={[
-        {
-          width: 84,
-          tickLabelStyle: {
-            fontSize: 12,
-            fill: theme.palette.text.secondary,
-          },
-          valueFormatter: (value) => Number(value).toLocaleString(),
-        },
-      ]}
-      xAxis={[
-        {
-          scaleType: "band",
-          data: sortedDistribution.map((item) => item.label),
-          tickLabelStyle: {
-            angle: -35,
-            textAnchor: "end",
-            fontSize: 12,
-            fill: theme.palette.text.secondary,
-          },
-        },
-      ]}
-      series={[
-        {
-          data: sortedDistribution.map((item) => item.count),
-          color: alpha(theme.palette.primary.main, 0.85),
-        },
-      ]}
-      margin={{ top: 16, right: 12, bottom: 86, left: 88 }}
-      sx={{
-        ".MuiChartsGrid-line": {
-          stroke: theme.palette.grey[300],
-          strokeDasharray: "4 4",
-        },
-      }}
-    />
-  );
-}
-
 function DebugView() {
-  const [omopClasses, setOmopClasses] = useState([]);
-  const [omopSummaryByClass, setOmopSummaryByClass] = useState({});
-  const [omopErrorsByClass, setOmopErrorsByClass] = useState({});
-  const [isOmopLoading, setIsOmopLoading] = useState(true);
-  const [omopErrorMessage, setOmopErrorMessage] = useState("");
+  const omopData = useDataLoader(getOmopClasses, getOmopInstances, "OMOP");
+  const attributeData = useDataLoader(getAttributeClasses, getAttributeInstances, "Attributes");
+  const conceptData = useDataLoader(getConceptClasses, getConceptInstances, "Concepts");
+  const cancerData = useDataLoader(getCancerClasses, getCancerInstances, "Cancers");
 
-  const [attributeClasses, setAttributeClasses] = useState([]);
-  const [attributeSummaryByClass, setAttributeSummaryByClass] = useState({});
-  const [attributeErrorsByClass, setAttributeErrorsByClass] = useState({});
-  const [isAttributesLoading, setIsAttributesLoading] = useState(true);
-  const [attributesErrorMessage, setAttributesErrorMessage] = useState("");
-  const [conceptClasses, setConceptClasses] = useState([]);
-  const [conceptSummaryByClass, setConceptSummaryByClass] = useState({});
-  const [conceptErrorsByClass, setConceptErrorsByClass] = useState({});
-  const [isConceptsLoading, setIsConceptsLoading] = useState(true);
-  const [conceptsErrorMessage, setConceptsErrorMessage] = useState("");
-  const [cancerClasses, setCancerClasses] = useState([]);
-  const [cancerSummaryByClass, setCancerSummaryByClass] = useState({});
-  const [cancerErrorsByClass, setCancerErrorsByClass] = useState({});
-  const [isCancersLoading, setIsCancersLoading] = useState(true);
-  const [cancersErrorMessage, setCancersErrorMessage] = useState("");
   const [expandedSections, setExpandedSections] = useState(DEFAULT_SECTION_STATE);
   const [isSectionTogglePending, setIsSectionTogglePending] = useState(DEFAULT_SECTION_STATE);
 
-  useEffect(() => {
-    let isActive = true;
-
-    const loadOmop = async () => {
-      setIsOmopLoading(true);
-      setOmopErrorMessage("");
-
-      try {
-        const result = await getOmopClasses();
-        const classList = Array.isArray(result) ? result : [];
-        const instanceResults = await Promise.allSettled(
-          classList.map(async (className) => {
-            const instances = await getOmopInstances(className);
-            return {
-              className,
-              summary: summarizeInstances(className, instances),
-            };
-          })
-        );
-
-        const nextSummaryByClass = {};
-        const nextErrorsByClass = {};
-
-        instanceResults.forEach((callResult, index) => {
-          const className = String(classList[index]);
-          if (callResult.status === "fulfilled") {
-            nextSummaryByClass[className] = callResult.value.summary;
-            return;
-          }
-          nextErrorsByClass[className] =
-            callResult.reason?.message || "Failed to load OMOP instances.";
-        });
-
-        if (isActive) {
-          setOmopClasses(classList);
-          setOmopSummaryByClass(nextSummaryByClass);
-          setOmopErrorsByClass(nextErrorsByClass);
-        }
-      } catch (error) {
-        if (isActive) {
-          setOmopErrorMessage(error?.message || "Failed to load OMOP classes.");
-        }
-      } finally {
-        if (isActive) {
-          setIsOmopLoading(false);
-        }
-      }
-    };
-
-    loadOmop();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadAttributes = async () => {
-      setIsAttributesLoading(true);
-      setAttributesErrorMessage("");
-
-      try {
-        const classesResult = await getAttributeClasses();
-        const attributeClasses = Array.isArray(classesResult) ? classesResult : [];
-        const instanceResults = await Promise.allSettled(
-          attributeClasses.map(async (className) => {
-            const instances = await getAttributeInstances(className);
-            return {
-              className,
-              summary: summarizeInstances(className, instances),
-            };
-          })
-        );
-
-        const nextSummaryByClass = {};
-        const nextErrorsByClass = {};
-
-        instanceResults.forEach((callResult, index) => {
-          const className = String(attributeClasses[index]);
-          if (callResult.status === "fulfilled") {
-            nextSummaryByClass[className] = callResult.value.summary;
-            return;
-          }
-          nextErrorsByClass[className] =
-            callResult.reason?.message || "Failed to load attribute instances.";
-        });
-
-        if (isActive) {
-          setAttributeClasses(attributeClasses);
-          setAttributeSummaryByClass(nextSummaryByClass);
-          setAttributeErrorsByClass(nextErrorsByClass);
-        }
-      } catch (error) {
-        if (isActive) {
-          setAttributesErrorMessage(error?.message || "Failed to load Attributes classes.");
-        }
-      } finally {
-        if (isActive) {
-          setIsAttributesLoading(false);
-        }
-      }
-    };
-
-    loadAttributes();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadConcepts = async () => {
-      setIsConceptsLoading(true);
-      setConceptsErrorMessage("");
-
-      try {
-        const classesResult = await getConceptClasses();
-        const conceptClasses = Array.isArray(classesResult) ? classesResult : [];
-        const instanceResults = await Promise.allSettled(
-          conceptClasses.map(async (className) => {
-            const instances = await getConceptInstances(className);
-            return {
-              className,
-              summary: summarizeInstances(className, instances),
-            };
-          })
-        );
-
-        const nextSummaryByClass = {};
-        const nextErrorsByClass = {};
-
-        instanceResults.forEach((callResult, index) => {
-          const className = String(conceptClasses[index]);
-          if (callResult.status === "fulfilled") {
-            nextSummaryByClass[className] = callResult.value.summary;
-            return;
-          }
-          nextErrorsByClass[className] =
-            callResult.reason?.message || "Failed to load concept instances.";
-        });
-
-        if (isActive) {
-          setConceptClasses(conceptClasses);
-          setConceptSummaryByClass(nextSummaryByClass);
-          setConceptErrorsByClass(nextErrorsByClass);
-        }
-      } catch (error) {
-        if (isActive) {
-          setConceptsErrorMessage(error?.message || "Failed to load Concepts classes.");
-        }
-      } finally {
-        if (isActive) {
-          setIsConceptsLoading(false);
-        }
-      }
-    };
-
-    loadConcepts();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadCancers = async () => {
-      setIsCancersLoading(true);
-      setCancersErrorMessage("");
-
-      try {
-        const classesResult = await getCancerClasses();
-        const cancerClasses = Array.isArray(classesResult) ? classesResult : [];
-        const instanceResults = await Promise.allSettled(
-          cancerClasses.map(async (className) => {
-            const instances = await getCancerInstances(className);
-            return {
-              className,
-              summary: summarizeInstances(className, instances),
-            };
-          })
-        );
-
-        const nextSummaryByClass = {};
-        const nextErrorsByClass = {};
-
-        instanceResults.forEach((callResult, index) => {
-          const className = String(cancerClasses[index]);
-          if (callResult.status === "fulfilled") {
-            nextSummaryByClass[className] = callResult.value.summary;
-            return;
-          }
-          nextErrorsByClass[className] =
-            callResult.reason?.message || "Failed to load cancer instances.";
-        });
-
-        if (isActive) {
-          setCancerClasses(cancerClasses);
-          setCancerSummaryByClass(nextSummaryByClass);
-          setCancerErrorsByClass(nextErrorsByClass);
-        }
-      } catch (error) {
-        if (isActive) {
-          setCancersErrorMessage(error?.message || "Failed to load Cancers classes.");
-        }
-      } finally {
-        if (isActive) {
-          setIsCancersLoading(false);
-        }
-      }
-    };
-
-    loadCancers();
-
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
   const cancerCountRows = sortDistributionAlphanumerically(
-    cancerClasses.map((className) => {
+    cancerData.classes.map((className) => {
       const classKey = String(className);
-      const classSummary = cancerSummaryByClass[classKey] || [];
+      const classSummary = cancerData.summaryByClass[classKey] || [];
       return {
         label: classKey,
         count: getSummaryTotalCount(classSummary),
@@ -807,9 +142,9 @@ function DebugView() {
     scrollToTarget();
   };
 
-  const omopJumpValues = omopClasses.map((value) => String(value));
-  const attributeJumpValues = attributeClasses.map((value) => String(value));
-  const conceptJumpValues = conceptClasses.map((value) => String(value));
+  const omopJumpValues = omopData.classes.map((value) => String(value));
+  const attributeJumpValues = attributeData.classes.map((value) => String(value));
+  const conceptJumpValues = conceptData.classes.map((value) => String(value));
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "grey.50", p: { xs: 2, md: 4 } }}>
@@ -839,7 +174,7 @@ function DebugView() {
             <SectionJumpLinks sectionKey="omop" values={omopJumpValues} onJump={handleJumpTo} />
             {expandedSections.omop ? (
               <Stack spacing={2}>
-                {isOmopLoading ? (
+                {omopData.isLoading ? (
                   <Stack direction="row" spacing={1} alignItems="center">
                     <CircularProgress size={18} />
                     <Typography variant="body2" color="text.secondary">
@@ -848,20 +183,20 @@ function DebugView() {
                   </Stack>
                 ) : null}
 
-                {omopErrorMessage ? <Alert severity="error">{omopErrorMessage}</Alert> : null}
+                {omopData.errorMessage ? <Alert severity="error">{omopData.errorMessage}</Alert> : null}
 
-                {!isOmopLoading && !omopErrorMessage ? (
-                  omopClasses.length > 0 ? (
+                {!omopData.isLoading && !omopData.errorMessage ? (
+                  omopData.classes.length > 0 ? (
                     <Box
                       sx={{
                         display: "grid",
-                        gridTemplateColumns: CARD_GRID_TEMPLATE_COLUMNS,
+                        gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                         gap: 3,
                       }}
                     >
-                      {omopClasses.map((className) => {
+                      {omopData.classes.map((className) => {
                         const normalizedClassName = String(className).toUpperCase();
-                        const classSummary = omopSummaryByClass[String(className)] || [];
+                        const classSummary = omopData.summaryByClass[String(className)] || [];
                         const chartDistribution =
                           normalizedClassName === AGE_AT_DX_ATTRIBUTE
                             ? getAgeDecileDistribution(classSummary)
@@ -879,9 +214,9 @@ function DebugView() {
                               sx={{ px: 3, pt: 3, pb: 1 }}
                             />
                             <CardContent sx={{ px: 3, pb: 3, pt: 0 }}>
-                              {omopErrorsByClass[String(className)] ? (
+                              {omopData.errorsByClass[String(className)] ? (
                                 <Alert severity="error">
-                                  {omopErrorsByClass[String(className)]}
+                                  {omopData.errorsByClass[String(className)]}
                                 </Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
@@ -941,7 +276,7 @@ function DebugView() {
             />
             {expandedSections.attributes ? (
               <Stack spacing={2}>
-                {isAttributesLoading ? (
+                {attributeData.isLoading ? (
                   <Stack direction="row" spacing={1} alignItems="center">
                     <CircularProgress size={18} />
                     <Typography variant="body2" color="text.secondary">
@@ -950,22 +285,22 @@ function DebugView() {
                   </Stack>
                 ) : null}
 
-                {attributesErrorMessage ? (
-                  <Alert severity="error">{attributesErrorMessage}</Alert>
+                {attributeData.errorMessage ? (
+                  <Alert severity="error">{attributeData.errorMessage}</Alert>
                 ) : null}
 
-                {!isAttributesLoading && !attributesErrorMessage ? (
-                  attributeClasses.length > 0 ? (
+                {!attributeData.isLoading && !attributeData.errorMessage ? (
+                  attributeData.classes.length > 0 ? (
                     <Box
                       sx={{
                         display: "grid",
                         gap: 3,
-                        gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                        gridTemplateColumns: ATTRIBUTES_GRID_TEMPLATE_COLUMNS,
                       }}
                     >
-                      {attributeClasses.map((className) => {
+                      {attributeData.classes.map((className) => {
                         const classKey = String(className);
-                        const classSummary = attributeSummaryByClass[classKey] || [];
+                        const classSummary = attributeData.summaryByClass[classKey] || [];
                         const chartDistribution = getCategoryDistribution(classSummary);
                         const anchorId = getAnchorId("attributes", className);
 
@@ -980,8 +315,8 @@ function DebugView() {
                               sx={{ px: 3, pt: 3, pb: 1 }}
                             />
                             <CardContent sx={{ px: 3, pb: 3, pt: 0 }}>
-                              {attributeErrorsByClass[classKey] ? (
-                                <Alert severity="error">{attributeErrorsByClass[classKey]}</Alert>
+                              {attributeData.errorsByClass[classKey] ? (
+                                <Alert severity="error">{attributeData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
                                   <SummaryChart distribution={chartDistribution} />
@@ -1031,10 +366,14 @@ function DebugView() {
                 )}
               </IconButton>
             </Stack>
-            <SectionJumpLinks sectionKey="concepts" values={conceptJumpValues} onJump={handleJumpTo} />
+            <SectionJumpLinks
+              sectionKey="concepts"
+              values={conceptJumpValues}
+              onJump={handleJumpTo}
+            />
             {expandedSections.concepts ? (
               <Stack spacing={2}>
-                {isConceptsLoading ? (
+                {conceptData.isLoading ? (
                   <Stack direction="row" spacing={1} alignItems="center">
                     <CircularProgress size={18} />
                     <Typography variant="body2" color="text.secondary">
@@ -1043,20 +382,20 @@ function DebugView() {
                   </Stack>
                 ) : null}
 
-                {conceptsErrorMessage ? <Alert severity="error">{conceptsErrorMessage}</Alert> : null}
+                {conceptData.errorMessage ? <Alert severity="error">{conceptData.errorMessage}</Alert> : null}
 
-                {!isConceptsLoading && !conceptsErrorMessage ? (
-                  conceptClasses.length > 0 ? (
+                {!conceptData.isLoading && !conceptData.errorMessage ? (
+                  conceptData.classes.length > 0 ? (
                     <Box
                       sx={{
                         display: "grid",
                         gap: 3,
-                        gridTemplateColumns: CARD_GRID_TEMPLATE_COLUMNS,
+                        gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                       }}
                     >
-                      {conceptClasses.map((className) => {
+                      {conceptData.classes.map((className) => {
                         const classKey = String(className);
-                        const classSummary = conceptSummaryByClass[classKey] || [];
+                        const classSummary = conceptData.summaryByClass[classKey] || [];
                         const chartDistribution = getCategoryDistribution(classSummary);
                         const anchorId = getAnchorId("concepts", className);
 
@@ -1071,8 +410,8 @@ function DebugView() {
                               sx={{ px: 3, pt: 3, pb: 1 }}
                             />
                             <CardContent sx={{ px: 3, pb: 3, pt: 0 }}>
-                              {conceptErrorsByClass[classKey] ? (
-                                <Alert severity="error">{conceptErrorsByClass[classKey]}</Alert>
+                              {conceptData.errorsByClass[classKey] ? (
+                                <Alert severity="error">{conceptData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
                                   <SummaryChart distribution={chartDistribution} />
@@ -1124,7 +463,7 @@ function DebugView() {
             </Stack>
             {expandedSections.cancers ? (
               <Stack spacing={2}>
-                {isCancersLoading ? (
+                {cancerData.isLoading ? (
                   <Stack direction="row" spacing={1} alignItems="center">
                     <CircularProgress size={18} />
                     <Typography variant="body2" color="text.secondary">
@@ -1133,10 +472,10 @@ function DebugView() {
                   </Stack>
                 ) : null}
 
-                {cancersErrorMessage ? <Alert severity="error">{cancersErrorMessage}</Alert> : null}
+                {cancerData.errorMessage ? <Alert severity="error">{cancerData.errorMessage}</Alert> : null}
 
-                {!isCancersLoading && !cancersErrorMessage ? (
-                  cancerClasses.length > 0 ? (
+                {!cancerData.isLoading && !cancerData.errorMessage ? (
+                  cancerData.classes.length > 0 ? (
                     <Card elevation={1}>
                       <CardHeader
                         title={
@@ -1163,7 +502,7 @@ function DebugView() {
                     </Typography>
                   )
                 ) : null}
-                {Object.keys(cancerErrorsByClass).length > 0 ? (
+                {Object.keys(cancerData.errorsByClass).length > 0 ? (
                   <Alert severity="warning">
                     Some cancer classes failed to load instance details.
                   </Alert>
