@@ -1,9 +1,9 @@
 {
-  "name": "viz3-react-app",
+  "name": "deepphe-visualizer-v3",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Viz3 React app scaffolded with CRACO",
+  "description": "DeepPhe Visualizer v3 - Cancer phenotype visualization and analysis",
   "dependencies": {
     "@emotion/cache": "11.10.8",
     "@emotion/react": "11.11.4",

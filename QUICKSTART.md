@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get Viz3 running on your machine in under 5 minutes.
+Get DeepPhe Visualizer v3 running on your machine in under 5 minutes.
 
 ## Prerequisites
 
@@ -31,7 +31,7 @@ The app opens automatically at [http://localhost:3000](http://localhost:3000)
 
 ## Backend API Setup
 
-Viz3 requires the DeepPhe Data API backend running on port 3333.
+DeepPhe Visualizer v3 requires the DeepPhe Data API backend running on port 3333.
 
 ### Start the backend:
 
@@ -43,7 +43,7 @@ PORT=3333 npm start
 
 ### Configure API location (optional):
 
-Create `.env.local` in Viz3 root:
+Create `.env.local` in DeepPhe-viz-v3 root:
 
 ```env
 REACT_APP_DEEPPHE_API_LOCATION=http://localhost:3333

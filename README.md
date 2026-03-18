@@ -1,4 +1,4 @@
-# Viz3 React Application
+# DeepPhe Visualizer v3
 
 [![CI](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml)
 [![Accessibility](https://img.shields.io/badge/a11y-WCAG%202.1%20AA-green.svg)](https://www.w3.org/WAI/WCAG2AA-Conformance)
@@ -9,8 +9,7 @@
 ![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/DeepPhe/DeepPhe-viz-v3/graphs/commit-activity)
 
-A modern React application for medical data visualization and analysis, built with Material-UI and CRACO. Part of the
-DeepPhe project for cancer phenotype extraction and visualization.
+A modern React application for medical data visualization and analysis, built with Material-UI and CRACO. DeepPhe Visualizer v3 is the next-generation visualization tool for cancer phenotype extraction and analysis.
 
 ## Prerequisites
 
@@ -75,16 +74,16 @@ Manual Docker commands:
 
 ```bash
 # Build image
-docker build -t viz3-react-app .
+docker build -t deepphe-visualizer-v3 .
 
 # Run container
-docker run -d -p 3000:3000 --name viz3-react-app viz3-react-app
+docker run -d -p 3000:3000 --name deepphe-visualizer-v3 deepphe-visualizer-v3
 
 # View logs
-docker logs -f viz3-react-app
+docker logs -f deepphe-visualizer-v3
 
 # Stop and remove
-docker stop viz3-react-app && docker rm viz3-react-app
+docker stop deepphe-visualizer-v3 && docker rm deepphe-visualizer-v3
 ```
 
 ### Maintenance

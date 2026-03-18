@@ -1,4 +1,4 @@
-# WCAG Compliance Guide for Viz3
+# WCAG Compliance Guide for DeepPhe Visualizer v3
 
 This project is configured for WCAG 2.1 AA compliance checking throughout development.
 

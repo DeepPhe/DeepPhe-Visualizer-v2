@@ -1,6 +1,6 @@
-# Contributing to Viz3
+# Contributing to DeepPhe Visualizer v3
 
-Thank you for considering contributing to Viz3! This document outlines the process and guidelines for contributing.
+Thank you for considering contributing to DeepPhe Visualizer v3! This document outlines the process and guidelines for contributing.
 
 ## Code of Conduct
 
@@ -12,7 +12,7 @@ Be respectful, constructive, and professional in all interactions.
 
 Before submitting a bug report:
 - Check the issue tracker to avoid duplicates
-- Use the latest version of Viz3
+- Use the latest version of DeepPhe Visualizer v3
 - Collect relevant information (browser, Node version, error messages)
 
 When submitting a bug report, include:
