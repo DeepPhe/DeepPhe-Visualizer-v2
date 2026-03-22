@@ -43,6 +43,7 @@ export default function FilterListControl({
   selectedValues,
   onSelectionChange,
   maxHeight = DEFAULT_MAX_HEIGHT,
+  fontScale = 1,
 }) {
   const theme = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,7 +96,15 @@ export default function FilterListControl({
   return (
     <Box sx={{ width: "100%" }}>
       {title ? (
-        <Typography variant="subtitle1" color="text.primary" sx={{ mb: 1.5, fontWeight: 600 }}>
+        <Typography
+          variant="subtitle1"
+          color="text.primary"
+          sx={{
+            mb: 1.5,
+            fontWeight: 600,
+            fontSize: `calc(${theme.typography.subtitle1.fontSize} * ${fontScale})`,
+          }}
+        >
           {title}
         </Typography>
       ) : null}
@@ -108,8 +117,27 @@ export default function FilterListControl({
           placeholder="Type to filter labels"
           size="small"
           fullWidth
+          sx={{
+            "& .MuiInputBase-input": {
+              fontSize: `${0.875 * fontScale}rem`,
+            },
+            "& .MuiInputLabel-root": {
+              fontSize: `${0.875 * fontScale}rem`,
+            },
+          }}
         />
-        <FormControl size="small" sx={{ minWidth: 140 }}>
+        <FormControl
+          size="small"
+          sx={{
+            minWidth: 140,
+            "& .MuiInputLabel-root": {
+              fontSize: `${0.875 * fontScale}rem`,
+            },
+            "& .MuiSelect-select": {
+              fontSize: `${0.875 * fontScale}rem`,
+            },
+          }}
+        >
           <InputLabel id="filter-list-sort-by-label">Sort by</InputLabel>
           <Select
             labelId="filter-list-sort-by-label"
@@ -172,8 +200,12 @@ export default function FilterListControl({
                       primaryTypographyProps={{
                         variant: "body2",
                         color: isSelected ? "text.primary" : "text.secondary",
+                        sx: { fontSize: `${0.875 * fontScale}rem` },
                       }}
-                      secondaryTypographyProps={{ variant: "caption" }}
+                      secondaryTypographyProps={{
+                        variant: "caption",
+                        sx: { fontSize: `${0.75 * fontScale}rem` },
+                      }}
                     />
                   </ListItemButton>
                 </ListItem>
@@ -181,7 +213,11 @@ export default function FilterListControl({
             })}
           </List>
         ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ p: 2, fontSize: `calc(${theme.typography.body2.fontSize} * ${fontScale})` }}
+          >
             No matching values.
           </Typography>
         )}
@@ -190,7 +226,12 @@ export default function FilterListControl({
       <Typography
         variant="caption"
         color="text.secondary"
-        sx={{ display: "block", mt: 1, fontFamily: theme.typography.fontFamily }}
+        sx={{
+          display: "block",
+          mt: 1,
+          fontFamily: theme.typography.fontFamily,
+          fontSize: `${0.75 * fontScale}rem`,
+        }}
       >
         Showing {visibleCategories.length.toLocaleString()} of {normalizedCategories.length.toLocaleString()} values
       </Typography>
@@ -209,6 +250,7 @@ FilterListControl.propTypes = {
   selectedValues: PropTypes.arrayOf(PropTypes.string),
   onSelectionChange: PropTypes.func.isRequired,
   maxHeight: PropTypes.number,
+  fontScale: PropTypes.number,
 };
 
 FilterListControl.defaultProps = {
@@ -216,4 +258,5 @@ FilterListControl.defaultProps = {
   categories: [],
   selectedValues: [],
   maxHeight: DEFAULT_MAX_HEIGHT,
+  fontScale: 1,
 };

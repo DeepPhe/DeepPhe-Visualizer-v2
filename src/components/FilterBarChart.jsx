@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import PropTypes from "prop-types";
-import { Box, Typography, useTheme } from "@mui/material";
+import { Box, IconButton, Tooltip, Typography, useTheme } from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
 
 const DEFAULT_HEIGHT = 320;
 
@@ -32,6 +33,7 @@ export default function FilterBarChart({
   selectedValues,
   onSelectionChange,
   height = DEFAULT_HEIGHT,
+  fontScale = 1,
 }) {
   const theme = useTheme();
   const normalizedCategories = useMemo(() => normalizeCategories(categories), [categories]);
@@ -41,6 +43,14 @@ export default function FilterBarChart({
   );
   const selectedSet = useMemo(() => new Set(safeSelectedValues), [safeSelectedValues]);
   const hasSelections = selectedSet.size > 0;
+  const svgFontSize = Math.max(10, Math.round(12 * fontScale));
+
+  const handleReset = () => {
+    if (typeof onSelectionChange !== "function") {
+      return;
+    }
+    onSelectionChange([]);
+  };
 
   const chart = useMemo(() => {
     const margin = { top: 24, right: 16, bottom: 68, left: 16 };
@@ -98,12 +108,43 @@ export default function FilterBarChart({
   if (normalizedCategories.length === 0) {
     return (
       <Box>
-        {title ? (
-          <Typography variant="subtitle1" color="text.primary" sx={{ mb: 1 }}>
-            {title}
-          </Typography>
-        ) : null}
-        <Typography variant="body2" color="text.secondary">
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            mb: 1,
+          }}
+        >
+          {title ? (
+            <Typography
+              variant="subtitle1"
+              color="text.primary"
+              sx={{ fontSize: `calc(${theme.typography.subtitle1.fontSize} * ${fontScale})` }}
+            >
+              {title}
+            </Typography>
+          ) : (
+            <Box />
+          )}
+          <Tooltip title="Reset filter">
+            <span>
+              <IconButton
+                size="small"
+                aria-label="Reset filter"
+                onClick={handleReset}
+                disabled={safeSelectedValues.length === 0}
+              >
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Box>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{ fontSize: `calc(${theme.typography.body2.fontSize} * ${fontScale})` }}
+        >
           No categories available.
         </Typography>
       </Box>
@@ -112,11 +153,41 @@ export default function FilterBarChart({
 
   return (
     <Box sx={{ width: "100%" }}>
-      {title ? (
-        <Typography variant="subtitle1" color="text.primary" sx={{ mb: 1.5, fontWeight: 600 }}>
-          {title}
-        </Typography>
-      ) : null}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          mb: 1.5,
+        }}
+      >
+        {title ? (
+          <Typography
+            variant="subtitle1"
+            color="text.primary"
+            sx={{
+              fontWeight: 600,
+              fontSize: `calc(${theme.typography.subtitle1.fontSize} * ${fontScale})`,
+            }}
+          >
+            {title}
+          </Typography>
+        ) : (
+          <Box />
+        )}
+        <Tooltip title="Reset filter">
+          <span>
+            <IconButton
+              size="small"
+              aria-label="Reset filter"
+              onClick={handleReset}
+              disabled={safeSelectedValues.length === 0}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
       <Box sx={{ width: "100%", overflowX: "auto" }}>
         <svg
           role="img"
@@ -171,7 +242,7 @@ export default function FilterBarChart({
                   x={bar.x + bar.barWidth / 2}
                   y={Math.max(14, bar.y - 6)}
                   textAnchor="middle"
-                  fontSize="12"
+                  fontSize={svgFontSize}
                   fill={theme.palette.text.secondary}
                 >
                   {bar.count.toLocaleString()}
@@ -180,7 +251,7 @@ export default function FilterBarChart({
                   x={bar.x + bar.barWidth / 2}
                   y={chart.baselineY + 20}
                   textAnchor="middle"
-                  fontSize="12"
+                  fontSize={svgFontSize}
                   fill={theme.palette.text.primary}
                 >
                   {toShortLabel(bar.label)}
@@ -206,6 +277,7 @@ FilterBarChart.propTypes = {
   selectedValues: PropTypes.arrayOf(PropTypes.string),
   onSelectionChange: PropTypes.func.isRequired,
   height: PropTypes.number,
+  fontScale: PropTypes.number,
 };
 
 FilterBarChart.defaultProps = {
@@ -213,4 +285,5 @@ FilterBarChart.defaultProps = {
   categories: [],
   selectedValues: [],
   height: DEFAULT_HEIGHT,
+  fontScale: 1,
 };

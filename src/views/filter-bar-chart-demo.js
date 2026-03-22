@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Chip, Slider, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import FilterBarChart from "../components/FilterBarChart";
 
 function FilterBarChartDemoView() {
   const [selectedValues, setSelectedValues] = useState([]);
+  const [filterWidthPercent, setFilterWidthPercent] = useState(20);
+  const [fontScale, setFontScale] = useState(1);
 
   const categories = useMemo(
     () => [
@@ -28,13 +30,57 @@ function FilterBarChartDemoView() {
           Click bars to add/remove active values. Parent state controls current selection.
         </Typography>
 
-        <FilterBarChart
-          title="Race Distribution"
-          categories={categories}
-          selectedValues={selectedValues}
-          onSelectionChange={setSelectedValues}
-          height={320}
-        />
+        <Box sx={{ maxWidth: 360 }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Filter Width: {filterWidthPercent}%
+          </Typography>
+          <Slider
+            value={filterWidthPercent}
+            min={20}
+            max={100}
+            step={5}
+            marks={[
+              { value: 20, label: "20%" },
+              { value: 60, label: "60%" },
+              { value: 100, label: "100%" },
+            ]}
+            valueLabelDisplay="auto"
+            onChange={(_, nextValue) => setFilterWidthPercent(Number(nextValue))}
+            aria-label="Filter width percent"
+          />
+        </Box>
+
+        <Box sx={{ maxWidth: 360 }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Font Size: {Math.round(fontScale * 100)}%
+          </Typography>
+          <Slider
+            value={fontScale}
+            min={0.8}
+            max={1.6}
+            step={0.1}
+            marks={[
+              { value: 0.8, label: "80%" },
+              { value: 1, label: "100%" },
+              { value: 1.6, label: "160%" },
+            ]}
+            valueLabelDisplay="auto"
+            valueLabelFormat={(value) => `${Math.round(Number(value) * 100)}%`}
+            onChange={(_, nextValue) => setFontScale(Number(nextValue))}
+            aria-label="Font size scale"
+          />
+        </Box>
+
+        <Box sx={{ width: { xs: "100%", md: `${filterWidthPercent}%` } }}>
+          <FilterBarChart
+            title="Race Distribution"
+            categories={categories}
+            selectedValues={selectedValues}
+            onSelectionChange={setSelectedValues}
+            height={320}
+            fontScale={fontScale}
+          />
+        </Box>
 
         <Box>
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
