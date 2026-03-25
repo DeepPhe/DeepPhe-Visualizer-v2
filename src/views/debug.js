@@ -44,9 +44,8 @@ import {
   sortDistributionAlphanumerically,
 } from "../utils/dataProcessing";
 import { useDataLoader } from "../hooks/useDataLoader";
-import FilterableValueCountTable from "../components/debug/FilterableValueCountTable";
 import SectionJumpLinks from "../components/debug/SectionJumpLinks";
-import SummaryChart from "../components/debug/SummaryChart";
+import HorizontalBarChart from "../components/HorizontalBarChart";
 
 const DEFAULT_SECTION_STATE = {
   omop: false,
@@ -74,6 +73,19 @@ function SectionTitle({ title, accent = false }) {
       </Typography>
     </Box>
   );
+}
+
+function toHorizontalChartData(distribution) {
+  if (!Array.isArray(distribution)) {
+    return [];
+  }
+
+  return distribution
+    .map((item) => ({
+      label: String(item?.label ?? "").trim(),
+      value: Number(item?.count ?? 0),
+    }))
+    .filter((item) => item.label.length > 0);
 }
 
 function DebugView() {
@@ -220,7 +232,12 @@ function DebugView() {
                                 </Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <SummaryChart distribution={chartDistribution} />
+                                  <HorizontalBarChart
+                                    title={`${String(className)} Distribution`}
+                                    data={toHorizontalChartData(chartDistribution)}
+                                    height={320}
+                                    defaultSort="value-desc"
+                                  />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
                                     No plottable values returned.
@@ -319,7 +336,12 @@ function DebugView() {
                                 <Alert severity="error">{attributeData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <SummaryChart distribution={chartDistribution} />
+                                  <HorizontalBarChart
+                                    title={`${classKey} Distribution`}
+                                    data={toHorizontalChartData(chartDistribution)}
+                                    height={320}
+                                    defaultSort="value-desc"
+                                  />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
                                     No plottable values returned.
@@ -414,7 +436,12 @@ function DebugView() {
                                 <Alert severity="error">{conceptData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <SummaryChart distribution={chartDistribution} />
+                                  <HorizontalBarChart
+                                    title={`${classKey} Distribution`}
+                                    data={toHorizontalChartData(chartDistribution)}
+                                    height={320}
+                                    defaultSort="value-desc"
+                                  />
                                 ) : (
                                   <Typography variant="body2" color="text.secondary">
                                     No plottable values returned.
@@ -486,13 +513,14 @@ function DebugView() {
                         sx={{ px: 3, pt: 3, pb: 1 }}
                       />
                       <CardContent sx={{ px: 3, pb: 3, pt: 0 }}>
-                        <FilterableValueCountTable
-                          rows={cancerCountRows.map((row) => ({
-                            ...row,
-                            id: getAnchorId("cancers", row.label),
+                        <HorizontalBarChart
+                          title="Cancer Counts Distribution"
+                          data={cancerCountRows.map((row) => ({
+                            label: row.label,
+                            value: row.count,
                           }))}
-                          valueHeader="Cancer"
-                          maxHeight={420}
+                          height={420}
+                          defaultSort="value-desc"
                         />
                       </CardContent>
                     </Card>
