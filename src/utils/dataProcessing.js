@@ -80,6 +80,49 @@ export function getCountFromRow(row) {
   return 1;
 }
 
+function getPatientIdsFromRow(row) {
+  const candidateValues = [
+    row?.patient_ids,
+    row?.patientIds,
+    row?.patient_id,
+    row?.patientId,
+  ];
+  const ids = [];
+
+  candidateValues.forEach((value) => {
+    if (Array.isArray(value)) {
+      value
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .forEach((id) => ids.push(id));
+      return;
+    }
+
+    if (typeof value === "string") {
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((id) => ids.push(id));
+      return;
+    }
+
+    if (value !== undefined && value !== null && value !== "") {
+      const textValue = String(value).trim();
+      if (textValue) {
+        ids.push(textValue);
+      }
+    }
+  });
+
+  return [...new Set(ids)].sort((leftId, rightId) =>
+    leftId.localeCompare(rightId, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+}
+
 /**
  * Aggregates instance rows into [{ value, count }] summary rows.
  * @param {string} attribute
@@ -96,11 +139,37 @@ export function summarizeInstances(attribute, payload) {
       return;
     }
     const count = getCountFromRow(row);
-    countsByValue.set(value, (countsByValue.get(value) || 0) + count);
+    const patientIds = getPatientIdsFromRow(row);
+    const existingSummary = countsByValue.get(value) || {
+      count: 0,
+      patientIds: new Set(),
+    };
+
+    existingSummary.count += count;
+    patientIds.forEach((patientId) => existingSummary.patientIds.add(patientId));
+
+    countsByValue.set(value, existingSummary);
   });
 
   return [...countsByValue.entries()]
-    .map(([value, count]) => ({ value, count }))
+    .map(([value, summary]) => {
+      const nextSummary = {
+        value,
+        count: summary.count,
+      };
+
+      const patientIds = [...summary.patientIds].sort((leftId, rightId) =>
+        leftId.localeCompare(rightId, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        })
+      );
+      if (patientIds.length > 0) {
+        nextSummary.patientIds = patientIds;
+      }
+
+      return nextSummary;
+    })
     .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
 

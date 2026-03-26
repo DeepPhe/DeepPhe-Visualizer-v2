@@ -4,6 +4,6 @@ export async function getClasses() {
   return fetchOmopClasses();
 }
 
-export async function getInstances(attribute) {
-  return fetchOmopInstances({ attribute });
+export async function getInstances(attribute, options = {}) {
+  return fetchOmopInstances({ attribute, ...options });
 }

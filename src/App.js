@@ -35,7 +35,12 @@ function HomeView() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route path="/" element={<HomeView />} />
         <Route path="/debug" element={<DebugView />} />
