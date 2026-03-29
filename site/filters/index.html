@@ -1,0 +1,655 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Automated QA visual review generated with Playwright and MKDocs">
+      
+      
+      
+      
+        <link rel="prev" href="../routes/">
+      
+      
+        <link rel="next" href="../patient-details/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Filters Workflow - DeepPhe Visualizer v3 UI Review</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#filters-workflow-filters" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="DeepPhe Visualizer v3 UI Review" class="md-header__button md-logo" aria-label="DeepPhe Visualizer v3 UI Review" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DeepPhe Visualizer v3 UI Review
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Filters Workflow
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="DeepPhe Visualizer v3 UI Review" class="md-nav__button md-logo" aria-label="DeepPhe Visualizer v3 UI Review" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    DeepPhe Visualizer v3 UI Review
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../routes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Route Coverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters Workflow
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filters Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#page-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#theme-selector-theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme Selector (Theme)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-demographics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Demographics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-cancer-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Cancer Type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Staging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#active-selection-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Selection State
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../patient-details/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Patient Details
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../full-report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#page-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#theme-selector-theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme Selector (Theme)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-demographics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Demographics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-cancer-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Cancer Type
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#filter-set-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Set: Staging
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#active-selection-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Selection State
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="filters-workflow-filters">Filters Workflow (<code>/filters</code>)<a class="headerlink" href="#filters-workflow-filters" title="Permanent link">&para;</a></h1>
+<p>Primary workflow route: <code>/filters</code>.</p>
+<h2 id="page-overview">Page Overview<a class="headerlink" href="#page-overview" title="Permanent link">&para;</a></h2>
+<p><img alt="Filters overview" src="../assets/screenshots/02-filters-overview.png" />
+<em>Figure 02. <code>Patient Cohort Explorer</code> main layout with context panel, theme selector, and filter sets.</em></p>
+<p><img alt="Identified Patients panel" src="../assets/screenshots/03-identified-patients-panel.png" />
+<em>Figure 03. <code>Identified Patients</code> context panel with active cohort summary region.</em></p>
+<h2 id="theme-selector-theme">Theme Selector (<code>Theme</code>)<a class="headerlink" href="#theme-selector-theme" title="Permanent link">&para;</a></h2>
+<p><img alt="Theme selector open" src="../assets/screenshots/04-theme-selector-open.png" />
+<em>Figure 04. Theme menu expanded with <code>Obsidian</code>, <code>Solstice</code>, and <code>Vapor</code> options.</em></p>
+<p><img alt="Theme Obsidian" src="../assets/screenshots/05-theme-obsidian.png" />
+<em>Figure 05. Filters view rendered in <code>Obsidian</code> theme state.</em></p>
+<p><img alt="Theme Solstice" src="../assets/screenshots/06-theme-solstice.png" />
+<em>Figure 06. Filters view rendered in <code>Solstice</code> theme state.</em></p>
+<p><img alt="Theme Vapor" src="../assets/screenshots/07-theme-vapor.png" />
+<em>Figure 07. Filters view rendered in <code>Vapor</code> theme state.</em></p>
+<h2 id="filter-set-demographics">Filter Set: Demographics<a class="headerlink" href="#filter-set-demographics" title="Permanent link">&para;</a></h2>
+<p><img alt="Demographics filter set" src="../assets/screenshots/08-filterset-demographics.png" />
+<em>Figure 08. <code>Demographics</code> filter set section in the primary workflow.</em></p>
+<p><img alt="Age at Dx filter card" src="../assets/screenshots/09-filter-age-at-dx.png" />
+<em>Figure 09. <code>Age at Dx</code> filter card capture.</em></p>
+<p><img alt="Race filter card" src="../assets/screenshots/10-filter-race.png" />
+<em>Figure 10. <code>Race</code> filter card capture.</em></p>
+<p><img alt="Gender filter card" src="../assets/screenshots/11-filter-gender.png" />
+<em>Figure 11. <code>Gender</code> filter card capture.</em></p>
+<p><img alt="Ethnicity filter card" src="../assets/screenshots/12-filter-ethnicity.png" />
+<em>Figure 12. <code>Ethnicity</code> filter card capture.</em></p>
+<h2 id="filter-set-cancer-type">Filter Set: Cancer Type<a class="headerlink" href="#filter-set-cancer-type" title="Permanent link">&para;</a></h2>
+<p><img alt="Cancer Type filter set" src="../assets/screenshots/13-filterset-cancer-type.png" />
+<em>Figure 13. <code>Cancer Type</code> filter set section.</em></p>
+<p><img alt="Cancer filter card" src="../assets/screenshots/14-filter-cancer.png" />
+<em>Figure 14. <code>Cancer</code> filter card capture.</em></p>
+<h2 id="filter-set-staging">Filter Set: Staging<a class="headerlink" href="#filter-set-staging" title="Permanent link">&para;</a></h2>
+<p><img alt="Staging filter set" src="../assets/screenshots/15-filterset-staging.png" />
+<em>Figure 15. <code>Staging</code> filter set section.</em></p>
+<p><img alt="Stage filter card" src="../assets/screenshots/16-filter-stage.png" />
+<em>Figure 16. <code>Stage</code> filter card capture.</em></p>
+<p><img alt="T Stage filter card" src="../assets/screenshots/17-filter-t-stage.png" />
+<em>Figure 17. <code>T Stage</code> filter card capture.</em></p>
+<p><img alt="N Stage filter card" src="../assets/screenshots/18-filter-n-stage.png" />
+<em>Figure 18. <code>N Stage</code> filter card capture.</em></p>
+<p><img alt="M Stage filter card" src="../assets/screenshots/19-filter-m-stage.png" />
+<em>Figure 19. <code>M Stage</code> filter card capture.</em></p>
+<p><img alt="Lymph Involvement filter card" src="../assets/screenshots/20-filter-lymph-involvement.png" />
+<em>Figure 20. <code>Lymph Involvement</code> filter card capture.</em></p>
+<h2 id="active-selection-state">Active Selection State<a class="headerlink" href="#active-selection-state" title="Permanent link">&para;</a></h2>
+<p><img alt="Active filter selection" src="../assets/screenshots/21-filter-selection-active-state.png" />
+<em>Figure 21. Filter UI after selecting at least one value to activate cohort filtering behavior.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

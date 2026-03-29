@@ -24,6 +24,7 @@ const filterCountPathCache = {
   withPatientIds: "",
   withoutPatientIds: "",
 };
+const summaryRequestPromiseCache = new Map();
 
 const joinUrl = (base, path) => {
   const normalizedBase = String(base || "").replace(/\/+$/, "");
@@ -777,9 +778,47 @@ export const fetchDeepPheFilterCount = async ({
   throw new Error("DeepPhe filter count endpoint is unavailable on this server.");
 };
 
+export const fetchDeepPheFilterSummary = async (patientIds = []) => {
+  const normalizedPatientIds = [...new Set(patientIds.map((id) => String(id || "").trim()))].filter(
+    Boolean
+  );
+
+  if (normalizedPatientIds.length === 0) {
+    throw new Error("patientIds must include at least one patient ID");
+  }
+
+  return requestDeepPheEndpoint("/deepphe/filter/summary", "POST", {
+    body: {
+      patient_ids: normalizedPatientIds,
+    },
+  });
+};
+
+const fetchSummaryWithDedup = async (path, { includePatientIds = true } = {}) => {
+  const requestKey = `${path}|includePatientIds=${String(includePatientIds)}`;
+  const cachedPromise = summaryRequestPromiseCache.get(requestKey);
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
+  const requestPromise = requestDeepPheEndpoint(path, "GET", {
+    query: { includePatientIds },
+  }).finally(() => {
+    summaryRequestPromiseCache.delete(requestKey);
+  });
+
+  summaryRequestPromiseCache.set(requestKey, requestPromise);
+  return requestPromise;
+};
+
 // Convenience wrappers for currently known DeepPhe endpoints.
 export const fetchAttributesClasses = async () =>
   requestDeepPheEndpoint("/deepphe/attributes/classes");
+
+export const fetchAttributesSummary = async ({ includePatientIds = true } = {}) =>
+  fetchSummaryWithDedup("/deepphe/attributes/summary", {
+    includePatientIds,
+  });
 
 export const fetchAttributesInstances = async ({
   groupname,
@@ -804,6 +843,11 @@ export const fetchAttributesInstances = async ({
 export const fetchCancersClasses = async () =>
   requestDeepPheEndpoint("/deepphe/cancers/classes");
 
+export const fetchCancersSummary = async ({ includePatientIds = true } = {}) =>
+  fetchSummaryWithDedup("/deepphe/cancers/summary", {
+    includePatientIds,
+  });
+
 export const fetchCancersInstances = async ({
   classUri,
   patientId,
@@ -827,6 +871,11 @@ export const fetchCancersInstances = async ({
 export const fetchConceptsClasses = async () =>
   requestDeepPheEndpoint("/deepphe/concepts/classes");
 
+export const fetchConceptsSummary = async ({ includePatientIds = true } = {}) =>
+  fetchSummaryWithDedup("/deepphe/concepts/summary", {
+    includePatientIds,
+  });
+
 export const fetchConceptsInstances = async ({
   dpheGroup,
   patientId,
@@ -848,6 +897,11 @@ export const fetchConceptsInstances = async ({
 };
 
 export const fetchOmopClasses = async () => requestDeepPheEndpoint("/omop/classes");
+
+export const fetchOmopSummary = async ({ includePatientIds = true } = {}) =>
+  fetchSummaryWithDedup("/omop/summary", {
+    includePatientIds,
+  });
 
 export const fetchOmopInstances = async ({
   attribute,

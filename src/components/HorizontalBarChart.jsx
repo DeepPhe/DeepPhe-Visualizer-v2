@@ -9,6 +9,7 @@ import {
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import SortIcon from "@mui/icons-material/Sort";
+import PatientSummaryTooltip from "./PatientSummaryTooltip";
 
 const SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const VALUE_SORT_MODES = ["value-desc", "value-asc"];
@@ -20,17 +21,16 @@ const SORT_MODE_LABELS = {
 };
 const DEFAULT_SORT_MODE = "value-desc";
 const DEFAULT_TITLE = "Horizontal Bar Chart";
+const NOOP = () => {};
 
 const FALLBACK_CHART_WIDTH = 780;
 const MIN_CHART_WIDTH = 280;
 const LEFT_PADDING = 10;
 const RIGHT_PADDING = 10;
 const COUNT_COLUMN_MIN_WIDTH = 52;
-const MAX_TOOLTIP_PATIENT_IDS = 25;
-const MAX_INLINE_PATIENT_IDS = 5;
-const INLINE_IDS_FONT_SCALE = 0.85;
 const HIERARCHY_ICON_HIT_WIDTH = 14;
 const HIERARCHY_CHILD_INDENT = 14;
+const PATIENT_DOT_RADIUS = 3;
 
 const visuallyHiddenStyles = {
   position: "absolute",
@@ -82,6 +82,9 @@ function formatCountLabel(totalValue, includedValue) {
 
   const safeIncludedValue = Math.max(0, Math.round(numericIncludedValue));
   const includedLabel = safeIncludedValue.toLocaleString();
+  if (safeIncludedValue === safeTotalValue) {
+    return totalLabel;
+  }
   return `${includedLabel}/${totalLabel}`;
 }
 
@@ -109,6 +112,34 @@ function normalizePatientIds(rawValue) {
   return [...new Set(ids)];
 }
 
+function shouldShowPatientDots(row, threshold) {
+  if (!row || threshold <= 0) {
+    return false;
+  }
+
+  return row.value > 0 && row.value <= threshold && row.patientIds.length > 0;
+}
+
+function toDotPatientIds(row) {
+  const safeCount = Math.max(0, Math.round(Number(row?.value) || 0));
+  if (safeCount === 0) {
+    return [];
+  }
+
+  const explicitIds = Array.isArray(row?.patientIds)
+    ? row.patientIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  if (explicitIds.length === 0) {
+    return [];
+  }
+
+  if (explicitIds.length >= safeCount) {
+    return explicitIds.slice(0, safeCount);
+  }
+
+  return explicitIds;
+}
+
 function getSortDimension(mode) {
   return String(mode).startsWith("alpha") ? "instance" : "count";
 }
@@ -129,11 +160,71 @@ function getDefaultSortModeForDimension(dimension, availableModes) {
   return nextMode || availableModes[0];
 }
 
-function compareRowsBySortMode(leftRow, rightRow, sortMode) {
+function normalizeCustomSortToken(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+}
+
+function createCustomSortIndexMap(customSortOrder = []) {
+  if (!Array.isArray(customSortOrder) || customSortOrder.length === 0) {
+    return null;
+  }
+
+  const indexMap = new Map();
+  customSortOrder.forEach((value, index) => {
+    const token = normalizeCustomSortToken(value);
+    if (!token || indexMap.has(token)) {
+      return;
+    }
+    indexMap.set(token, index);
+  });
+
+  return indexMap.size > 0 ? indexMap : null;
+}
+
+function compareWithCustomSortOrder(leftRow, rightRow, sortMode, customSortIndexMap) {
+  if (!customSortIndexMap || !String(sortMode).startsWith("alpha")) {
+    return null;
+  }
+
+  const leftIndex = customSortIndexMap.get(
+    normalizeCustomSortToken(leftRow.displayLabel || leftRow.label)
+  );
+  const rightIndex = customSortIndexMap.get(
+    normalizeCustomSortToken(rightRow.displayLabel || rightRow.label)
+  );
+
+  const leftKnown = Number.isFinite(leftIndex);
+  const rightKnown = Number.isFinite(rightIndex);
+
+  if (leftKnown && rightKnown && leftIndex !== rightIndex) {
+    return sortMode === "alpha-desc" ? rightIndex - leftIndex : leftIndex - rightIndex;
+  }
+
+  if (leftKnown !== rightKnown) {
+    return leftKnown ? -1 : 1;
+  }
+
+  return null;
+}
+
+function compareRowsBySortMode(leftRow, rightRow, sortMode, customSortIndexMap = null) {
   const compareLabel = leftRow.displayLabel.localeCompare(rightRow.displayLabel, undefined, {
     numeric: true,
     sensitivity: "base",
   });
+  const customSortComparison = compareWithCustomSortOrder(
+    leftRow,
+    rightRow,
+    sortMode,
+    customSortIndexMap
+  );
+
+  if (customSortComparison !== null) {
+    return customSortComparison;
+  }
 
   if (sortMode === "value-asc") {
     if (leftRow.value !== rightRow.value) {
@@ -156,7 +247,7 @@ function compareRowsBySortMode(leftRow, rightRow, sortMode) {
   return compareLabel;
 }
 
-function sortHierarchicalRows(rows, sortMode) {
+function sortHierarchicalRows(rows, sortMode, customSortIndexMap = null) {
   const groups = [];
   let currentGroup = null;
 
@@ -181,30 +272,36 @@ function sortHierarchicalRows(rows, sortMode) {
     currentGroup.children.push(row);
   });
 
-  groups.sort((leftGroup, rightGroup) =>
-    compareRowsBySortMode(leftGroup.parent, rightGroup.parent, sortMode)
-  );
+  groups.sort((leftGroup, rightGroup) => {
+    return compareRowsBySortMode(
+      leftGroup.parent,
+      rightGroup.parent,
+      sortMode,
+      customSortIndexMap
+    );
+  });
 
   return groups.flatMap((group) => {
     if (group.children.length === 0) {
       return [group.parent];
     }
 
-    const sortedChildren = [...group.children].sort((leftChild, rightChild) =>
-      compareRowsBySortMode(leftChild, rightChild, sortMode)
-    );
+    const sortedChildren = [...group.children].sort((leftChild, rightChild) => {
+      return compareRowsBySortMode(leftChild, rightChild, sortMode, customSortIndexMap);
+    });
 
     return [group.parent, ...sortedChildren];
   });
 }
 
 export default function HorizontalBarChart({
-  title,
-  data,
-  selectedValues,
+  title = "",
+  data = [],
+  selectedValues = [],
   onSelectionChange,
   onRowToggleExpand,
-  onSortDimensionChange,
+  onSortDimensionChange = NOOP,
+  onSortModeChange,
   height,
   fontScale = 1,
   defaultExpanded = true,
@@ -214,7 +311,9 @@ export default function HorizontalBarChart({
   allowCollapse = true,
   showSortDimensionToggle = false,
   showSortCycleButton = true,
+  customSortOrder = [],
   inlinePatientIdsThreshold = 0,
+  getPatientSummary,
 }) {
   const theme = useTheme();
   const generatedId = useId();
@@ -232,6 +331,16 @@ export default function HorizontalBarChart({
   const [sortAnnouncement, setSortAnnouncement] = useState("");
   const chartContainerRef = useRef(null);
   const [chartWidth, setChartWidth] = useState(FALLBACK_CHART_WIDTH);
+  const [hoveredRowIndex, setHoveredRowIndex] = useState(null);
+  const [focusedRowIndex, setFocusedRowIndex] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const hoverRequestIdRef = useRef(0);
+  const [summaryTooltipState, setSummaryTooltipState] = useState({
+    open: false,
+    anchorEl: null,
+    summaryData: null,
+    pinned: false,
+  });
   const isChartExpanded = allowCollapse ? isExpanded : true;
   const sortDimension = getSortDimension(sortMode);
   const sortModesForCurrentDimension = getSortModesForDimension(
@@ -284,6 +393,26 @@ export default function HorizontalBarChart({
     }
     setSortMode(availableSortModes[0]);
   }, [availableSortModes, sortMode]);
+  useEffect(() => {
+    if (typeof onSortModeChange !== "function") {
+      return;
+    }
+    onSortModeChange(sortMode);
+  }, [onSortModeChange, sortMode]);
+
+  const clearHoverTimer = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  useEffect(
+    () => () => {
+      clearHoverTimer();
+    },
+    []
+  );
 
   const normalizedData = useMemo(() => {
     if (!Array.isArray(data)) {
@@ -340,18 +469,24 @@ export default function HorizontalBarChart({
   const selectedSet = useMemo(() => new Set(safeSelectedValues), [safeSelectedValues]);
   const hasSelections = selectedSet.size > 0;
   const isInteractive = typeof onSelectionChange === "function";
+  const customSortIndexMap = useMemo(
+    () => createCustomSortIndexMap(customSortOrder),
+    [customSortOrder]
+  );
 
   const sortedData = useMemo(() => {
     const rows = [...normalizedData];
 
     if (hasHierarchyRows) {
-      return sortHierarchicalRows(rows, sortMode);
+      return sortHierarchicalRows(rows, sortMode, customSortIndexMap);
     }
 
-    rows.sort((leftRow, rightRow) => compareRowsBySortMode(leftRow, rightRow, sortMode));
+    rows.sort((leftRow, rightRow) =>
+      compareRowsBySortMode(leftRow, rightRow, sortMode, customSortIndexMap)
+    );
 
     return rows;
-  }, [hasHierarchyRows, normalizedData, sortMode]);
+  }, [customSortIndexMap, hasHierarchyRows, normalizedData, sortMode]);
 
   const maxValue = useMemo(
     () => sortedData.reduce((currentMax, row) => Math.max(currentMax, row.value), 0),
@@ -364,32 +499,16 @@ export default function HorizontalBarChart({
   const maxCountLabelLength = useMemo(
     () =>
       sortedData.reduce(
-        (currentMax, row) => {
-          const countLen = formatCountLabel(row.value, row.includedValue).length;
-          // If this row would show inline patient IDs, account for their width
-          if (
-            inlinePatientIdsThreshold > 0 &&
-            row.value > 0 &&
-            row.value < inlinePatientIdsThreshold &&
-            row.patientIds.length > 0
-          ) {
-            const ids = row.patientIds.slice(0, MAX_INLINE_PATIENT_IDS);
-            const idsText = ids.join(", ") +
-              (row.patientIds.length > MAX_INLINE_PATIENT_IDS
-                ? ` +${row.patientIds.length - MAX_INLINE_PATIENT_IDS}`
-                : "");
-            return Math.max(currentMax, idsText.length);
-          }
-          return Math.max(currentMax, countLen);
-        },
+        (currentMax, row) => Math.max(currentMax, formatCountLabel(row.value, row.includedValue).length),
         0
       ),
-    [inlinePatientIdsThreshold, sortedData]
+    [sortedData]
   );
 
   const textFontSize = Math.max(10, Math.round(12 * safeFontScale));
   const rowHeight = Math.min(34, Math.max(28, Math.round(30 * safeFontScale)));
   const barHeight = Math.min(22, Math.max(16, Math.round(18 * safeFontScale)));
+  const dotRadius = Math.max(2, Math.round(PATIENT_DOT_RADIUS * safeFontScale));
   const countColumnWidth = Math.max(
     COUNT_COLUMN_MIN_WIDTH,
     Math.ceil(maxCountLabelLength * textFontSize * 0.62) + 12
@@ -435,13 +554,17 @@ export default function HorizontalBarChart({
   const custom = theme.custom || {};
   const barTrackColor = custom.barTrack || "transparent";
   const barFillColor = custom.barFill || theme.palette.primary.main;
-  const barActiveColor = custom.barActive || theme.palette.primary.dark;
+  const barActiveColor = custom.barActive || theme.palette.primary.main;
   const barMinWidth = parseInt(custom.barMinWidth, 10) || 3;
   const selectedLabelWeight = custom.selectedLabelWeight || 600;
   const selectedCountColor = custom.selectedCountColor || theme.palette.primary.light;
   const countFontFamily = custom.countFontFamily || "inherit";
   const categoryLabelColor = custom.categoryLabelColor || theme.palette.text.primary;
   const focusRing = custom.focusRing || theme.palette.primary.main;
+  const focusRingWidth = Number.parseFloat(custom.focusRingWidth) || 2;
+  const rowHoverFill = custom.rowHoverBg || (
+    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"
+  );
   const sortIconActiveColor = custom.barActive || theme.palette.primary.main;
   const sortIconInactiveColor = theme.palette.text.disabled || theme.palette.text.secondary;
 
@@ -522,6 +645,76 @@ export default function HorizontalBarChart({
 
     onRowToggleExpand(row.label, !row.isExpandedParent, row);
   };
+  const openPatientSummary = (anchorNode, patientId, delayMs = 0, pinned = false) => {
+    if (typeof getPatientSummary !== "function") {
+      return;
+    }
+
+    clearHoverTimer();
+    const requestId = hoverRequestIdRef.current + 1;
+    hoverRequestIdRef.current = requestId;
+
+    const run = async () => {
+      try {
+        const summary = await getPatientSummary(patientId);
+        if (hoverRequestIdRef.current !== requestId) {
+          return;
+        }
+        setSummaryTooltipState({
+          open: true,
+          anchorEl: anchorNode,
+          summaryData: summary || null,
+          pinned,
+        });
+      } catch {
+        if (hoverRequestIdRef.current !== requestId) {
+          return;
+        }
+        setSummaryTooltipState({
+          open: false,
+          anchorEl: null,
+          summaryData: null,
+          pinned: false,
+        });
+      }
+    };
+
+    if (delayMs > 0) {
+      hoverTimerRef.current = setTimeout(run, delayMs);
+      return;
+    }
+
+    run();
+  };
+  const handlePatientDotClick = (event, patientId) => {
+    openPatientSummary(event.currentTarget, patientId, 0, true);
+  };
+  const handlePatientDotMouseEnter = (event, patientId) => {
+    openPatientSummary(event.currentTarget, patientId, 200, false);
+  };
+  const handlePatientDotMouseLeave = () => {
+    hoverRequestIdRef.current += 1;
+    clearHoverTimer();
+    setSummaryTooltipState((previousState) => ({
+      ...(previousState.pinned
+        ? previousState
+        : {
+            ...previousState,
+            open: false,
+            anchorEl: null,
+          }),
+    }));
+  };
+  const handleSummaryTooltipClose = () => {
+    hoverRequestIdRef.current += 1;
+    clearHoverTimer();
+    setSummaryTooltipState((previousState) => ({
+      ...previousState,
+      open: false,
+      anchorEl: null,
+      pinned: false,
+    }));
+  };
 
   return (
     <Box sx={{ width: "100%" }}>
@@ -556,7 +749,7 @@ export default function HorizontalBarChart({
                   minHeight: 32,
                   font: "inherit",
                   "&:focus-visible": {
-                    outline: `2px solid ${theme.palette.primary.main}`,
+                    outline: `${focusRingWidth}px solid ${focusRing}`,
                     outlineOffset: 2,
                     borderRadius: 1,
                   },
@@ -683,7 +876,7 @@ export default function HorizontalBarChart({
                       : theme.palette.text.primary,
                 },
                 "&:focus-visible": {
-                  outline: `2px solid ${focusRing}`,
+                  outline: `${focusRingWidth}px solid ${focusRing}`,
                   outlineOffset: 1,
                 },
               }}
@@ -739,7 +932,7 @@ export default function HorizontalBarChart({
                       : theme.palette.text.primary,
                 },
                 "&:focus-visible": {
-                  outline: `2px solid ${focusRing}`,
+                  outline: `${focusRingWidth}px solid ${focusRing}`,
                   outlineOffset: 1,
                 },
               }}
@@ -774,7 +967,7 @@ export default function HorizontalBarChart({
             }}
           >
             <svg
-              role="img"
+              role="group"
               aria-label={chartAriaLabel}
               width={chartWidth}
               height={calculatedHeight}
@@ -791,29 +984,18 @@ export default function HorizontalBarChart({
                 const isSelected = selectedSet.has(row.label);
                 const isDisabled = row.value === 0 && isInteractive;
 
-                // Inline patient IDs: show IDs instead of count when below threshold
-                const showInlineIds =
-                  inlinePatientIdsThreshold > 0 &&
-                  row.value > 0 &&
-                  row.value < inlinePatientIdsThreshold &&
-                  row.patientIds.length > 0;
-                const inlineIds = showInlineIds
-                  ? row.patientIds.slice(0, MAX_INLINE_PATIENT_IDS)
-                  : [];
-                const inlineIdsText = showInlineIds
-                  ? inlineIds.join(", ") +
-                    (row.patientIds.length > MAX_INLINE_PATIENT_IDS
-                      ? ` +${row.patientIds.length - MAX_INLINE_PATIENT_IDS}`
-                      : "")
-                  : "";
-                const countColumnText = showInlineIds ? inlineIdsText : valueLabel;
+                const showPatientDots = shouldShowPatientDots(row, inlinePatientIdsThreshold);
+                const dotPatientIds = showPatientDots ? toDotPatientIds(row) : [];
+                const dotTrackStartX = barStartX + dotRadius + 1;
+                const dotTrackEndX = barStartX + barMaxWidth - dotRadius - 1;
+                const dotTrackRange = Math.max(0, dotTrackEndX - dotTrackStartX);
+                const dotStep =
+                  dotPatientIds.length > 1 ? dotTrackRange / (dotPatientIds.length - 1) : 0;
                 const canToggleExpand =
                   row.isExpandable && !isDisabled && typeof onRowToggleExpand === "function";
-                const tooltipPatientIds = row.patientIds.slice(0, MAX_TOOLTIP_PATIENT_IDS);
-                const tooltipText =
-                  tooltipPatientIds.length === 0
-                    ? `${row.displayLabel}: ${valueLabel}`
-                    : `${row.displayLabel}: ${valueLabel}\npatient_ids (first ${tooltipPatientIds.length}): ${tooltipPatientIds.join(", ")}`;
+                const tooltipText = showPatientDots
+                  ? `${row.displayLabel}: ${valueLabel}. Hover or click a patient dot to view the summary.`
+                  : `${row.displayLabel}: ${valueLabel}`;
                 const hierarchyBaseOffset = hasHierarchyRows ? HIERARCHY_ICON_HIT_WIDTH : 0;
                 const labelX =
                   LEFT_PADDING + hierarchyBaseOffset + (row.isChild ? HIERARCHY_CHILD_INDENT : 0);
@@ -830,6 +1012,10 @@ export default function HorizontalBarChart({
                 const labelWeight = isSelected ? selectedLabelWeight : 400;
                 const countFill = isSelected ? selectedCountColor : theme.palette.text.secondary;
                 const disabledOpacity = isDisabled ? 0.35 : 1;
+                const isHovered =
+                  hoveredRowIndex === index && !isDisabled && !isSelected;
+                const isFocused =
+                  focusedRowIndex === index && isInteractive && !isDisabled;
 
                 return (
                   <g
@@ -847,6 +1033,17 @@ export default function HorizontalBarChart({
                         fill={stripeFill}
                       />
                     ) : null}
+                    <rect
+                      x={0}
+                      y={rowTop}
+                      width={chartWidth}
+                      height={rowHeight}
+                      fill={rowHoverFill}
+                      opacity={isHovered ? 1 : 0}
+                      pointerEvents="none"
+                      data-hover-highlight="true"
+                      style={{ transition: "opacity 120ms ease" }}
+                    />
                     {isSelected ? (
                       <rect
                         x={0}
@@ -865,6 +1062,20 @@ export default function HorizontalBarChart({
                         width={3}
                         height={rowHeight}
                         fill={barActiveColor}
+                      />
+                    ) : null}
+                    {isFocused ? (
+                      <rect
+                        x={1}
+                        y={rowTop + 1}
+                        width={Math.max(0, chartWidth - 2)}
+                        height={Math.max(0, rowHeight - 2)}
+                        rx={3}
+                        fill="none"
+                        stroke={focusRing}
+                        strokeWidth={2}
+                        pointerEvents="none"
+                        data-focus-ring="true"
                       />
                     ) : null}
 
@@ -899,30 +1110,32 @@ export default function HorizontalBarChart({
                     />
 
                     {/* Bar fill */}
-                    <rect
-                      x={barStartX}
-                      y={barY}
-                      width={barWidth}
-                      height={barHeight}
-                      rx={2}
-                      fill={rowFillColor}
-                      fillOpacity={rowFillOpacity}
-                    >
-                      <title>{tooltipText}</title>
-                    </rect>
+                    {!showPatientDots ? (
+                      <rect
+                        x={barStartX}
+                        y={barY}
+                        width={barWidth}
+                        height={barHeight}
+                        rx={2}
+                        fill={rowFillColor}
+                        fillOpacity={rowFillOpacity}
+                      >
+                        <title>{tooltipText}</title>
+                      </rect>
+                    ) : null}
 
                     <text
                       x={chartWidth - RIGHT_PADDING}
                       y={rowCenterY}
                       dominantBaseline="middle"
                       textAnchor="end"
-                      fontSize={showInlineIds ? Math.round(textFontSize * INLINE_IDS_FONT_SCALE) : textFontSize}
+                      fontSize={textFontSize}
                       fontFamily={countFontFamily}
                       fill={countFill}
                       fontWeight={isSelected ? 500 : 400}
                       style={{ fontVariantNumeric: "tabular-nums" }}
                     >
-                      {countColumnText}
+                      {valueLabel}
                     </text>
 
                     {/* Interactive overlay */}
@@ -942,6 +1155,18 @@ export default function HorizontalBarChart({
                       aria-disabled={isDisabled ? "true" : undefined}
                       tabIndex={isInteractive && !isDisabled ? 0 : undefined}
                       style={{ cursor: isInteractive && !isDisabled ? "pointer" : "default" }}
+                      onMouseEnter={
+                        isInteractive && !isDisabled
+                          ? () => {
+                              setHoveredRowIndex(index);
+                            }
+                          : undefined
+                      }
+                      onMouseLeave={() => {
+                        setHoveredRowIndex((previousIndex) =>
+                          previousIndex === index ? null : previousIndex
+                        );
+                      }}
                       onClick={isInteractive && !isDisabled ? () => handleToggleSelection(row.label) : undefined}
                       onKeyDown={
                         isInteractive && !isDisabled
@@ -955,25 +1180,65 @@ export default function HorizontalBarChart({
                       }
                       onFocus={
                         isInteractive
-                          ? (event) => {
-                              const el = event.target;
-                              el.setAttribute("stroke", focusRing);
-                              el.setAttribute("stroke-width", "2");
+                          ? () => {
+                              setFocusedRowIndex(index);
                             }
                           : undefined
                       }
                       onBlur={
                         isInteractive
-                          ? (event) => {
-                              const el = event.target;
-                              el.removeAttribute("stroke");
-                              el.removeAttribute("stroke-width");
+                          ? () => {
+                              setFocusedRowIndex((previousIndex) =>
+                                previousIndex === index ? null : previousIndex
+                              );
                             }
                           : undefined
                       }
                     >
                       <title>{tooltipText}</title>
                     </rect>
+                    {showPatientDots
+                      ? dotPatientIds.map((patientId, dotIndex) => {
+                          const dotCenterX =
+                            dotPatientIds.length === 1
+                              ? barStartX + barMaxWidth / 2
+                              : dotTrackStartX + dotStep * dotIndex;
+                          const patientDotLabel = `Patient ${patientId}. Hover or click to view summary.`;
+
+                          return (
+                            <circle
+                              key={`${row.label}-${patientId}-${dotIndex}`}
+                              cx={dotCenterX}
+                              cy={rowCenterY}
+                              r={dotRadius}
+                              fill={rowFillColor}
+                              fillOpacity={rowFillOpacity}
+                              data-patient-dot="true"
+                              data-patient-id={patientId}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={patientDotLabel}
+                              style={{ cursor: "pointer" }}
+                              onMouseEnter={(event) => handlePatientDotMouseEnter(event, patientId)}
+                              onMouseLeave={handlePatientDotMouseLeave}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handlePatientDotClick(event, patientId);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handlePatientDotClick(event, patientId);
+                                }
+                              }}
+                              onBlur={handlePatientDotMouseLeave}
+                            >
+                              <title>{patientDotLabel}</title>
+                            </circle>
+                          );
+                        })
+                      : null}
                     {row.isExpandable ? (
                       <rect
                         x={LEFT_PADDING - 2}
@@ -1017,7 +1282,7 @@ export default function HorizontalBarChart({
                             ? (event) => {
                                 const el = event.target;
                                 el.setAttribute("stroke", focusRing);
-                                el.setAttribute("stroke-width", "2");
+                                el.setAttribute("stroke-width", String(focusRingWidth));
                                 el.setAttribute("rx", "4");
                               }
                             : undefined
@@ -1040,6 +1305,12 @@ export default function HorizontalBarChart({
           </Box>
         )}
       </Box>
+      <PatientSummaryTooltip
+        open={summaryTooltipState.open}
+        anchorEl={summaryTooltipState.anchorEl}
+        summaryData={summaryTooltipState.summaryData}
+        onClose={handleSummaryTooltipClose}
+      />
     </Box>
   );
 }
@@ -1063,6 +1334,7 @@ HorizontalBarChart.propTypes = {
   onSelectionChange: PropTypes.func,
   onRowToggleExpand: PropTypes.func,
   onSortDimensionChange: PropTypes.func,
+  onSortModeChange: PropTypes.func,
   height: PropTypes.number,
   fontScale: PropTypes.number,
   defaultExpanded: PropTypes.bool,
@@ -1072,24 +1344,7 @@ HorizontalBarChart.propTypes = {
   allowCollapse: PropTypes.bool,
   showSortDimensionToggle: PropTypes.bool,
   showSortCycleButton: PropTypes.bool,
+  customSortOrder: PropTypes.arrayOf(PropTypes.string),
   inlinePatientIdsThreshold: PropTypes.number,
-};
-
-HorizontalBarChart.defaultProps = {
-  title: "",
-  data: [],
-  selectedValues: [],
-  onSelectionChange: undefined,
-  onRowToggleExpand: undefined,
-  onSortDimensionChange: () => {},
-  height: undefined,
-  fontScale: 1,
-  defaultExpanded: true,
-  defaultSort: DEFAULT_SORT_MODE,
-  sortValuesOnly: false,
-  showTitle: true,
-  allowCollapse: true,
-  showSortDimensionToggle: false,
-  showSortCycleButton: true,
-  inlinePatientIdsThreshold: 0,
+  getPatientSummary: PropTypes.func,
 };

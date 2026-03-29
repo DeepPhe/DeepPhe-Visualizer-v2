@@ -115,6 +115,20 @@ function safeParse(ruleSet, rawLabel) {
   return toParsedResult(parsed, rawLabel);
 }
 
+function safeParseWithDisplayFallback(ruleSet, rawLabel, displayLabel) {
+  const fromRaw = safeParse(ruleSet, rawLabel);
+  if (fromRaw) {
+    return fromRaw;
+  }
+
+  const normalizedDisplay = normalizeLabel(displayLabel);
+  if (!normalizedDisplay || normalizedDisplay === normalizeLabel(rawLabel)) {
+    return null;
+  }
+
+  return safeParse(ruleSet, normalizedDisplay);
+}
+
 function compareParsed(ruleSet, leftParsed, rightParsed, leftFallback, rightFallback) {
   const leftSortKey =
     leftParsed && typeof ruleSet.sortKey === "function"
@@ -305,6 +319,117 @@ function createStageRuleSet(axis) {
     },
   };
 }
+
+const STAGE_ORDER = ["0", "I", "II", "III", "IV", "V"];
+
+function getOverallStageParentRank(parent) {
+  const compactParent = String(parent || "")
+    .replace(/^stage\s*/i, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+
+  if (compactParent === "IS") {
+    return 1;
+  }
+
+  const knownIndex = STAGE_ORDER.indexOf(compactParent);
+  if (knownIndex >= 0) {
+    return knownIndex;
+  }
+
+  const romanMatch = compactParent.match(/^[IVX]+$/i);
+  if (romanMatch) {
+    return STAGE_ORDER.length + compactParent.length;
+  }
+
+  const numericMatch = compactParent.match(/^\d+$/);
+  if (numericMatch) {
+    return STAGE_ORDER.length + Number.parseInt(compactParent, 10);
+  }
+
+  return STAGE_ORDER.length + 99;
+}
+
+function normalizeOverallStageToken(rawLabel) {
+  return normalizeLabel(rawLabel)
+    .replace(/^stage[\s_-]*/i, "")
+    .replace(/[\s_-]+/g, "")
+    .trim();
+}
+
+const overallStageRuleSet = {
+  parse(rawLabel) {
+    const raw = normalizeLabel(rawLabel);
+    if (!raw) {
+      return null;
+    }
+
+    const token = normalizeOverallStageToken(raw);
+    if (!token) {
+      return null;
+    }
+
+    if (/^is$/i.test(token)) {
+      return {
+        axis: "Stage",
+        prefix: "",
+        parent: "Stage Is",
+        child: null,
+        childType: "nos",
+        childSortToken: "",
+        normalized: "stageis",
+        raw,
+      };
+    }
+
+    const match = token.match(/^([0-9]+|[IVX]+)([A-D]?)(\d{0,2})$/i);
+    if (!match) {
+      return null;
+    }
+
+    const base = String(match[1] || "").toUpperCase();
+    const letter = String(match[2] || "").toUpperCase();
+    const numericSuffix = String(match[3] || "");
+    const child = `${letter}${numericSuffix}` || null;
+
+    return {
+      axis: "Stage",
+      prefix: "",
+      parent: `Stage ${base}`,
+      child,
+      childType: child ? "child" : "nos",
+      childSortToken: child ? child.toLowerCase() : "",
+      normalized: `stage${base.toLowerCase()}${child ? child.toLowerCase() : ""}`,
+      raw,
+    };
+  },
+  sortKey(parsed) {
+    const parentRank = getOverallStageParentRank(parsed.parent);
+    const childRank = parsed.child ? 1 : 0;
+    const childToken = parsed.childSortToken || "";
+
+    return [
+      padRank(parentRank, 3),
+      padRank(childRank, 3),
+      childToken,
+      String(parsed.raw || "").toLowerCase(),
+    ].join(":");
+  },
+  displayLabel(parsed) {
+    if (!parsed) {
+      return "";
+    }
+
+    if (!parsed.child) {
+      return parsed.parent;
+    }
+
+    return `${parsed.parent}${parsed.child}`;
+  },
+  parentDisplayLabel(parentKey) {
+    return normalizeLabel(parentKey);
+  },
+};
 
 function parseGradeChildToken(rawToken) {
   const token = normalizeLabel(rawToken).replace(/^[_-]+/, "");
@@ -601,7 +726,7 @@ export function buildRolledUpChartData(rows, className) {
   const passthroughRows = [];
 
   normalizedRows.forEach((row) => {
-    const parsed = safeParse(ruleSet, row.label);
+    const parsed = safeParseWithDisplayFallback(ruleSet, row.label, row.displayLabel);
     if (!parsed?.parent) {
       passthroughRows.push({
         ...row,
@@ -690,7 +815,7 @@ export function buildRollupInstanceMap(rows, className) {
   const instanceMap = new Map();
 
   normalizedRows.forEach((row) => {
-    const parsed = safeParse(ruleSet, row.label);
+    const parsed = safeParseWithDisplayFallback(ruleSet, row.label, row.displayLabel);
     if (!parsed?.parent) {
       return;
     }
@@ -764,7 +889,7 @@ export function buildChildChartData(rows, className, parentKey) {
 
   return normalizedRows
     .map((row) => {
-      const parsed = safeParse(ruleSet, row.label);
+      const parsed = safeParseWithDisplayFallback(ruleSet, row.label, row.displayLabel);
       if (!parsed || parsed.parent !== normalizedParentKey) {
         return null;
       }
@@ -803,7 +928,7 @@ export function isExpandable(rows, className, parentKey) {
   const childLabels = new Set();
 
   normalizedRows.forEach((row) => {
-    const parsed = safeParse(ruleSet, row.label);
+    const parsed = safeParseWithDisplayFallback(ruleSet, row.label, row.displayLabel);
     if (parsed?.parent === normalizedParentKey) {
       childLabels.add(row.label);
     }
@@ -815,6 +940,6 @@ export function isExpandable(rows, className, parentKey) {
 registerRollupRules("T Stage", createStageRuleSet("T"));
 registerRollupRules("N Stage", createStageRuleSet("N"));
 registerRollupRules("M Stage", createStageRuleSet("M"));
+registerRollupRules("Stage", overallStageRuleSet);
 registerRollupRules("Grade_Numeric", gradeRuleSet);
 registerRollupRules("Behavior", behaviorRuleSet);
-

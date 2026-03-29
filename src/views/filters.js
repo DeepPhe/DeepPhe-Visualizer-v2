@@ -1,12 +1,12 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
-  Checkbox,
   CssBaseline,
-  FormControlLabel,
+  FormControl,
   GlobalStyles,
   IconButton,
+  InputLabel,
   Link as MuiLink,
   MenuItem,
   Paper,
@@ -15,21 +15,44 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { ThemeProvider } from "@mui/material/styles";
+import {
+  ThemeProvider,
+  alpha,
+  createTheme,
+  darken,
+  getContrastRatio,
+  lighten,
+  useTheme,
+} from "@mui/material/styles";
+import AddIcon from "@mui/icons-material/Add";
+import ContrastIcon from "@mui/icons-material/Contrast";
+import MotionPhotosOffIcon from "@mui/icons-material/MotionPhotosOff";
+import RemoveIcon from "@mui/icons-material/Remove";
+import TextFieldsIcon from "@mui/icons-material/TextFields";
 import TuneIcon from "@mui/icons-material/Tune";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink } from "react-router-dom";
-import { getClasses as getOmopClasses, getInstances as getOmopInstances } from "../controllers/omap";
+import { getSummary as getOmopSummary } from "../controllers/omap";
+import { getSummary as getAttributesSummary } from "../controllers/attributes";
 import {
-  getClasses as getAttributeClasses,
-  getInstances as getAttributeInstances,
-} from "../controllers/attributes";
-import { fetchDeepPheFilterCount } from "../clients/deepphe-data-api";
+  fetchDeepPheFilterCount,
+  fetchDeepPheFilterSummary,
+  fetchPatientDocuments,
+} from "../clients/deepphe-data-api";
 import HorizontalBarChart from "../components/HorizontalBarChart";
-import { useDataLoader } from "../hooks/useDataLoader";
-import { THEME_OPTIONS, getThemeByKey } from "../themes";
+import PatientGrid from "../components/PatientGrid";
+import AccessibilityBadge from "../components/AccessibilityBadge";
+import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
+import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
 import { getAgeDecileLabel } from "../utils/dataProcessing";
+import { toDisplayName } from "../utils/displayNames";
+import {
+  FILTER_ENTRY_BY_TYPE_CLASS,
+  MIN_ROWS_FOR_DISTRIBUTION,
+  resolveFilterSetsWithExtras,
+} from "./filterSets";
 import {
   buildChildChartData,
   buildRollupInstanceMap,
@@ -40,18 +63,11 @@ import {
 } from "./rollup";
 
 const SLOW_QUERY_THRESHOLD_MS = 100;
-const AUTO_SHOW_PATIENT_IDS_THRESHOLD = 1000;
+const PATIENT_GRID_PAGE_SIZE = 20;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
-const MAX_RENDERED_PATIENT_IDS = 1000;
 const AGE_AT_DX_CLASS = "AGE_AT_DX";
 const AGE_SELECTION_MODE = {
   DECILE: "decile",
-};
-const OMOP_CLASS_PREFERRED_ORDER = ["AGE_AT_DX", "RACE", "GENDER", "ETHNICITY", "CANCER"];
-const OMOP_CANCER_DISPLAY_NAME_MAP = {
-  B: "Breast",
-  M: "Melanoma",
-  O: "Ovarian Cancer",
 };
 const OMOP_CLASS_DISPLAY_NAME_MAP = {
   AGE_AT_DX: "Age at Dx",
@@ -60,7 +76,6 @@ const OMOP_CLASS_DISPLAY_NAME_MAP = {
   RACE: "Race",
   CANCER: "Cancer",
 };
-const ATTRIBUTE_FILTER_CLASS_ORDER = ["T Stage", "N Stage", "M Stage", "Grade_Numeric", "Behavior"];
 const CARD_HEIGHT_MODE = {
   NORMALIZE: "normalize",
   FIT: "fit",
@@ -69,8 +84,56 @@ const NORMALIZED_CARD_MIN_HEIGHT = 180;
 const NORMALIZED_CARD_MAX_HEIGHT = 320;
 const NORMALIZED_CHART_HEIGHT_OFFSET = 88;
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
+const CHART_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
+const DEFAULT_CHART_SORT_MODE = "value-desc";
 
 const THEME_STORAGE_KEY = "filterPageTheme";
+const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
+const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
+const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
+const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
+const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+const FONT_FAMILY_OPTIONS = [
+  { key: "theme-default", label: "Theme Default", stack: null },
+  {
+    key: "system-sans",
+    label: "System Sans",
+    stack: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  },
+  { key: "inter", label: "Inter", stack: '"Inter", sans-serif' },
+  { key: "monospace", label: "Monospace", stack: MONOSPACE_STACK },
+  { key: "serif", label: "Serif", stack: 'Georgia, "Times New Roman", Times, serif' },
+  { key: "open-dyslexic", label: "OpenDyslexic", stack: '"OpenDyslexic", sans-serif' },
+];
+const OPEN_DYSLEXIC_FONT_LINK_ID = "open-dyslexic-font-link";
+const OPEN_DYSLEXIC_FONT_LINK_HREF = "https://fonts.cdnfonts.com/css/opendyslexic";
+const CUSTOM_SIZE_KEYS_TO_SCALE = [
+  "barActiveAccent",
+  "barMinWidth",
+  "barHeight",
+  "focusRingOffset",
+  "chipInactiveBorder",
+  "chipRadius",
+  "iconHoverRadius",
+  "cardPadding",
+  "headerLetterSpacing",
+  "headerFontSize",
+  "patientCountSize",
+];
+
+const SHOULD_LOG_FILTERS_PERF = process.env.NODE_ENV !== "production";
+const CANCER_TYPE_MAP = { B: "Breast", M: "Melanoma", O: "Ovarian Cancer" };
+const GENDER_MAP = { M: "Male", F: "Female", U: "Unknown" };
+const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
+  "name",
+  "type",
+  "date",
+  "episode",
+  "text",
+  "mentions",
+  "mentionRelations",
+  "sections",
+];
 
 function getInitialThemeKey() {
   try {
@@ -87,6 +150,40 @@ function getInitialThemeKey() {
   return "solstice";
 }
 
+function getInitialFontScale() {
+  try {
+    const stored = Number.parseFloat(localStorage.getItem(FONT_SCALE_STORAGE_KEY) || "");
+    const hasMatch = FONT_SCALE_OPTIONS.some((scale) => Math.abs(scale - stored) < 0.001);
+    if (hasMatch) {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return 1;
+}
+
+function getInitialFontFamilyKey() {
+  try {
+    const stored = localStorage.getItem(FONT_FAMILY_STORAGE_KEY);
+    if (stored && FONT_FAMILY_OPTIONS.some((option) => option.key === stored)) {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return "theme-default";
+}
+
+function getInitialBooleanPref(storageKey) {
+  try {
+    return localStorage.getItem(storageKey) === "true";
+  } catch {
+    // localStorage unavailable
+  }
+  return false;
+}
+
 const REDUCED_MOTION_STYLES = (
   <GlobalStyles
     styles={{
@@ -100,11 +197,164 @@ const REDUCED_MOTION_STYLES = (
   />
 );
 
+const TOGGLED_REDUCED_MOTION_STYLES = (
+  <GlobalStyles
+    styles={{
+      "*, *::before, *::after": {
+        transitionDuration: "0.01ms !important",
+        animationDuration: "0.01ms !important",
+      },
+    }}
+  />
+);
+
+function findClosestFontScaleIndex(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return FONT_SCALE_OPTIONS.indexOf(1);
+  }
+
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  FONT_SCALE_OPTIONS.forEach((option, index) => {
+    const distance = Math.abs(option - numericValue);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  });
+  return bestIndex;
+}
+
+function scaleCssLengthValue(value, multiplier) {
+  if (!Number.isFinite(multiplier) || multiplier === 1) {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Math.round(value * multiplier * 1000) / 1000;
+  }
+  if (typeof value !== "string") {
+    return value;
+  }
+  return value.replace(/(-?\d*\.?\d+)(px|rem|em)\b/g, (_, rawNumber, unit) => {
+    const scaled = Math.round(Number.parseFloat(rawNumber) * multiplier * 1000) / 1000;
+    return `${scaled}${unit}`;
+  });
+}
+
+function getScaledCustomThemeValues(custom = {}, multiplier = 1) {
+  if (!custom || !Number.isFinite(multiplier) || multiplier === 1) {
+    return custom;
+  }
+
+  const nextCustom = { ...custom };
+  CUSTOM_SIZE_KEYS_TO_SCALE.forEach((key) => {
+    if (nextCustom[key] !== undefined) {
+      nextCustom[key] = scaleCssLengthValue(nextCustom[key], multiplier);
+    }
+  });
+  return nextCustom;
+}
+
+function getSolidPaperColor(theme, isDark) {
+  const paperColor = theme?.palette?.background?.paper;
+  if (typeof paperColor === "string") {
+    const normalizedColor = paperColor.trim().toLowerCase();
+    const isTranslucent =
+      normalizedColor.includes("rgba(") || normalizedColor.includes("hsla(") || normalizedColor === "transparent";
+    if (!isTranslucent) {
+      return paperColor;
+    }
+  }
+  return isDark ? "#1E1E2E" : "#FFFFFF";
+}
+
+function getAAASecondaryTextColor(backgroundDefault, isDark) {
+  const fallbackBackground = isDark ? "#101219" : "#FFFFFF";
+  const background = backgroundDefault || fallbackBackground;
+  let color = isDark ? "#D0D8E0" : "#3A3A3A";
+
+  for (let index = 0; index < 10; index += 1) {
+    if (getContrastRatio(color, background) >= 7) {
+      return color;
+    }
+    color = isDark ? lighten(color, 0.08) : darken(color, 0.08);
+  }
+  return color;
+}
+
+function applyHighContrast(theme) {
+  const isDark = theme.palette.mode === "dark";
+  const backgroundDefault = theme.palette.background.default;
+  const boostedTextSecondary = getAAASecondaryTextColor(backgroundDefault, isDark);
+  const solidDivider = isDark ? "#3A3A4A" : "#5A5A5A";
+  const solidPaperBorderColor = isDark ? "#4A4A5A" : "#444444";
+  const solidPaperBackground = getSolidPaperColor(theme, isDark);
+  const custom = theme.custom || {};
+  const focusRingColor = custom.focusRing || theme.palette.primary.light || theme.palette.primary.main;
+
+  return createTheme(theme, {
+    palette: {
+      background: {
+        paper: solidPaperBackground,
+      },
+      text: {
+        secondary: boostedTextSecondary,
+      },
+      divider: solidDivider,
+    },
+    components: {
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            backgroundColor: solidPaperBackground,
+            backgroundImage: "none",
+            backdropFilter: "none",
+            WebkitBackdropFilter: "none",
+            border: `2px solid ${solidPaperBorderColor}`,
+            boxShadow: "none",
+          },
+        },
+      },
+      MuiButtonBase: {
+        styleOverrides: {
+          root: {
+            "&:focus-visible": {
+              outline: `3px solid ${focusRingColor}`,
+              outlineOffset: custom.focusRingOffset || "2px",
+            },
+          },
+        },
+      },
+      MuiIconButton: {
+        styleOverrides: {
+          root: {
+            "&:focus-visible": {
+              outline: `3px solid ${focusRingColor}`,
+              outlineOffset: custom.focusRingOffset || "2px",
+            },
+          },
+        },
+      },
+    },
+    custom: {
+      ...custom,
+      focusRingWidth: 3,
+      barTrack: isDark ? "#252839" : "#D0D0D0",
+      barActiveGlow: "none",
+      chipActiveGlow: "none",
+      chipInactiveBorder: `2px solid ${solidPaperBorderColor}`,
+      cardBeforePseudo: null,
+      pageBgExtra: null,
+    },
+  });
+}
+
 function normalizeClassName(value) {
   return String(value || "").trim().toUpperCase();
 }
 
-function normalizeLookupKey(value) {
+function normalizeClassLookupKey(value) {
   return normalizeClassName(value).replace(/[^A-Z0-9]+/g, "");
 }
 
@@ -134,31 +384,67 @@ function prettifyClassName(className, type = "") {
     .join(" ");
 }
 
-function sortOmopClasses(classes) {
-  if (!Array.isArray(classes)) {
-    return [];
+function getFilterEntry(type, className) {
+  const normalizedType = String(type || "").trim().toLowerCase();
+  const rawClassName = String(className || "").trim();
+  if (!normalizedType || !rawClassName) {
+    return null;
   }
 
-  return [...classes]
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .sort((leftClass, rightClass) => {
-      const leftNormalized = normalizeClassName(leftClass);
-      const rightNormalized = normalizeClassName(rightClass);
-      const leftPriority = OMOP_CLASS_PREFERRED_ORDER.indexOf(leftNormalized);
-      const rightPriority = OMOP_CLASS_PREFERRED_ORDER.indexOf(rightNormalized);
-      const leftOrder = leftPriority >= 0 ? leftPriority : Number.MAX_SAFE_INTEGER;
-      const rightOrder = rightPriority >= 0 ? rightPriority : Number.MAX_SAFE_INTEGER;
+  const exactMatch = FILTER_ENTRY_BY_TYPE_CLASS.get(`${normalizedType}:${rawClassName}`);
+  if (exactMatch) {
+    return exactMatch;
+  }
 
-      if (leftOrder !== rightOrder) {
-        return leftOrder - rightOrder;
-      }
+  const targetLookupKey = normalizeClassLookupKey(rawClassName);
+  for (const filterEntry of FILTER_ENTRY_BY_TYPE_CLASS.values()) {
+    if (filterEntry.type !== normalizedType) {
+      continue;
+    }
 
-      return leftNormalized.localeCompare(rightNormalized, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    });
+    if (normalizeClassLookupKey(filterEntry.key) === targetLookupKey) {
+      return filterEntry;
+    }
+  }
+
+  return null;
+}
+
+function getFilterDisplayName(type, className) {
+  return getFilterEntry(type, className)?.displayName || prettifyClassName(className, type);
+}
+
+function getFilterDefaultSortMode(type, className) {
+  return normalizeChartSortMode(
+    getFilterEntry(type, className)?.defaultSortMode || DEFAULT_CHART_SORT_MODE
+  );
+}
+
+function getFilterCustomSortOrder(type, className) {
+  const configuredOrder = getFilterEntry(type, className)?.customSortOrder;
+  return Array.isArray(configuredOrder) ? configuredOrder : [];
+}
+
+function resolveDisplayMode(filterEntry, chartData) {
+  if (filterEntry?.hasRollup) {
+    return "distribution";
+  }
+
+  const mode = String(filterEntry?.displayMode || "auto").trim().toLowerCase();
+  if (mode === "distribution" || mode === "compact") {
+    return mode;
+  }
+
+  const rowCount = Array.isArray(chartData) ? chartData.length : 0;
+  return rowCount >= MIN_ROWS_FOR_DISTRIBUTION ? "distribution" : "compact";
+}
+
+function isAttributeRollupClass(className) {
+  const configuredFilter = getFilterEntry("attributes", className);
+  if (configuredFilter) {
+    return Boolean(configuredFilter.hasRollup);
+  }
+  return hasRollup(className);
 }
 
 function toDisplayInstanceValue(type, className, value) {
@@ -167,14 +453,28 @@ function toDisplayInstanceValue(type, className, value) {
     return "";
   }
 
-  if (String(type || "").toLowerCase() === "omop" && normalizeClassName(className) === "CANCER") {
-    const mappedCancerName = OMOP_CANCER_DISPLAY_NAME_MAP[normalizeClassName(rawValue)];
-    if (mappedCancerName) {
-      return mappedCancerName;
-    }
+  const normalizedType = String(type || "").trim().toLowerCase();
+  const source =
+    normalizedType === "omop"
+      ? String(className || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[\s_]+/g, "_")
+      : String(className || "").trim();
+
+  const displayValue = toDisplayName(rawValue, source);
+  const normalizedClass = normalizeClassName(className);
+  const isTnmStageClass =
+    normalizedType === "attributes" &&
+    (normalizedClass === "T STAGE" ||
+      normalizedClass === "N STAGE" ||
+      normalizedClass === "M STAGE");
+
+  if (isTnmStageClass) {
+    return displayValue.replace(/^([cp]?)([TNM])\s+([0-9X].*)$/i, "$1$2$3");
   }
 
-  return rawValue;
+  return displayValue;
 }
 
 function toChartData(summaryRows, type, className) {
@@ -184,7 +484,7 @@ function toChartData(summaryRows, type, className) {
 
   const normalizePatientIds = (rawValue) => {
     if (Array.isArray(rawValue)) {
-      return [...new Set(rawValue.map((item) => String(item || "").trim()).filter(Boolean))];
+      return rawValue;
     }
 
     if (typeof rawValue === "string") {
@@ -362,7 +662,7 @@ function toNarrativeLabel(value) {
     return "";
   }
 
-  if (/^[A-Z0-9]+$/.test(text) && text.length <= 6) {
+  if (/^[A-Z0-9+\-−/]+$/.test(text) && text.length <= 6) {
     return text;
   }
 
@@ -398,54 +698,6 @@ function getDisplayInstances(filter) {
     .map((value) => toDisplayInstanceValue(filter.type, filter.class, value))
     .map((value) => String(value || "").trim())
     .filter(Boolean);
-}
-
-function normalizeGenderLabel(value) {
-  const normalized = normalizeClassName(value);
-  if (normalized === "M" || normalized === "MALE") {
-    return "male";
-  }
-  if (normalized === "F" || normalized === "FEMALE") {
-    return "female";
-  }
-  if (normalized === "U" || normalized === "UNKNOWN") {
-    return "unknown gender";
-  }
-  return String(value || "").trim().toLowerCase();
-}
-
-function formatStageInstance(value, stagePrefix) {
-  const rawValue = String(value || "").trim();
-  if (!rawValue) {
-    return "";
-  }
-
-  const normalizedPrefix = String(stagePrefix || "").trim().toUpperCase();
-  const compact = rawValue.replace(/[\s_-]+/g, "");
-  const stageCodeMatch = compact.match(
-    new RegExp(`^(P?)${normalizedPrefix}([0-9X]+(?:[A-C]|is|mi)?)(?:StageFinding)?$`, "i")
-  );
-
-  if (stageCodeMatch) {
-    const isPathologic = String(stageCodeMatch[1] || "").toUpperCase() === "P";
-    const rawSuffix = String(stageCodeMatch[2] || "");
-    const normalizedSuffix = rawSuffix
-      .replace(/is/gi, "is")
-      .replace(/mi/gi, "mi")
-      .replace(/[a-z]/g, (token) => token.toLowerCase())
-      .replace(/[0-9x]/gi, (token) => token.toUpperCase());
-    const stageCode = `${normalizedPrefix}${normalizedSuffix}`;
-    return isPathologic ? `pathologic ${stageCode}` : stageCode;
-  }
-
-  const withoutFinding = rawValue
-    .replace(/stage\s*finding$/i, "")
-    .replace(/StageFinding$/i, "")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .trim();
-
-  return withoutFinding || rawValue;
 }
 
 function formatCancerValue(value) {
@@ -542,7 +794,7 @@ function buildIdentifiedSummary(filters, count) {
     toNarrativeLabel(value)
   );
   const genderValues = getDisplayInstances(omopFiltersByClass.GENDER).map((value) =>
-    normalizeGenderLabel(value)
+    toNarrativeLabel(value)
   );
   const cancerValues = getDisplayInstances(omopFiltersByClass.CANCER).map((value) =>
     formatCancerValue(value)
@@ -593,23 +845,17 @@ function buildIdentifiedSummary(filters, count) {
     conditionClauses.push(`grade ${joinWithConjunction(gradeValues, "or")}`);
   }
 
-  const tStageValues = getDisplayInstances(attributeFiltersByClass["T STAGE"]).map((value) =>
-    formatStageInstance(value, "T")
-  );
+  const tStageValues = getDisplayInstances(attributeFiltersByClass["T STAGE"]);
   if (tStageValues.length > 0) {
     conditionClauses.push(`T stage ${joinWithConjunction(tStageValues, "or")}`);
   }
 
-  const nStageValues = getDisplayInstances(attributeFiltersByClass["N STAGE"]).map((value) =>
-    formatStageInstance(value, "N")
-  );
+  const nStageValues = getDisplayInstances(attributeFiltersByClass["N STAGE"]);
   if (nStageValues.length > 0) {
     conditionClauses.push(`N stage ${joinWithConjunction(nStageValues, "or")}`);
   }
 
-  const mStageValues = getDisplayInstances(attributeFiltersByClass["M STAGE"]).map((value) =>
-    formatStageInstance(value, "M")
-  );
+  const mStageValues = getDisplayInstances(attributeFiltersByClass["M STAGE"]);
   if (mStageValues.length > 0) {
     conditionClauses.push(`M stage ${joinWithConjunction(mStageValues, "or")}`);
   }
@@ -684,7 +930,8 @@ function getRowInstancesForClass({
     normalizedType === "omop" &&
     normalizeClassName(className) === AGE_AT_DX_CLASS &&
     ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE;
-  const isAttributeRollupClass = normalizedType === "attributes" && hasRollup(className);
+  const isAttributeRollupFilter =
+    normalizedType === "attributes" && isAttributeRollupClass(className);
 
   if (isAgeAtDxDecileClass) {
     const mappedInstances = ageDecileInstanceMap?.[rowLabel];
@@ -693,7 +940,7 @@ function getRowInstancesForClass({
     }
   }
 
-  if (isAttributeRollupClass) {
+  if (isAttributeRollupFilter) {
     return resolveRollupSelections(
       [rowLabel],
       className,
@@ -744,10 +991,10 @@ function resolveRequestFilters({
       const isAgeAtDxFilter =
         normalizedFilterType === "omop" &&
         normalizeClassName(filter?.class) === AGE_AT_DX_CLASS;
-      const isAttributeRollupClass =
-        normalizedFilterType === "attributes" && hasRollup(filter?.class);
+      const isAttributeRollupFilter =
+        normalizedFilterType === "attributes" && isAttributeRollupClass(filter?.class);
 
-      if (!isAgeAtDxFilter && !isAttributeRollupClass) {
+      if (!isAgeAtDxFilter && !isAttributeRollupFilter) {
         return {
           type: filter.type,
           class: filter.class,
@@ -777,7 +1024,7 @@ function resolveRequestFilters({
         );
       }
 
-      if (isAttributeRollupClass) {
+      if (isAttributeRollupFilter) {
         expandedInstances = resolveRollupSelections(
           expandedInstances,
           filter.class,
@@ -801,33 +1048,6 @@ function resolveRequestFilters({
     .filter((filter) => filter.instances.length > 0);
 }
 
-function resolveAttributeFilterClasses(classes) {
-  if (!Array.isArray(classes)) {
-    return [];
-  }
-
-  const availableClasses = classes
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-  const usedClasses = new Set();
-
-  return ATTRIBUTE_FILTER_CLASS_ORDER.map((requestedClass) => {
-    const requestedKey = normalizeLookupKey(requestedClass);
-    const matchedClass = availableClasses.find(
-      (candidateClass) =>
-        !usedClasses.has(candidateClass) &&
-        normalizeLookupKey(candidateClass) === requestedKey
-    );
-
-    if (matchedClass) {
-      usedClasses.add(matchedClass);
-      return matchedClass;
-    }
-
-    return "";
-  }).filter(Boolean);
-}
-
 function syncSelectionByClass(previousSelections, classes) {
   const nextSelections = {};
 
@@ -847,7 +1067,7 @@ function syncExpandedParentsByClass(previousState, classes, rolledUpChartDataByC
   const nextState = {};
 
   classes.forEach((className) => {
-    if (!hasRollup(className)) {
+    if (!isAttributeRollupClass(className)) {
       nextState[className] = [];
       return;
     }
@@ -886,7 +1106,14 @@ function formatItemCount(value) {
 }
 
 function normalizeCountResponse(payload) {
-  const count = Number(payload?.count);
+  const rawCount = payload?.count;
+  let count = Number(rawCount);
+  if (!Number.isFinite(count) && typeof rawCount === "string") {
+    const parsedValue = Number(String(rawCount).replace(/,/g, "").trim());
+    if (Number.isFinite(parsedValue)) {
+      count = parsedValue;
+    }
+  }
   const rawPatientIds = Array.isArray(payload?.patient_ids)
     ? payload.patient_ids
     : Array.isArray(payload?.patientIds)
@@ -908,6 +1135,709 @@ function normalizeCountResponse(payload) {
   };
 }
 
+function normalizePatientIds(patientIds = []) {
+  return [...new Set((Array.isArray(patientIds) ? patientIds : []).map((id) => String(id || "").trim()))]
+    .filter(Boolean)
+    .sort((leftId, rightId) =>
+      leftId.localeCompare(rightId, undefined, { numeric: true, sensitivity: "base" })
+    );
+}
+
+function normalizeSummaryRecordForGrid(summary) {
+  const parsedSummary =
+    parsePatientSummaryJson(summary?.json_text ?? summary?.jsonText) ||
+    parsePatientSummaryJson(summary?.summary_json ?? summary?.summaryJson) ||
+    parsePatientSummaryJson(summary);
+
+  if (!parsedSummary || typeof parsedSummary !== "object") {
+    return null;
+  }
+
+  const demographics =
+    parsedSummary?.demographics && typeof parsedSummary.demographics === "object"
+      ? parsedSummary.demographics
+      : parsedSummary?.demographic && typeof parsedSummary.demographic === "object"
+        ? parsedSummary.demographic
+      : summary?.demographics && typeof summary.demographics === "object"
+        ? summary.demographics
+        : summary?.demographic && typeof summary.demographic === "object"
+          ? summary.demographic
+        : {};
+
+  const normalizeAttributeValue = (value) => {
+    if (value === undefined || value === null) {
+      return "";
+    }
+
+    if (typeof value === "string" || typeof value === "number") {
+      return String(value).trim();
+    }
+
+    if (typeof value === "object") {
+      const primitiveCandidate =
+        value?.value ??
+        value?.name ??
+        value?.label ??
+        value?.display ??
+        value?.displayLabel ??
+        value?.instance ??
+        value?.instance_label;
+
+      if (
+        primitiveCandidate !== undefined &&
+        primitiveCandidate !== null &&
+        typeof primitiveCandidate !== "object"
+      ) {
+        return String(primitiveCandidate).trim();
+      }
+    }
+
+    return "";
+  };
+
+  const collectAttributeValues = (rawValue, accumulator) => {
+    if (rawValue === undefined || rawValue === null) {
+      return;
+    }
+
+    if (Array.isArray(rawValue)) {
+      rawValue.forEach((item) => collectAttributeValues(item, accumulator));
+      return;
+    }
+
+    if (typeof rawValue === "object") {
+      const nestedLists = [rawValue?.instances, rawValue?.values, rawValue?.items, rawValue?.data];
+      nestedLists.forEach((list) => {
+        if (Array.isArray(list)) {
+          list.forEach((item) => collectAttributeValues(item, accumulator));
+        }
+      });
+
+      const normalizedValue = normalizeAttributeValue(rawValue);
+      if (normalizedValue) {
+        accumulator.push(normalizedValue);
+      }
+      return;
+    }
+
+    const normalizedValue = normalizeAttributeValue(rawValue);
+    if (normalizedValue) {
+      accumulator.push(normalizedValue);
+    }
+  };
+
+  const pushAttributeValues = (targetMap, rawClassName, rawValue) => {
+    const classKey = normalizeClassName(rawClassName);
+    if (!classKey) {
+      return;
+    }
+
+    const nextValues = [];
+    collectAttributeValues(rawValue, nextValues);
+    if (nextValues.length === 0) {
+      return;
+    }
+
+    const existingValues = Array.isArray(targetMap[classKey]) ? targetMap[classKey] : [];
+    targetMap[classKey] = [...new Set([...existingValues, ...nextValues])];
+  };
+
+  const attributeValuesByClass = {};
+  const attributeMapSources = [
+    parsedSummary?.attributesByClass,
+    parsedSummary?.attributes_by_class,
+    parsedSummary?.attributeValuesByClass,
+    parsedSummary?.attribute_values_by_class,
+    parsedSummary?.instancesByClass,
+    parsedSummary?.instances_by_class,
+    summary?.attributesByClass,
+    summary?.attributes_by_class,
+    summary?.attributeValuesByClass,
+    summary?.attribute_values_by_class,
+    summary?.instancesByClass,
+    summary?.instances_by_class,
+  ];
+
+  attributeMapSources.forEach((source) => {
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+      return;
+    }
+
+    Object.entries(source).forEach(([className, values]) => {
+      pushAttributeValues(attributeValuesByClass, className, values);
+    });
+  });
+
+  const attributeListSources = [
+    parsedSummary?.attributes,
+    parsedSummary?.attribute_values,
+    parsedSummary?.attributeValues,
+    summary?.attributes,
+    summary?.attribute_values,
+    summary?.attributeValues,
+  ];
+
+  attributeListSources.forEach((source) => {
+    if (!Array.isArray(source)) {
+      return;
+    }
+
+    source.forEach((item) => {
+      if (!item || typeof item !== "object") {
+        return;
+      }
+
+      const className =
+        item?.class ??
+        item?.className ??
+        item?.groupname ??
+        item?.group_name ??
+        item?.attributeClass ??
+        item?.attribute_class;
+
+      if (!className) {
+        return;
+      }
+
+      const values =
+        item?.instances ??
+        item?.values ??
+        item?.items ??
+        item?.value ??
+        item?.label ??
+        item?.display ??
+        item?.displayLabel ??
+        item?.instance;
+
+      pushAttributeValues(attributeValuesByClass, className, values);
+    });
+  });
+
+  return {
+    ...parsedSummary,
+    patient_id: String(
+      parsedSummary?.patient_id ??
+        parsedSummary?.patientId ??
+        summary?.patient_id ??
+        summary?.patientId ??
+        ""
+    ).trim(),
+    demographics,
+    diagnoses: Array.isArray(parsedSummary?.diagnoses) ? parsedSummary.diagnoses : [],
+    staging: Array.isArray(parsedSummary?.staging) ? parsedSummary.staging : [],
+    grading: Array.isArray(parsedSummary?.grading) ? parsedSummary.grading : [],
+    biomarkers: Array.isArray(parsedSummary?.biomarkers) ? parsedSummary.biomarkers : [],
+    procedures: Array.isArray(parsedSummary?.procedures) ? parsedSummary.procedures : [],
+    treatments: Array.isArray(parsedSummary?.treatments) ? parsedSummary.treatments : [],
+    findings: Array.isArray(parsedSummary?.findings) ? parsedSummary.findings : [],
+    behavior: Array.isArray(parsedSummary?.behavior) ? parsedSummary.behavior : [],
+    attributeValuesByClass,
+  };
+}
+
+function transformSummaryToGridRow(summary) {
+  const normalizedSummary = normalizeSummaryRecordForGrid(summary);
+  const demographics = normalizedSummary?.demographics || {};
+  const staging = Array.isArray(normalizedSummary?.staging) ? normalizedSummary.staging : [];
+  const gradingFromNlp = (Array.isArray(normalizedSummary?.grading) ? normalizedSummary.grading : [])[0];
+  const normalizeGradeLabel = (value) =>
+    String(value || "")
+      .replace(/^grade[_\s]*(numeric)?\s*/i, "")
+      .trim();
+  const getFirstNonEmptyGrade = (rawValues) => {
+    const values = Array.isArray(rawValues) ? rawValues : [rawValues];
+    for (const value of values) {
+      if (value === undefined || value === null) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        const nestedValue = getFirstNonEmptyGrade(value);
+        if (nestedValue) {
+          return nestedValue;
+        }
+        continue;
+      }
+      if (typeof value === "object") {
+        const nestedObjectValue = getFirstNonEmptyGrade([
+          value?.name,
+          value?.value,
+          value?.label,
+          value?.display,
+          value?.displayLabel,
+        ]);
+        if (nestedObjectValue) {
+          return nestedObjectValue;
+        }
+        continue;
+      }
+
+      const normalizedValue = normalizeGradeLabel(value);
+      if (normalizedValue) {
+        return normalizedValue;
+      }
+    }
+    return "";
+  };
+  const gradingFromAttributes = getFirstNonEmptyGrade([
+    normalizedSummary?.attributeValuesByClass?.GRADE_NUMERIC,
+    normalizedSummary?.GRADE_NUMERIC,
+    normalizedSummary?.grade_numeric,
+    normalizedSummary?.gradeNumeric,
+    summary?.GRADE_NUMERIC,
+    summary?.grade_numeric,
+    summary?.gradeNumeric,
+  ]);
+  const grading = getFirstNonEmptyGrade([
+    gradingFromNlp?.name,
+    gradingFromNlp?.value,
+    gradingFromAttributes,
+  ]) || "—";
+  const diagnoses = Array.isArray(normalizedSummary?.diagnoses) ? normalizedSummary.diagnoses : [];
+  const STAGE_GROUP_RANK = {
+    "0": 0,
+    IA: 1,
+    IB: 2,
+    IC: 3,
+    IIA: 4,
+    IIB: 5,
+    IIC: 6,
+    IIIA: 7,
+    IIIB: 8,
+    IIIC: 9,
+    IIID: 10,
+    IV: 11,
+    IVA: 12,
+    IVB: 13,
+    IVC: 14,
+  };
+  const CANCER_KEYWORDS =
+    /carcinoma|melanoma|neoplasm|lymphoma|leukemia|sarcoma|tumou?r|cancer|adenocarcinoma|myeloma|mesothelioma|glioma|blastoma|dcis|in\ssitu/i;
+
+  const normalizeStageName = (value) => String(value || "").trim();
+  const getStageNames = (rows) =>
+    (Array.isArray(rows) ? rows : [])
+      .map((entry) => normalizeStageName(entry?.name ?? entry?.value))
+      .filter(Boolean);
+  const getTnmScore = (value, prefix) => {
+    const normalized = normalizeStageName(value).replace(/\s+/g, "");
+    const upperPrefix = String(prefix || "").toUpperCase();
+    if (!normalized.toUpperCase().startsWith(upperPrefix)) {
+      return Number.NEGATIVE_INFINITY;
+    }
+
+    const remainder = normalized.slice(upperPrefix.length);
+    if (!remainder) {
+      return -1;
+    }
+
+    if (/^X/i.test(remainder)) {
+      return -1;
+    }
+    if (/^is/i.test(remainder)) {
+      return 0.2;
+    }
+    if (/^mi/i.test(remainder)) {
+      return 0.3;
+    }
+
+    const numberMatch = remainder.match(/^(\d+)/);
+    const base = numberMatch ? Number.parseInt(numberMatch[1], 10) : 0;
+    const suffix = numberMatch ? remainder.slice(numberMatch[1].length) : remainder;
+    const letter = suffix.match(/^([A-D])/i)?.[1]?.toUpperCase();
+    const letterBoost = letter ? (letter.charCodeAt(0) - 64) / 10 : 0;
+
+    return base + letterBoost;
+  };
+  const pickHighestByScore = (names, prefix) => {
+    let bestName = "";
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    names.forEach((name) => {
+      const score = getTnmScore(name, prefix);
+      if (score > bestScore) {
+        bestScore = score;
+        bestName = name;
+      }
+    });
+
+    return { name: bestName, score: bestScore };
+  };
+  const pickDisplayStage = (rows) => {
+    const names = getStageNames(rows);
+    if (names.length === 0) {
+      return { label: "—", rank: Number.NEGATIVE_INFINITY };
+    }
+
+    const overallGroups = names.filter((name) => /^Stage\s+/i.test(name));
+    if (overallGroups.length > 0) {
+      const bestGroup = overallGroups.reduce((best, current) => {
+        const bestKey = best.replace(/^Stage\s+/i, "").toUpperCase();
+        const currentKey = current.replace(/^Stage\s+/i, "").toUpperCase();
+        const bestRank = STAGE_GROUP_RANK[bestKey] ?? -1;
+        const currentRank = STAGE_GROUP_RANK[currentKey] ?? -1;
+        return currentRank > bestRank ? current : best;
+      });
+      const bestKey = bestGroup.replace(/^Stage\s+/i, "").toUpperCase();
+
+      return {
+        label: bestGroup,
+        rank: 1000 + (STAGE_GROUP_RANK[bestKey] ?? -1),
+      };
+    }
+
+    const pathologicT = pickHighestByScore(names.filter((name) => /^pT/i.test(name)), "pT");
+    if (pathologicT.name) {
+      return { label: pathologicT.name, rank: 800 + pathologicT.score };
+    }
+
+    const clinicalT = pickHighestByScore(
+      names.filter((name) => /^T\d/i.test(name) && !/^pT/i.test(name)),
+      "T"
+    );
+    if (clinicalT.name) {
+      return { label: clinicalT.name, rank: 700 + clinicalT.score };
+    }
+
+    const nStage = pickHighestByScore(names.filter((name) => /^N/i.test(name)), "N");
+    if (nStage.name) {
+      return { label: nStage.name, rank: 600 + nStage.score };
+    }
+
+    const mStage = pickHighestByScore(names.filter((name) => /^M/i.test(name)), "M");
+    if (mStage.name) {
+      return { label: mStage.name, rank: 500 + mStage.score };
+    }
+
+    return { label: names[0], rank: 0 };
+  };
+  const pickActiveDx = (items) => {
+    if (!Array.isArray(items) || items.length === 0) {
+      return null;
+    }
+
+    const nonNegated = items.filter((item) => !item?.negated);
+    if (nonNegated.length === 0) {
+      return null;
+    }
+
+    const tier1 = nonNegated.find(
+      (item) =>
+        !item?.historic &&
+        (String(item?.source || "").toLowerCase() === "cancer" ||
+          String(item?.source || "").toLowerCase() === "tumor")
+    );
+    if (tier1) {
+      return tier1;
+    }
+
+    const tier2 = nonNegated.find(
+      (item) => !item?.historic && CANCER_KEYWORDS.test(String(item?.name || ""))
+    );
+    if (tier2) {
+      return tier2;
+    }
+
+    const tier3 = nonNegated.find((item) =>
+      ["cancer", "tumor"].includes(String(item?.source || "").toLowerCase())
+    );
+    if (tier3) {
+      return tier3;
+    }
+
+    const tier4 = nonNegated.find((item) => CANCER_KEYWORDS.test(String(item?.name || "")));
+    if (tier4) {
+      return tier4;
+    }
+
+    return nonNegated[0] || null;
+  };
+  const stageSelection = pickDisplayStage(staging);
+  const activeDxEntry = pickActiveDx(diagnoses);
+  const activeDxName = String(activeDxEntry?.name || "").trim() || "—";
+  const activeDxHistoric = Boolean(activeDxEntry?.historic);
+  const activeDxUncertain = Boolean(activeDxEntry?.uncertain);
+  const activeDxDisplayText =
+    activeDxName === "—"
+      ? "—"
+      : `${activeDxName}${activeDxHistoric ? " (historic)" : ""}${activeDxUncertain ? " (uncertain)" : ""}`;
+  const rawAge = demographics?.age_at_dx;
+  const parsedAge =
+    rawAge != null && rawAge !== "" && String(rawAge) !== "0" ? Number(rawAge) : null;
+  const ageAtDx =
+    parsedAge != null && Number.isFinite(parsedAge) && parsedAge > 0 ? parsedAge : null;
+
+  const normalizeCancerType = (value) => {
+    const rawCancerType = String(value || "").trim();
+    if (!rawCancerType) {
+      return "";
+    }
+
+    const normalizedCode = rawCancerType.toUpperCase();
+    return CANCER_TYPE_MAP[normalizedCode] || rawCancerType;
+  };
+
+  const inferCancerTypeFromDiagnoses = (items) => {
+    const diagnosisNames = (Array.isArray(items) ? items : [])
+      .map((item) => String(item?.name || "").trim().toLowerCase())
+      .filter(Boolean);
+
+    if (diagnosisNames.some((name) => name.includes("melanoma"))) {
+      return "Melanoma";
+    }
+    if (diagnosisNames.some((name) => name.includes("ovar"))) {
+      return "Ovarian Cancer";
+    }
+    if (diagnosisNames.some((name) => name.includes("breast"))) {
+      return "Breast";
+    }
+
+    return "";
+  };
+
+  const resolvedCancerType =
+    normalizeCancerType(
+      demographics?.cancer_type ??
+        demographics?.cancerType ??
+        demographics?.cancer ??
+        normalizedSummary?.cancer_type ??
+        normalizedSummary?.cancerType ??
+        normalizedSummary?.cancer
+    ) || inferCancerTypeFromDiagnoses(diagnoses);
+
+  const summarizeArray = (items, cap = 3, excludeItem = null) => {
+    if (!Array.isArray(items)) {
+      return { display: "—", full: "" };
+    }
+
+    const nonNegatedNames = items
+      .filter((item) => !item?.negated)
+      .filter((item) => (excludeItem ? item !== excludeItem : true))
+      .map((item) => String(item?.name || "").trim())
+      .filter(Boolean);
+
+    if (nonNegatedNames.length === 0) {
+      return { display: "—", full: "" };
+    }
+
+    const full = nonNegatedNames.join(", ");
+    if (nonNegatedNames.length <= cap) {
+      return { display: full, full };
+    }
+
+    return {
+      display: nonNegatedNames.slice(0, cap).join(", "),
+      overflow: nonNegatedNames.length - cap,
+      full,
+    };
+  };
+
+  return {
+    patientId: String(
+      normalizedSummary?.patient_id ??
+        normalizedSummary?.patientId ??
+        summary?.patient_id ??
+        summary?.patientId ??
+        ""
+    ).trim(),
+    ageAtDx,
+    gender: GENDER_MAP[demographics?.gender] || demographics?.gender || "Unknown",
+    race: demographics?.race || "Unknown",
+    ethnicity: demographics?.ethnicity || "Unknown",
+    cancerType: resolvedCancerType || "—",
+    stage: stageSelection.label || "—",
+    stageSortRank: stageSelection.rank,
+    grade: String(grading || "—"),
+    activeDx: activeDxDisplayText,
+    activeDxMeta: {
+      name: activeDxName,
+      historic: activeDxHistoric,
+      uncertain: activeDxUncertain,
+    },
+    diagnosesSummary: summarizeArray(normalizedSummary?.diagnoses, 3, activeDxEntry),
+    biomarkersSummary: summarizeArray(normalizedSummary?.biomarkers, 3),
+    treatmentsSummary: summarizeArray(normalizedSummary?.treatments, 2),
+    proceduresSummary: summarizeArray(normalizedSummary?.procedures, 2),
+    findingsSummary: summarizeArray(normalizedSummary?.findings, 2),
+    _raw: normalizedSummary || summary,
+  };
+}
+
+function createEmptyPatientSummary(patientId) {
+  const normalizedPatientId = String(patientId || "").trim();
+  return {
+    patientId: normalizedPatientId,
+    docCount: 0,
+    activeDx: [],
+    negatedDx: [],
+    staging: [],
+    biomarkers: [],
+    procedures: [],
+    treatments: [],
+    activeFindings: [],
+    negatedFindings: [],
+  };
+}
+
+function normalizePatientSummaryRows(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload?.summaries)) {
+    return payload.summaries;
+  }
+
+  return [];
+}
+
+function parsePatientSummaryJson(value) {
+  let nextValue = value;
+
+  for (let parsePass = 0; parsePass < 3; parsePass += 1) {
+    if (!nextValue) {
+      return null;
+    }
+
+    if (typeof nextValue === "object") {
+      return nextValue;
+    }
+
+    if (typeof nextValue === "string") {
+      const trimmedValue = nextValue.trim();
+      if (!trimmedValue) {
+        return null;
+      }
+
+      try {
+        nextValue = JSON.parse(trimmedValue);
+        continue;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  return typeof nextValue === "object" && nextValue ? nextValue : null;
+}
+
+function normalizeSummaryList(items, { includeUncertain = false } = {}) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const name = String(item?.name ?? item?.label ?? item?.value ?? "").trim();
+      if (!name) {
+        return null;
+      }
+
+      const docFreq = Number(item?.docFreq ?? item?.doc_freq);
+      const summaryItem = { name };
+      if (includeUncertain) {
+        summaryItem.uncertain = Boolean(item?.uncertain);
+      }
+      if (Number.isFinite(docFreq) && docFreq > 0) {
+        summaryItem.docFreq = docFreq;
+      }
+      return summaryItem;
+    })
+    .filter(Boolean);
+}
+
+function buildPatientSummaryFromFilterSummary(payload, patientId) {
+  const normalizedPatientId = String(patientId || "").trim();
+  const summaryRows = normalizePatientSummaryRows(payload);
+  const matchingRow =
+    summaryRows.find((row) => {
+      const rowPatientId = String(row?.patient_id ?? row?.patientId ?? "").trim();
+      return rowPatientId && rowPatientId === normalizedPatientId;
+    }) || summaryRows[0];
+
+  if (!matchingRow) {
+    return createEmptyPatientSummary(normalizedPatientId);
+  }
+
+  const summaryPayload =
+    parsePatientSummaryJson(matchingRow?.json_text ?? matchingRow?.jsonText) ||
+    parsePatientSummaryJson(matchingRow);
+
+  if (!summaryPayload || typeof summaryPayload !== "object") {
+    return createEmptyPatientSummary(normalizedPatientId);
+  }
+
+  const summaryPatientId = String(
+    summaryPayload?.patient_id ??
+      summaryPayload?.patientId ??
+      matchingRow?.patient_id ??
+      matchingRow?.patientId ??
+      normalizedPatientId
+  ).trim();
+
+  const diagnosisItems = Array.isArray(summaryPayload?.diagnoses) ? summaryPayload.diagnoses : [];
+  const findingItems = Array.isArray(summaryPayload?.findings) ? summaryPayload.findings : [];
+  const docCountField = Number(
+    summaryPayload?.doc_count ??
+      summaryPayload?.docCount ??
+      summaryPayload?.document_count ??
+      summaryPayload?.documentCount ??
+      summaryPayload?.note_count ??
+      summaryPayload?.noteCount
+  );
+  const docCountArrayFallback =
+    (Array.isArray(summaryPayload?.documents) && summaryPayload.documents.length) ||
+    (Array.isArray(summaryPayload?.docs) && summaryPayload.docs.length) ||
+    (Array.isArray(summaryPayload?.notes) && summaryPayload.notes.length) ||
+    (Array.isArray(summaryPayload?.note_ids) && summaryPayload.note_ids.length) ||
+    (Array.isArray(summaryPayload?.noteIds) && summaryPayload.noteIds.length) ||
+    (Array.isArray(summaryPayload?.document_ids) && summaryPayload.document_ids.length) ||
+    (Array.isArray(summaryPayload?.documentIds) && summaryPayload.documentIds.length) ||
+    0;
+
+  return {
+    patientId: summaryPatientId || normalizedPatientId,
+    docCount: Number.isFinite(docCountField) && docCountField > 0 ? docCountField : docCountArrayFallback,
+    activeDx: normalizeSummaryList(
+      diagnosisItems.filter((item) => !Boolean(item?.negated)),
+      { includeUncertain: true }
+    ),
+    negatedDx: normalizeSummaryList(diagnosisItems.filter((item) => Boolean(item?.negated))),
+    staging: normalizeSummaryList(summaryPayload?.staging),
+    biomarkers: normalizeSummaryList(summaryPayload?.biomarkers),
+    procedures: normalizeSummaryList(summaryPayload?.procedures),
+    treatments: normalizeSummaryList(summaryPayload?.treatments),
+    activeFindings: normalizeSummaryList(
+      findingItems.filter((item) => !Boolean(item?.negated))
+    ),
+    negatedFindings: normalizeSummaryList(
+      findingItems.filter((item) => Boolean(item?.negated))
+    ),
+  };
+}
+
+function resolveDocumentCountFromPayload(payload) {
+  if (Array.isArray(payload)) {
+    return payload.length;
+  }
+
+  if (Array.isArray(payload?.documents)) {
+    return payload.documents.length;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data.length;
+  }
+
+  const numericCount = Number(payload?.count);
+  if (Number.isFinite(numericCount) && numericCount >= 0) {
+    return numericCount;
+  }
+
+  return 0;
+}
+
 function getZeroResultHint(filters, itemCounts) {
   if (!Array.isArray(filters) || filters.length === 0) {
     return "";
@@ -924,58 +1854,142 @@ function getZeroResultHint(filters, itemCounts) {
   return "Each filter matches patients independently, but their overlap is 0. Try broadening one filter.";
 }
 
-function buildDistributionSeries(data, maxBars = 28) {
-  if (!Array.isArray(data)) {
-    return [];
+function normalizeChartSortMode(sortMode) {
+  const normalizedSortMode = String(sortMode || "").trim();
+  if (CHART_SORT_MODES.includes(normalizedSortMode)) {
+    return normalizedSortMode;
   }
-
-  const rows = data
-    .map((item) => ({
-      label: String(item?.displayLabel ?? item?.label ?? "").trim(),
-      value: Number(item?.value),
-    }))
-    .filter((item) => item.label && Number.isFinite(item.value) && item.value > 0)
-    .sort((leftItem, rightItem) => {
-      if (rightItem.value !== leftItem.value) {
-        return rightItem.value - leftItem.value;
-      }
-      return leftItem.label.localeCompare(rightItem.label, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    });
-
-  return rows.slice(0, Math.max(1, maxBars)).map((item) => item.value);
+  return DEFAULT_CHART_SORT_MODE;
 }
 
-function buildInstanceOrderedDistributionSeries(data, maxBars = 28) {
-  if (!Array.isArray(data)) {
-    return [];
-  }
-
-  const rows = data
-    .map((item) => ({
-      label: String(item?.displayLabel ?? item?.label ?? "").trim(),
-      value: Number(item?.value),
-    }))
-    .filter((item) => item.label && Number.isFinite(item.value) && item.value > 0)
-    .sort((leftItem, rightItem) =>
-      leftItem.label.localeCompare(rightItem.label, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
-
-  return rows.slice(0, Math.max(1, maxBars)).map((item) => item.value);
+function normalizeCustomSortToken(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
 }
 
-function DistributionStrip({ data, sortDimension = "count" }) {
-  const series = useMemo(() => {
-    if (sortDimension === "instance") {
-      return buildInstanceOrderedDistributionSeries(data);
+function createCustomSortIndexMap(customSortOrder) {
+  if (!Array.isArray(customSortOrder) || customSortOrder.length === 0) {
+    return null;
+  }
+
+  const indexMap = new Map();
+  customSortOrder.forEach((value, index) => {
+    const token = normalizeCustomSortToken(value);
+    if (!token || indexMap.has(token)) {
+      return;
     }
-    return buildDistributionSeries(data);
-  }, [data, sortDimension]);
+    indexMap.set(token, index);
+  });
+
+  return indexMap.size > 0 ? indexMap : null;
+}
+
+function compareByCustomSortOrder(leftLabel, rightLabel, sortMode, customSortIndexMap) {
+  if (!customSortIndexMap || !String(sortMode).startsWith("alpha")) {
+    return null;
+  }
+
+  const leftIndex = customSortIndexMap.get(normalizeCustomSortToken(leftLabel));
+  const rightIndex = customSortIndexMap.get(normalizeCustomSortToken(rightLabel));
+  const leftKnown = Number.isFinite(leftIndex);
+  const rightKnown = Number.isFinite(rightIndex);
+
+  if (leftKnown && rightKnown && leftIndex !== rightIndex) {
+    return sortMode === "alpha-desc" ? rightIndex - leftIndex : leftIndex - rightIndex;
+  }
+
+  if (leftKnown !== rightKnown) {
+    return leftKnown ? -1 : 1;
+  }
+
+  return null;
+}
+
+function compareFacetRows(leftItem, rightItem, sortMode, customSortIndexMap) {
+  const leftLabel = String(leftItem?.label || "").trim();
+  const rightLabel = String(rightItem?.label || "").trim();
+  const leftValue = Number(leftItem?.value);
+  const rightValue = Number(rightItem?.value);
+
+  const labelComparison = leftLabel.localeCompare(rightLabel, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+
+  const customComparison = compareByCustomSortOrder(
+    leftLabel,
+    rightLabel,
+    sortMode,
+    customSortIndexMap
+  );
+  if (customComparison !== null) {
+    return customComparison;
+  }
+
+  if (sortMode === "alpha-asc") {
+    return labelComparison;
+  }
+  if (sortMode === "alpha-desc") {
+    return -labelComparison;
+  }
+  if (sortMode === "value-asc") {
+    if (leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+    return labelComparison;
+  }
+
+  if (leftValue !== rightValue) {
+    return rightValue - leftValue;
+  }
+  return labelComparison;
+}
+
+function sortFacetRows(data, sortMode = DEFAULT_CHART_SORT_MODE, customSortOrder = []) {
+  const normalizedSortMode = normalizeChartSortMode(sortMode);
+  const customSortIndexMap = createCustomSortIndexMap(customSortOrder);
+
+  return (Array.isArray(data) ? data : [])
+    .map((item) => {
+      const label = String(item?.displayLabel ?? item?.label ?? "").trim();
+      const value = Number(item?.value);
+      const includedValue = Number(item?.includedValue);
+      const rowLabel = String(item?.label ?? item?.displayLabel ?? "").trim();
+
+      return {
+        label,
+        rowLabel,
+        value: Number.isFinite(value) ? value : 0,
+        includedValue: Number.isFinite(includedValue) ? includedValue : null,
+      };
+    })
+    .filter((item) => item.label)
+    .sort((leftItem, rightItem) =>
+      compareFacetRows(leftItem, rightItem, normalizedSortMode, customSortIndexMap)
+    );
+}
+
+function buildDistributionSeries(
+  data,
+  sortMode = DEFAULT_CHART_SORT_MODE,
+  maxBars = 28,
+  customSortOrder = []
+) {
+  const rows = sortFacetRows(data, sortMode, customSortOrder).filter((item) => item.value > 0);
+  if (rows.length === 0) {
+    return [];
+  }
+
+  return rows.slice(0, Math.max(1, maxBars)).map((item) => item.value);
+}
+
+function DistributionStrip({ data, sortMode = DEFAULT_CHART_SORT_MODE, customSortOrder = [] }) {
+  const series = useMemo(
+    () => buildDistributionSeries(data, sortMode, 28, customSortOrder),
+    [customSortOrder, data, sortMode]
+  );
 
   if (series.length === 0) {
     return null;
@@ -1017,12 +2031,221 @@ function DistributionStrip({ data, sortDimension = "count" }) {
   );
 }
 
+function formatCompactCountLabel(totalValue, includedValue) {
+  const numericTotalValue = Number(totalValue);
+  const safeTotalValue = Number.isFinite(numericTotalValue)
+    ? Math.max(0, Math.round(numericTotalValue))
+    : 0;
+  const totalLabel = safeTotalValue.toLocaleString();
+
+  if (!Number.isFinite(includedValue)) {
+    return totalLabel;
+  }
+
+  const safeIncludedValue = Math.max(0, Math.round(Number(includedValue)));
+  if (safeIncludedValue === safeTotalValue) {
+    return totalLabel;
+  }
+
+  return `${safeIncludedValue.toLocaleString()} / ${totalLabel}`;
+}
+
+function CompactFilterCard({
+  data,
+  selectedValues = [],
+  onSelectionChange,
+  sortMode = DEFAULT_CHART_SORT_MODE,
+  customSortOrder = [],
+}) {
+  const theme = useTheme();
+  const custom = theme.custom || {};
+  const selectedAccentColor = custom.barActive || theme.palette.primary.main;
+  const baseFillColor = custom.barFill || theme.palette.primary.main;
+  const focusRingColor = custom.focusRing || theme.palette.primary.main;
+  const focusRingWidth = Number.parseFloat(custom.focusRingWidth) || 2;
+  const sortedRows = useMemo(
+    () => sortFacetRows(data, sortMode, customSortOrder),
+    [customSortOrder, data, sortMode]
+  );
+  const selectedSet = useMemo(
+    () => new Set((Array.isArray(selectedValues) ? selectedValues : []).map((value) => String(value || "").trim())),
+    [selectedValues]
+  );
+  const maxValue = useMemo(
+    () => Math.max(1, ...sortedRows.map((row) => Number(row.value) || 0)),
+    [sortedRows]
+  );
+
+  const handleToggle = (label) => {
+    if (typeof onSelectionChange !== "function") {
+      return;
+    }
+
+    const normalizedLabel = String(label || "").trim();
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const nextValues = selectedSet.has(normalizedLabel)
+      ? [...selectedSet].filter((value) => value !== normalizedLabel)
+      : [...selectedSet, normalizedLabel];
+    onSelectionChange(nextValues);
+  };
+
+  if (sortedRows.length === 0) {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        No values available.
+      </Typography>
+    );
+  }
+
+  return (
+    <Stack spacing={0.5}>
+      {sortedRows.map((row) => {
+        const isSelected = selectedSet.has(row.rowLabel);
+        const valueRatio = Math.max(0, Math.min(1, Number(row.value) / maxValue));
+        const countLabel = formatCompactCountLabel(row.value, row.includedValue);
+        const rowText = row.label || row.rowLabel;
+
+        return (
+          <Box
+            key={row.rowLabel || row.label}
+            sx={{
+              position: "relative",
+              display: "block",
+              width: "100%",
+              minHeight: 30,
+              borderRadius: 1,
+              overflow: "hidden",
+            }}
+          >
+            <Box
+              component="button"
+              type="button"
+              onClick={() => handleToggle(row.rowLabel)}
+              aria-pressed={isSelected}
+              aria-label={`Toggle ${row.label}`}
+              sx={{
+                position: "relative",
+                display: "grid",
+                gridTemplateColumns: "14px minmax(0, 1fr)",
+                alignItems: "center",
+                gap: 0.75,
+                width: "100%",
+                minHeight: 30,
+                border: "1px solid",
+                borderColor: isSelected ? selectedAccentColor : "divider",
+                borderRadius: 1,
+                bgcolor: "background.paper",
+                pl: 1,
+                pr: 8,
+                py: 0.4,
+                textAlign: "left",
+                cursor: "pointer",
+                transition: "border-color 0.15s ease, background-color 0.15s ease",
+                "&:hover": {
+                  bgcolor: "action.hover",
+                },
+                "&:focus-visible": {
+                  outline: `${focusRingWidth}px solid`,
+                  outlineColor: focusRingColor,
+                  outlineOffset: 1,
+                },
+              }}
+            >
+              <Box
+                aria-hidden="true"
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  width: `${Math.max(4, Math.round(valueRatio * 100))}%`,
+                  bgcolor: isSelected ? selectedAccentColor : baseFillColor,
+                  opacity: isSelected ? 0.2 : 0.12,
+                }}
+              />
+              <Box
+                aria-hidden="true"
+                sx={{
+                  position: "relative",
+                  width: 14,
+                  height: 14,
+                  border: "1px solid",
+                  borderColor: isSelected ? selectedAccentColor : "divider",
+                  borderRadius: 0.5,
+                  bgcolor: isSelected ? selectedAccentColor : "transparent",
+                  boxShadow: isSelected ? "0 0 0 1px rgba(255,255,255,0.2) inset" : "none",
+                }}
+              />
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{ position: "relative", minWidth: 0, color: "text.primary" }}
+              >
+                {rowText}
+              </Typography>
+            </Box>
+            <Typography
+              aria-hidden="true"
+              variant="caption"
+              sx={{
+                position: "absolute",
+                top: "50%",
+                right: 8,
+                transform: "translateY(-50%)",
+                color: "text.secondary",
+                fontVariantNumeric: "tabular-nums",
+                pointerEvents: "none",
+              }}
+            >
+              {countLabel}
+            </Typography>
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
 function FiltersView() {
   const [themeKey, setThemeKey] = useState(getInitialThemeKey);
-  const activeTheme = useMemo(() => getThemeByKey(themeKey), [themeKey]);
-  const custom = activeTheme.custom || {};
+  const [fontScale, setFontScale] = useState(getInitialFontScale);
+  const [fontFamilyKey, setFontFamilyKey] = useState(getInitialFontFamilyKey);
+  const [highContrast, setHighContrast] = useState(() => getInitialBooleanPref(HIGH_CONTRAST_STORAGE_KEY));
+  const [reducedMotion, setReducedMotion] = useState(() => getInitialBooleanPref(REDUCED_MOTION_STORAGE_KEY));
+  const activeTheme = useMemo(() => {
+    let theme = getThemeByKey(themeKey);
+    const selectedFontFamily = FONT_FAMILY_OPTIONS.find((option) => option.key === fontFamilyKey);
 
-  const handleThemeChange = (event) => {
+    if (selectedFontFamily?.stack) {
+      theme = createTheme(theme, {
+        typography: {
+          fontFamily: selectedFontFamily.stack,
+        },
+      });
+    }
+
+    if (highContrast) {
+      theme = applyHighContrast(theme);
+    }
+
+    if (fontScale !== 1) {
+      theme = createTheme(theme, {
+        custom: getScaledCustomThemeValues(theme.custom || {}, fontScale),
+      });
+    }
+
+    return theme;
+  }, [fontFamilyKey, fontScale, highContrast, themeKey]);
+  const custom = activeTheme.custom || {};
+  const initialLoadStartRef = useRef(
+    typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now()
+  );
+  const hasLoggedInitialLoadRef = useRef(false);
+
+  const handleThemeChange = useCallback((event) => {
     const nextKey = event.target.value;
     setThemeKey(nextKey);
     try {
@@ -1030,40 +2253,177 @@ function FiltersView() {
     } catch {
       // localStorage unavailable
     }
-  };
+  }, []);
 
-  const omopData = useDataLoader(getOmopClasses, getOmopInstances, "OMOP");
-  const attributeData = useDataLoader(
-    getAttributeClasses,
-    getAttributeInstances,
-    "Attributes",
+  const handleFontScaleChange = useCallback((delta) => {
+    setFontScale((previousScale) => {
+      if (!Number.isFinite(delta) || delta === 0) {
+        return previousScale;
+      }
+
+      const currentIndex = findClosestFontScaleIndex(previousScale);
+      const nextIndex = Math.max(
+        0,
+        Math.min(FONT_SCALE_OPTIONS.length - 1, currentIndex + Math.sign(delta))
+      );
+      const nextScale = FONT_SCALE_OPTIONS[nextIndex];
+
+      try {
+        localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(nextScale));
+      } catch {
+        // localStorage unavailable
+      }
+
+      return nextScale;
+    });
+  }, []);
+
+  const handleFontFamilyChange = useCallback((event) => {
+    const nextFontFamilyKey = event.target.value;
+    setFontFamilyKey(nextFontFamilyKey);
+    try {
+      localStorage.setItem(FONT_FAMILY_STORAGE_KEY, nextFontFamilyKey);
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
+
+  const handleHighContrastToggle = useCallback(() => {
+    setHighContrast((previousValue) => {
+      const nextValue = !previousValue;
+      try {
+        localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, String(nextValue));
+      } catch {
+        // localStorage unavailable
+      }
+      return nextValue;
+    });
+  }, []);
+
+  const handleReducedMotionToggle = useCallback(() => {
+    setReducedMotion((previousValue) => {
+      const nextValue = !previousValue;
+      try {
+        localStorage.setItem(REDUCED_MOTION_STORAGE_KEY, String(nextValue));
+      } catch {
+        // localStorage unavailable
+      }
+      return nextValue;
+    });
+  }, []);
+
+  const getOmopSummaryForFilters = useCallback(
+    () => getOmopSummary({ includePatientIds: false }),
+    []
   );
+  const getAttributesSummaryForFilters = useCallback(
+    () => getAttributesSummary({ includePatientIds: false }),
+    []
+  );
+  const omopData = useBatchDataLoader(getOmopSummaryForFilters, "OMOP");
+  const attributeData = useBatchDataLoader(getAttributesSummaryForFilters, "Attributes");
   const [selectedOmopValuesByClass, setSelectedOmopValuesByClass] = useState({});
   const [selectedAttributeValuesByClass, setSelectedAttributeValuesByClass] = useState({});
   const [expandedParentsByClass, setExpandedParentsByClass] = useState({});
-  const [omopSortDimensionByClass, setOmopSortDimensionByClass] = useState({});
-  const [attributeSortDimensionByClass, setAttributeSortDimensionByClass] = useState({});
+  const [omopSortModeByClass, setOmopSortModeByClass] = useState({});
+  const [attributeSortModeByClass, setAttributeSortModeByClass] = useState({});
   const ageAtDxSelectionMode = AGE_SELECTION_MODE.DECILE;
-  const [includePatientIds, setIncludePatientIds] = useState(false);
   const [countResult, setCountResult] = useState(null);
   const [includedCountByRowKey, setIncludedCountByRowKey] = useState({});
+  const [includedPatientIdsByRowKey, setIncludedPatientIdsByRowKey] = useState({});
+  const includedPatientIdsByRowKeyRef = useRef({});
   const [countError, setCountError] = useState("");
   const [isCountLoading, setIsCountLoading] = useState(false);
-  const [cardHeightMode, setCardHeightMode] = useState(CARD_HEIGHT_MODE.NORMALIZE);
+  const [currentPatientGridPage, setCurrentPatientGridPage] = useState(0);
+  const [patientGridPageCache, setPatientGridPageCache] = useState(() => new Map());
+  const [isPatientGridPageLoading, setIsPatientGridPageLoading] = useState(false);
+  const [patientGridPageError, setPatientGridPageError] = useState("");
+  const [patientGridPageRetryToken, setPatientGridPageRetryToken] = useState(0);
+  const [cardHeightMode, setCardHeightMode] = useState(CARD_HEIGHT_MODE.FIT);
   const [normalizedCardHeights, setNormalizedCardHeights] = useState({
     omop: null,
     attributes: null,
   });
   const omopCardContentRefs = useRef({});
   const attributeCardContentRefs = useRef({});
+  const patientSummaryCacheRef = useRef(new Map());
 
-  const orderedOmopClasses = useMemo(
-    () => sortOmopClasses(omopData.classes),
+  useEffect(() => {
+    if (fontFamilyKey !== "open-dyslexic" || typeof document === "undefined") {
+      return;
+    }
+
+    if (!document.getElementById(OPEN_DYSLEXIC_FONT_LINK_ID)) {
+      const linkElement = document.createElement("link");
+      linkElement.id = OPEN_DYSLEXIC_FONT_LINK_ID;
+      linkElement.rel = "stylesheet";
+      linkElement.href = OPEN_DYSLEXIC_FONT_LINK_HREF;
+      document.head.appendChild(linkElement);
+    }
+  }, [fontFamilyKey]);
+
+  useEffect(() => {
+    includedPatientIdsByRowKeyRef.current = includedPatientIdsByRowKey;
+  }, [includedPatientIdsByRowKey]);
+
+  useEffect(() => {
+    if (hasLoggedInitialLoadRef.current) {
+      return;
+    }
+
+    if (omopData.isLoading || attributeData.isLoading) {
+      return;
+    }
+
+    hasLoggedInitialLoadRef.current = true;
+    const loadEndTime =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+
+    if (SHOULD_LOG_FILTERS_PERF) {
+      // eslint-disable-next-line no-console
+      console.log("[FiltersView] initial data ready", {
+        totalMs: Math.round(loadEndTime - initialLoadStartRef.current),
+        omopClasses: omopData.classes.length,
+        attributeClasses: attributeData.classes.length,
+        omopError: omopData.errorMessage || "",
+        attributeError: attributeData.errorMessage || "",
+      });
+    }
+  }, [
+    attributeData.classes.length,
+    attributeData.errorMessage,
+    attributeData.isLoading,
+    omopData.classes.length,
+    omopData.errorMessage,
+    omopData.isLoading,
+  ]);
+
+  const omopFilterSets = useMemo(
+    () =>
+      resolveFilterSetsWithExtras(omopData.classes, "omop").filter(
+        (filterSet) => filterSet.display !== false
+      ),
     [omopData.classes]
   );
-  const orderedAttributeFilterClasses = useMemo(
-    () => resolveAttributeFilterClasses(attributeData.classes),
+  const attributeFilterSets = useMemo(
+    () =>
+      resolveFilterSetsWithExtras(attributeData.classes, "attributes").filter(
+        (filterSet) => filterSet.display !== false
+      ),
     [attributeData.classes]
+  );
+  const orderedOmopClasses = useMemo(
+    () => omopFilterSets.flatMap((filterSet) => filterSet.filters.map((filter) => filter.key)),
+    [omopFilterSets]
+  );
+  const orderedAttributeFilterClasses = useMemo(
+    () =>
+      attributeFilterSets.flatMap((filterSet) =>
+        filterSet.filters.map((filter) => filter.key)
+      ),
+    [attributeFilterSets]
   );
   const chartDataByClass = useMemo(() => {
     const next = {};
@@ -1088,7 +2448,7 @@ function FiltersView() {
 
     orderedAttributeFilterClasses.forEach((className) => {
       const classData = attributeChartDataByClass[className] || [];
-      next[className] = hasRollup(className)
+      next[className] = isAttributeRollupClass(className)
         ? buildRolledUpChartData(classData, className)
         : classData;
     });
@@ -1100,7 +2460,7 @@ function FiltersView() {
 
     orderedAttributeFilterClasses.forEach((className) => {
       const classData = attributeChartDataByClass[className] || [];
-      next[className] = hasRollup(className)
+      next[className] = isAttributeRollupClass(className)
         ? buildRollupInstanceMap(classData, className)
         : {};
     });
@@ -1113,7 +2473,7 @@ function FiltersView() {
     orderedAttributeFilterClasses.forEach((className) => {
       const classData = attributeChartDataByClass[className] || [];
 
-      if (!hasRollup(className)) {
+      if (!isAttributeRollupClass(className)) {
         next[className] = classData;
         return;
       }
@@ -1236,11 +2596,44 @@ function FiltersView() {
     [activeFilters, ageAtDxSelectionMode, ageDecileInstanceMap, rollupInstanceMapByClass]
   );
   const hasSelections = activeFilters.length > 0;
+  const getPatientSummary = useCallback(async (patientId) => {
+    const normalizedPatientId = String(patientId || "").trim();
+    if (!normalizedPatientId) {
+      return null;
+    }
+
+    const cache = patientSummaryCacheRef.current;
+    if (cache.has(normalizedPatientId)) {
+      return cache.get(normalizedPatientId);
+    }
+
+    const summaryPromise = (async () => {
+      const summaryPayload = await fetchDeepPheFilterSummary([normalizedPatientId]).catch(() => []);
+      const summary = buildPatientSummaryFromFilterSummary(summaryPayload, normalizedPatientId);
+      if (summary.docCount > 0) {
+        return summary;
+      }
+
+      const documentsPayload = await fetchPatientDocuments(normalizedPatientId, {
+        excludeProperties: DOCUMENT_COUNT_EXCLUDE_PROPERTIES,
+      }).catch(() => null);
+      const resolvedDocCount = resolveDocumentCountFromPayload(documentsPayload);
+      if (resolvedDocCount > 0) {
+        return { ...summary, docCount: resolvedDocCount };
+      }
+
+      return summary;
+    })();
+
+    cache.set(normalizedPatientId, summaryPromise);
+    return summaryPromise;
+  }, []);
 
   useEffect(() => {
     let isActive = true;
 
     const staticCountsByRowKey = {};
+    const staticPatientIdsByRowKey = {};
     const countRequests = [];
 
     chartClassRows.forEach(({ type, className, data }) => {
@@ -1259,8 +2652,24 @@ function FiltersView() {
 
         const rowKey = getFilterRowKey(type, className, rowLabel);
         const fallbackCount = Math.max(0, Math.round(rowTotalCount));
+        const rowPatientIds = normalizeInstanceValues(row?.patientIds);
+        const cachedRowPatientIds = normalizeInstanceValues(
+          includedPatientIdsByRowKeyRef.current?.[rowKey]
+        );
+        const effectiveRowPatientIds =
+          rowPatientIds.length > 0 ? rowPatientIds : cachedRowPatientIds;
+        const shouldRequestPatientIdsForDots =
+          fallbackCount > 0 &&
+          fallbackCount <= INLINE_PATIENT_IDS_THRESHOLD &&
+          effectiveRowPatientIds.length < fallbackCount;
 
-        if (!shouldQueryIncludedCounts) {
+        if (effectiveRowPatientIds.length > 0) {
+          staticPatientIdsByRowKey[rowKey] = effectiveRowPatientIds;
+        }
+
+        const shouldQueueCountRequest = shouldQueryIncludedCounts || shouldRequestPatientIdsForDots;
+
+        if (!shouldQueueCountRequest) {
           staticCountsByRowKey[rowKey] = fallbackCount;
           return;
         }
@@ -1294,6 +2703,7 @@ function FiltersView() {
           rowKey,
           rowRequestFilters,
           fallbackCount,
+          includePatientIds: shouldRequestPatientIdsForDots,
         });
       });
     });
@@ -1310,6 +2720,30 @@ function FiltersView() {
 
       return nextCountsByRowKey;
     });
+    setIncludedPatientIdsByRowKey((previousPatientIdsByRowKey) => {
+      const nextPatientIdsByRowKey = { ...staticPatientIdsByRowKey };
+
+      countRequests.forEach(({ rowKey, includePatientIds }) => {
+        if (!includePatientIds) {
+          return;
+        }
+
+        const previousPatientIds = normalizeInstanceValues(previousPatientIdsByRowKey?.[rowKey]);
+        if (previousPatientIds.length > 0) {
+          nextPatientIdsByRowKey[rowKey] = previousPatientIds;
+        }
+      });
+
+      return nextPatientIdsByRowKey;
+    });
+
+    if (countRequests.length > 0 && SHOULD_LOG_FILTERS_PERF) {
+      // eslint-disable-next-line no-console
+      console.log("[FiltersView] queued row-level count requests", {
+        requestCount: countRequests.length,
+        hasSelections,
+      });
+    }
 
     if (countRequests.length === 0) {
       return () => {
@@ -1319,18 +2753,27 @@ function FiltersView() {
 
     const loadIncludedCounts = async () => {
       const nextCountsByRowKey = { ...staticCountsByRowKey };
+      const nextPatientIdsByRowKey = { ...staticPatientIdsByRowKey };
 
       await Promise.all(
-        countRequests.map(async ({ rowKey, rowRequestFilters, fallbackCount }) => {
+        countRequests.map(async ({ rowKey, rowRequestFilters, fallbackCount, includePatientIds }) => {
           try {
             const countPayload = await fetchDeepPheFilterCount({
               filters: rowRequestFilters,
-              includePatientIds: false,
+              includePatientIds,
             });
-            const resolvedCount = normalizeCountResponse(countPayload).count;
+            const normalizedCountPayload = normalizeCountResponse(countPayload);
+            const resolvedCount = normalizedCountPayload.count;
             nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
               ? Math.max(0, Math.round(resolvedCount))
               : fallbackCount;
+
+            if (includePatientIds) {
+              const resolvedPatientIds = normalizeInstanceValues(normalizedCountPayload.patientIds);
+              if (resolvedPatientIds.length > 0) {
+                nextPatientIdsByRowKey[rowKey] = resolvedPatientIds;
+              }
+            }
           } catch {
             nextCountsByRowKey[rowKey] = fallbackCount;
           }
@@ -1339,6 +2782,27 @@ function FiltersView() {
 
       if (isActive) {
         setIncludedCountByRowKey(nextCountsByRowKey);
+        setIncludedPatientIdsByRowKey((previousPatientIdsByRowKey) => {
+          const mergedPatientIdsByRowKey = { ...nextPatientIdsByRowKey };
+
+          countRequests.forEach(({ rowKey, includePatientIds }) => {
+            if (!includePatientIds) {
+              return;
+            }
+
+            const resolvedPatientIds = normalizeInstanceValues(mergedPatientIdsByRowKey[rowKey]);
+            if (resolvedPatientIds.length > 0) {
+              return;
+            }
+
+            const previousPatientIds = normalizeInstanceValues(previousPatientIdsByRowKey?.[rowKey]);
+            if (previousPatientIds.length > 0) {
+              mergedPatientIdsByRowKey[rowKey] = previousPatientIds;
+            }
+          });
+
+          return mergedPatientIdsByRowKey;
+        });
       }
     };
 
@@ -1376,23 +2840,25 @@ function FiltersView() {
     );
   }, [orderedAttributeFilterClasses, rolledUpChartDataByClass]);
   useEffect(() => {
-    setOmopSortDimensionByClass((previousDimensions) => {
-      const nextDimensions = {};
+    setOmopSortModeByClass((previousModes) => {
+      const nextModes = {};
       orderedOmopClasses.forEach((className) => {
-        nextDimensions[className] =
-          previousDimensions?.[className] === "instance" ? "instance" : "count";
+        nextModes[className] = normalizeChartSortMode(
+          previousModes?.[className] || getFilterDefaultSortMode("omop", className)
+        );
       });
-      return nextDimensions;
+      return nextModes;
     });
   }, [orderedOmopClasses]);
   useEffect(() => {
-    setAttributeSortDimensionByClass((previousDimensions) => {
-      const nextDimensions = {};
+    setAttributeSortModeByClass((previousModes) => {
+      const nextModes = {};
       orderedAttributeFilterClasses.forEach((className) => {
-        nextDimensions[className] =
-          previousDimensions?.[className] === "instance" ? "instance" : "count";
+        nextModes[className] = normalizeChartSortMode(
+          previousModes?.[className] || getFilterDefaultSortMode("attributes", className)
+        );
       });
-      return nextDimensions;
+      return nextModes;
     });
   }, [orderedAttributeFilterClasses]);
 
@@ -1515,6 +2981,10 @@ function FiltersView() {
       setCountResult(null);
       setCountError("");
       setIsCountLoading(false);
+      setCurrentPatientGridPage(0);
+      setPatientGridPageCache(new Map());
+      setPatientGridPageError("");
+      setIsPatientGridPageLoading(false);
       return () => {
         isActive = false;
       };
@@ -1522,20 +2992,23 @@ function FiltersView() {
 
     setIsCountLoading(true);
     setCountError("");
+    setCountResult(null);
+    setCurrentPatientGridPage(0);
+    setPatientGridPageCache(new Map());
+    setPatientGridPageError("");
+    setIsPatientGridPageLoading(false);
 
     const loadCount = async () => {
       try {
         let nextResult = normalizeCountResponse(
           await fetchDeepPheFilterCount({
             filters: requestFilters,
-            includePatientIds,
+            includePatientIds: false,
           })
         );
 
         const shouldAutoResolvePatientIds =
-          !includePatientIds &&
           nextResult.count > 0 &&
-          nextResult.count < AUTO_SHOW_PATIENT_IDS_THRESHOLD &&
           nextResult.patientIds.length === 0;
 
         if (shouldAutoResolvePatientIds) {
@@ -1569,7 +3042,7 @@ function FiltersView() {
     return () => {
       isActive = false;
     };
-  }, [hasSelections, includePatientIds, requestFilters]);
+  }, [hasSelections, requestFilters]);
 
   const timing = countResult?.timing || {};
   const isSlowQuery = Number(timing.totalMs || 0) > SLOW_QUERY_THRESHOLD_MS;
@@ -1578,21 +3051,151 @@ function FiltersView() {
     () => buildIdentifiedSummary(activeFilters, countResult?.count),
     [activeFilters, countResult?.count]
   );
-  const patientIdsForDisplay = useMemo(() => {
-    const ids = Array.isArray(countResult?.patientIds) ? countResult.patientIds : [];
-    return [...ids].sort((leftId, rightId) =>
-      leftId.localeCompare(rightId, undefined, { numeric: true, sensitivity: "base" })
-    );
-  }, [countResult?.patientIds]);
-  const displayedPatientIds = useMemo(
-    () => patientIdsForDisplay.slice(0, MAX_RENDERED_PATIENT_IDS),
-    [patientIdsForDisplay]
+  const cohortSize = Number(countResult?.count || 0);
+  const patientIdsForResult = useMemo(
+    () => normalizePatientIds(countResult?.patientIds),
+    [countResult?.patientIds]
   );
-  const isPatientIdListTruncated = patientIdsForDisplay.length > displayedPatientIds.length;
-  const shouldShowPatientIdBox =
-    Boolean(countResult) &&
-    patientIdsForDisplay.length > 0 &&
-    (countResult.count < AUTO_SHOW_PATIENT_IDS_THRESHOLD || includePatientIds);
+  const patientIdsForResultKey = useMemo(
+    () => patientIdsForResult.join(","),
+    [patientIdsForResult]
+  );
+  const totalPatientGridPages = useMemo(
+    () => Math.ceil(patientIdsForResult.length / PATIENT_GRID_PAGE_SIZE),
+    [patientIdsForResult.length]
+  );
+  const currentPatientGridPageIds = useMemo(() => {
+    if (cohortSize <= 0) {
+      return [];
+    }
+
+    const startIndex = currentPatientGridPage * PATIENT_GRID_PAGE_SIZE;
+    const endIndex = Math.min(
+      startIndex + PATIENT_GRID_PAGE_SIZE,
+      patientIdsForResult.length
+    );
+
+    return patientIdsForResult.slice(startIndex, endIndex);
+  }, [cohortSize, currentPatientGridPage, patientIdsForResult]);
+  const patientGridRows = useMemo(
+    () => patientGridPageCache.get(currentPatientGridPage) || [],
+    [currentPatientGridPage, patientGridPageCache]
+  );
+  const shouldShowPatientDetailGrid = Boolean(countResult);
+
+  useEffect(() => {
+    setCurrentPatientGridPage(0);
+    setPatientGridPageCache(new Map());
+    setPatientGridPageError("");
+    setIsPatientGridPageLoading(false);
+  }, [patientIdsForResultKey, shouldShowPatientDetailGrid]);
+
+  useEffect(() => {
+    if (totalPatientGridPages <= 0) {
+      return;
+    }
+
+    if (currentPatientGridPage >= totalPatientGridPages) {
+      setCurrentPatientGridPage(Math.max(0, totalPatientGridPages - 1));
+    }
+  }, [currentPatientGridPage, totalPatientGridPages]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!shouldShowPatientDetailGrid || cohortSize <= 0) {
+      setIsPatientGridPageLoading(false);
+      setPatientGridPageError("");
+      return () => {
+        isActive = false;
+      };
+    }
+
+    if (currentPatientGridPageIds.length === 0) {
+      setIsPatientGridPageLoading(false);
+      setPatientGridPageError("Failed to load patient details.");
+      return () => {
+        isActive = false;
+      };
+    }
+
+    if (patientGridPageCache.has(currentPatientGridPage)) {
+      setIsPatientGridPageLoading(false);
+      setPatientGridPageError("");
+      return () => {
+        isActive = false;
+      };
+    }
+
+    setIsPatientGridPageLoading(true);
+    setPatientGridPageError("");
+
+    const loadPatientPage = async () => {
+      try {
+        const summaryPayload = await fetchDeepPheFilterSummary(currentPatientGridPageIds);
+        const summaryRowsRaw = Array.isArray(summaryPayload)
+          ? summaryPayload
+          : Array.isArray(summaryPayload?.data)
+            ? summaryPayload.data
+            : Array.isArray(summaryPayload?.summaries)
+              ? summaryPayload.summaries
+              : [];
+        const pageRows = summaryRowsRaw
+          .map(transformSummaryToGridRow)
+          .filter((row) => row.patientId)
+          .sort((leftRow, rightRow) =>
+            String(leftRow.patientId).localeCompare(String(rightRow.patientId), undefined, {
+              numeric: true,
+              sensitivity: "base",
+            })
+          );
+
+        if (!isActive) {
+          return;
+        }
+
+        setPatientGridPageCache((previousCache) => {
+          const nextCache = new Map(previousCache);
+          nextCache.set(currentPatientGridPage, pageRows);
+          return nextCache;
+        });
+        setPatientGridPageError("");
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setPatientGridPageError(error?.message || "Failed to load patient details.");
+      } finally {
+        if (isActive) {
+          setIsPatientGridPageLoading(false);
+        }
+      }
+    };
+
+    loadPatientPage();
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    cohortSize,
+    currentPatientGridPage,
+    currentPatientGridPageIds,
+    patientGridPageCache,
+    patientGridPageRetryToken,
+    shouldShowPatientDetailGrid,
+  ]);
+
+  const handleRetryPatientSummary = useCallback(() => {
+    setPatientGridPageCache((previousCache) => {
+      const nextCache = new Map(previousCache);
+      nextCache.delete(currentPatientGridPage);
+      return nextCache;
+    });
+    setPatientGridPageRetryToken((previous) => previous + 1);
+  }, [currentPatientGridPage]);
+
   const omopChartDataWithIncludedByClass = useMemo(() => {
     const next = {};
 
@@ -1603,13 +3206,19 @@ function FiltersView() {
           ? ageAtDxDecileChartData
           : chartDataByClass[className] || [];
 
-      next[className] = classData.map((row) => ({
-        ...row,
-        includedValue:
-          includedCountByRowKey[
-            getFilterRowKey("omop", className, String(row?.label || "").trim())
-          ],
-      }));
+      next[className] = classData.map((row) => {
+        const rowKey = getFilterRowKey("omop", className, String(row?.label || "").trim());
+        const includedPatientIds = normalizeInstanceValues(includedPatientIdsByRowKey[rowKey]);
+
+        return {
+          ...row,
+          includedValue: includedCountByRowKey[rowKey],
+          patientIds:
+            includedPatientIds.length > 0
+              ? includedPatientIds
+              : normalizeInstanceValues(row?.patientIds),
+        };
+      });
     });
 
     return next;
@@ -1618,6 +3227,7 @@ function FiltersView() {
     ageAtDxSelectionMode,
     chartDataByClass,
     includedCountByRowKey,
+    includedPatientIdsByRowKey,
     orderedOmopClasses,
   ]);
   const attributeChartDataWithIncludedByClass = useMemo(() => {
@@ -1625,19 +3235,30 @@ function FiltersView() {
 
     orderedAttributeFilterClasses.forEach((className) => {
       const classData = attributeDisplayChartDataByClass[className] || [];
-      next[className] = classData.map((row) => ({
-        ...row,
-        includedValue:
-          includedCountByRowKey[
-            getFilterRowKey("attributes", className, String(row?.label || "").trim())
-          ],
-      }));
+      next[className] = classData.map((row) => {
+        const rowKey = getFilterRowKey(
+          "attributes",
+          className,
+          String(row?.label || "").trim()
+        );
+        const includedPatientIds = normalizeInstanceValues(includedPatientIdsByRowKey[rowKey]);
+
+        return {
+          ...row,
+          includedValue: includedCountByRowKey[rowKey],
+          patientIds:
+            includedPatientIds.length > 0
+              ? includedPatientIds
+              : normalizeInstanceValues(row?.patientIds),
+        };
+      });
     });
 
     return next;
   }, [
     attributeDisplayChartDataByClass,
     includedCountByRowKey,
+    includedPatientIdsByRowKey,
     orderedAttributeFilterClasses,
   ]);
   const handleSelectionChange = (setter, className) => (nextValues) => {
@@ -1650,7 +3271,7 @@ function FiltersView() {
     }));
   };
   const handleAttributeParentExpansionChange = (className) => (rowLabel, nextExpanded, row) => {
-    if (!hasRollup(className)) {
+    if (!isAttributeRollupClass(className)) {
       return;
     }
 
@@ -1674,17 +3295,16 @@ function FiltersView() {
       };
     });
   };
-  const handleSortDimensionChange = (setter, className) => (nextSortDimension) => {
-    const normalizedSortDimension =
-      nextSortDimension === "instance" ? "instance" : "count";
+  const handleSortModeChange = (setter, className) => (nextSortMode) => {
+    const normalizedSortMode = normalizeChartSortMode(nextSortMode);
 
-    setter((previousDimensions) => {
-      if (previousDimensions?.[className] === normalizedSortDimension) {
-        return previousDimensions;
+    setter((previousModes) => {
+      if (previousModes?.[className] === normalizedSortMode) {
+        return previousModes;
       }
       return {
-        ...previousDimensions,
-        [className]: normalizedSortDimension,
+        ...previousModes,
+        [className]: normalizedSortMode,
       };
     });
   };
@@ -1696,17 +3316,19 @@ function FiltersView() {
   const cardHeightToggleTooltip = isNormalizedHeightMode
     ? "Switch to fit content heights"
     : "Switch to normalized row heights";
-  const getCardContentAreaSx = (sectionKey) => {
+  const getCardContentAreaSx = (sectionKey, isCompactCard = false) => {
     const sectionHeight = normalizedCardHeights[sectionKey];
 
     return {
-    display: "flex",
-    flexDirection: "column",
-    gap: 1,
-    height:
-      isNormalizedHeightMode && Number.isFinite(sectionHeight)
-        ? `${sectionHeight}px`
-        : "auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: 1,
+      height:
+        isCompactCard
+          ? "auto"
+          : isNormalizedHeightMode && Number.isFinite(sectionHeight)
+            ? `${sectionHeight}px`
+            : "auto",
       overflowY: "hidden",
       pr: 0,
     };
@@ -1721,19 +3343,31 @@ function FiltersView() {
       Math.round(sectionHeight - NORMALIZED_CHART_HEIGHT_OFFSET)
     );
   };
+  const CARD_FIXED_WIDTH = 340;
+  const MAX_FACET_COLUMNS = 3;
   const filterGridSx = {
-    display: "grid",
-    gap: 3,
-    alignItems: isNormalizedHeightMode ? "stretch" : "start",
-    gridTemplateColumns: {
-      xs: "1fr",
-      sm: "repeat(2, minmax(0, 1fr))",
-      md: "repeat(3, minmax(0, 1fr))",
-      lg: "repeat(5, minmax(0, 1fr))",
+    width: "100%",
+    columnCount: { xs: 1, md: 2, lg: MAX_FACET_COLUMNS },
+    columnGap: 3,
+    columnWidth: `${CARD_FIXED_WIDTH}px`,
+    maxWidth: (theme) => {
+      const gapPx = Number.parseFloat(theme.spacing(3)) || 24;
+      return `${CARD_FIXED_WIDTH * MAX_FACET_COLUMNS + gapPx * (MAX_FACET_COLUMNS - 1)}px`;
     },
   };
-  const getCardSx = () => {
+  const getCardSx = (cardIndex = 0) => {
+    const shouldStartNewColumn =
+      Number.isFinite(cardIndex) && cardIndex > 0 && cardIndex < MAX_FACET_COLUMNS;
     const base = {
+      width: "100%",
+      display: "inline-block",
+      verticalAlign: "top",
+      breakInside: "avoid",
+      breakBefore: {
+        xs: "auto",
+        lg: shouldStartNewColumn ? "column" : "auto",
+      },
+      mb: 3,
       p: custom.cardPadding || { xs: 2, md: 3 },
       position: "relative",
       overflow: "visible",
@@ -1774,23 +3408,52 @@ function FiltersView() {
         }
       : {}),
   });
+  const fontScaleIndex = findClosestFontScaleIndex(fontScale);
+  const canDecreaseFontScale = fontScaleIndex > 0;
+  const canIncreaseFontScale = fontScaleIndex < FONT_SCALE_OPTIONS.length - 1;
+  const fontScalePercentLabel = `${Math.round(fontScale * 100)}%`;
+  const getToggleButtonSx = (isActive) => (theme) => ({
+    height: 32,
+    width: 32,
+    border: "1px solid",
+    borderColor: isActive ? theme.palette.primary.main : theme.palette.divider,
+    borderRadius: 1,
+    color: isActive ? theme.palette.primary.main : custom.iconDefault || theme.palette.text.secondary,
+    backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.15) : theme.palette.background.paper,
+    "&:hover": {
+      backgroundColor: isActive
+        ? alpha(theme.palette.primary.main, 0.24)
+        : custom.iconHoverBg || theme.palette.action.hover,
+    },
+  });
 
   return (
     <ThemeProvider theme={activeTheme}>
       <CssBaseline />
       {REDUCED_MOTION_STYLES}
-    <Box
-      sx={{
-        minHeight: "100vh",
-        bgcolor: "background.default",
-        background: custom.pageBgExtra
-          ? `${custom.pageBgExtra}, ${activeTheme.palette.background.default}`
-          : undefined,
-        p: { xs: 2, md: 4 },
-        transition: "background-color 0.2s ease",
-      }}
-    >
-      <Stack spacing={2}>
+      {reducedMotion ? TOGGLED_REDUCED_MOTION_STYLES : null}
+      <Box
+        sx={{
+          minHeight: "100vh",
+          fontSize: fontScalePercentLabel,
+          bgcolor: "background.default",
+          background: custom.pageBgExtra
+            ? `${custom.pageBgExtra}, ${activeTheme.palette.background.default}`
+            : undefined,
+          p: { xs: 2, md: 4 },
+          transition: "background-color 0.2s ease",
+        }}
+      >
+        <Box component="main" aria-labelledby="filters-page-title">
+          <Stack spacing={2}>
+            <Typography
+              id="filters-page-title"
+              component="h1"
+              variant="h5"
+              sx={{ fontWeight: 800, color: "text.primary" }}
+            >
+              Patient Cohort Explorer
+            </Typography>
         <Box
           sx={{
             position: "sticky",
@@ -1808,31 +3471,63 @@ function FiltersView() {
           >
             <Paper elevation={0} sx={{ p: 1, border: 1, borderColor: "divider" }}>
               <Stack spacing={0.5}>
-                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1.25 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "nowrap" }}>
-                    <Typography variant="h6" color="text.primary" sx={CONTEXT_HEADER_SX}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1.25,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.25,
+                      flexWrap: "nowrap",
+                      minWidth: 0,
+                      flex: "1 1 260px",
+                    }}
+                  >
+                    <Box component="nav" aria-label="Primary navigation" sx={{ display: "inline-flex", flexShrink: 0 }}>
+                      <MuiLink
+                        component={RouterLink}
+                        to="/"
+                        underline="none"
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          color: "text.secondary",
+                          "&:hover": {
+                            color: "text.primary",
+                          },
+                        }}
+                      >
+                        <ArrowBackIcon fontSize="small" />
+                        <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                          Home
+                        </Typography>
+                      </MuiLink>
+                    </Box>
+                    <Typography component="h2" variant="h6" color="text.primary" sx={CONTEXT_HEADER_SX}>
                       Identified Patients
                     </Typography>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          size="small"
-                          checked={includePatientIds}
-                          onChange={(event) => setIncludePatientIds(event.target.checked)}
-                        />
-                      }
-                      label={
-                        <Typography variant="caption" color="text.secondary">
-                          Include IDs
-                        </Typography>
-                      }
-                      sx={{ m: 0, whiteSpace: "nowrap" }}
-                    />
                   </Box>
                   {countResult ? (
-                    <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "nowrap" }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: 1,
+                        flexWrap: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
                       <Typography
-                        variant="h6"
+                        component="span"
+                        variant="h4"
                         sx={{
                           textAlign: "right",
                           fontVariantNumeric: "tabular-nums",
@@ -1847,31 +3542,162 @@ function FiltersView() {
                       </Typography>
                     </Box>
                   ) : null}
-                  <Select
-                    size="small"
-                    value={themeKey}
-                    onChange={handleThemeChange}
-                    aria-label="Theme"
-                    startAdornment={
-                      <PaletteOutlinedIcon
-                        fontSize="small"
-                        sx={{ mr: 0.5, color: "text.secondary", flexShrink: 0 }}
-                      />
-                    }
+                  <Box
                     sx={{
-                      minWidth: 110,
-                      fontSize: "0.75rem",
-                      height: 32,
-                      bgcolor: "background.paper",
-                      "& .MuiSelect-select": { py: 0.5 },
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 1,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                      maxWidth: "100%",
                     }}
                   >
-                    {THEME_OPTIONS.map((option) => (
-                      <MenuItem key={option.key} value={option.key} sx={{ fontSize: "0.8rem" }}>
-                        {option.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
+                    <AccessibilityBadge label="Accessibility" />
+                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                      <TextFieldsIcon fontSize="small" sx={{ color: "text.secondary", flexShrink: 0 }} />
+                      <FormControl
+                        size="small"
+                        sx={{
+                          minWidth: 150,
+                          fontSize: "0.75rem",
+                          height: 32,
+                          bgcolor: "background.paper",
+                        }}
+                      >
+                        <InputLabel id="font-family-select-label">Font</InputLabel>
+                        <Select
+                          labelId="font-family-select-label"
+                          id="font-family-select"
+                          value={fontFamilyKey}
+                          onChange={handleFontFamilyChange}
+                          label="Font"
+                          sx={{
+                            height: 32,
+                            "& .MuiSelect-select": { py: 0.5 },
+                          }}
+                        >
+                          {FONT_FAMILY_OPTIONS.map((option) => (
+                            <MenuItem
+                              key={option.key}
+                              value={option.key}
+                              sx={{
+                                fontSize: "0.8rem",
+                                fontFamily: option.stack || "inherit",
+                              }}
+                            >
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Box>
+                    <Box
+                      role="group"
+                      aria-label="Font size"
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.25,
+                        border: "1px solid",
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        height: 32,
+                        pl: 0.5,
+                        pr: 0.25,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "text.secondary", fontWeight: 600, letterSpacing: 0.2, userSelect: "none" }}
+                      >
+                        Aa
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleFontScaleChange(-1)}
+                        disabled={!canDecreaseFontScale}
+                        aria-label="Decrease font size"
+                      >
+                        <RemoveIcon fontSize="small" />
+                      </IconButton>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          minWidth: 40,
+                          textAlign: "center",
+                          fontVariantNumeric: "tabular-nums",
+                          userSelect: "none",
+                        }}
+                      >
+                        {fontScalePercentLabel}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleFontScaleChange(1)}
+                        disabled={!canIncreaseFontScale}
+                        aria-label="Increase font size"
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                    <Tooltip title={highContrast ? "High contrast (on)" : "High contrast"}>
+                      <IconButton
+                        size="small"
+                        onClick={handleHighContrastToggle}
+                        aria-label={highContrast ? "Disable high contrast" : "Enable high contrast"}
+                        aria-pressed={highContrast}
+                        sx={getToggleButtonSx(highContrast)}
+                      >
+                        <ContrastIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title={reducedMotion ? "Reduce motion (on)" : "Reduce motion"}>
+                      <IconButton
+                        size="small"
+                        onClick={handleReducedMotionToggle}
+                        aria-label={reducedMotion ? "Disable reduced motion" : "Enable reduced motion"}
+                        aria-pressed={reducedMotion}
+                        sx={getToggleButtonSx(reducedMotion)}
+                      >
+                        <MotionPhotosOffIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                      <PaletteOutlinedIcon
+                        fontSize="small"
+                        sx={{ color: "text.secondary", flexShrink: 0 }}
+                      />
+                      <FormControl
+                        size="small"
+                        sx={{
+                          minWidth: 130,
+                          fontSize: "0.75rem",
+                          height: 32,
+                          bgcolor: "background.paper",
+                        }}
+                      >
+                        <InputLabel id="theme-select-label">Theme</InputLabel>
+                        <Select
+                          labelId="theme-select-label"
+                          id="theme-select"
+                          value={themeKey}
+                          onChange={handleThemeChange}
+                          label="Theme"
+                          sx={{
+                            height: 32,
+                            "& .MuiSelect-select": { py: 0.5 },
+                          }}
+                        >
+                          {THEME_OPTIONS.map((option) => (
+                            <MenuItem key={option.key} value={option.key} sx={{ fontSize: "0.8rem" }}>
+                              {option.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Box>
+                  </Box>
                 </Box>
                 {isCountLoading ? (
                   <Typography variant="body2" color="text.secondary">
@@ -1930,93 +3756,61 @@ function FiltersView() {
                         </Box>
                       ))}
                     </Box>
-                    {shouldShowPatientIdBox ? (
-                      <Box
-                        sx={{
-                          border: 1,
-                          borderColor: "divider",
-                          borderRadius: 1,
-                          p: 0.5,
-                          maxHeight: "4rem",
-                          overflowY: "auto",
-                          bgcolor: "background.default",
-                        }}
-                      >
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", mb: 0.25, fontVariantNumeric: "tabular-nums" }}
-                        >
-                          patient_ids (
-                          {isPatientIdListTruncated
-                            ? `showing ${displayedPatientIds.length.toLocaleString()} of ${patientIdsForDisplay.length.toLocaleString()}`
-                            : patientIdsForDisplay.length.toLocaleString()}
-                          )
-                        </Typography>
-                        <Box
-                          sx={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 0.35,
-                            fontFamily: custom.countFontFamily || "monospace",
-                            lineHeight: 1.2,
-                          }}
-                        >
-                          {displayedPatientIds.map((patientId) => (
-                            <Box
-                              key={patientId}
-                              component="span"
-                              sx={{
-                                px: 0.35,
-                                py: 0.15,
-                                borderRadius: 0.75,
-                                bgcolor: "background.paper",
-                                border: 1,
-                                borderColor: "divider",
-                                fontSize: "0.75rem",
-                                color: "text.primary",
-                              }}
-                            >
-                              {patientId}
-                            </Box>
-                          ))}
-                        </Box>
-                      </Box>
-                    ) : includePatientIds && countResult.count > 0 && !isCountLoading ? (
-                      <Alert severity="info">
-                        Patient IDs were requested, but the API returned none for this cohort.
-                      </Alert>
-                    ) : countResult.count >= AUTO_SHOW_PATIENT_IDS_THRESHOLD && !includePatientIds ? (
+                    {cohortSize === 0 ? (
                       <Typography variant="body2" color="text.secondary">
-                        Patient IDs auto-display when cohort size is below{" "}
-                        {AUTO_SHOW_PATIENT_IDS_THRESHOLD.toLocaleString()}.
+                        No patients match the current filters.
                       </Typography>
-                    ) : null}
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        Showing page {(currentPatientGridPage + 1).toLocaleString()} of{" "}
+                        {Math.max(1, totalPatientGridPages).toLocaleString()} ·{" "}
+                        {cohortSize.toLocaleString()} matched patients.
+                      </Typography>
+                    )}
                     {isSlowQuery ? (
                       <Alert severity="warning">
                         Query took {formatMs(timing.totalMs)} ms. Consider narrowing selections for faster response.
                       </Alert>
                     ) : null}
                     {zeroResultHint ? <Alert severity="info">{zeroResultHint}</Alert> : null}
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        textAlign: "right",
-                        fontVariantNumeric: "tabular-nums",
-                        color: custom.statsColor || "text.secondary",
-                        fontFamily: custom.countFontFamily || "inherit",
-                        pt: 0.25,
-                      }}
-                    >
-                      Query {formatMs(timing.queryMs)} ms | Bitmap {formatMs(timing.bitmapMs)} ms | Resolve{" "}
-                      {formatMs(timing.resolveMs)} ms | Total {formatMs(timing.totalMs)} ms
-                    </Typography>
+                    {SHOULD_LOG_FILTERS_PERF ? (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          textAlign: "right",
+                          fontVariantNumeric: "tabular-nums",
+                          color: custom.statsColor || "text.secondary",
+                          fontFamily: custom.countFontFamily || "inherit",
+                          pt: 0.25,
+                        }}
+                      >
+                        Query {formatMs(timing.queryMs)} ms | Bitmap {formatMs(timing.bitmapMs)} ms | Resolve{" "}
+                        {formatMs(timing.resolveMs)} ms | Total {formatMs(timing.totalMs)} ms
+                      </Typography>
+                    ) : null}
                   </Stack>
                 ) : null}
               </Stack>
             </Paper>
           </Box>
         </Box>
+
+        {countResult && shouldShowPatientDetailGrid ? (
+          <Box>
+            <PatientGrid
+              data={patientGridRows}
+              cohortSize={cohortSize}
+              totalCohortCount={cohortSize}
+              totalPages={totalPatientGridPages}
+              currentPage={currentPatientGridPage}
+              pageSize={PATIENT_GRID_PAGE_SIZE}
+              onPageChange={setCurrentPatientGridPage}
+              isLoading={isPatientGridPageLoading}
+              error={patientGridPageError}
+              onRetry={handleRetryPatientSummary}
+            />
+          </Box>
+        ) : null}
 
         {isLoading || isAttributeLoading ? (
           <Typography variant="body2" color="text.secondary">
@@ -2045,153 +3839,261 @@ function FiltersView() {
                 </IconButton>
               </Tooltip>
             </Box>
-            {orderedOmopClasses.length > 0 ? (
-              <Box sx={filterGridSx}>
-                {orderedOmopClasses.map((className) => {
-                  const classError = omopData.errorsByClass[className] || "";
-                  const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
-                  const classData =
-                    isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
-                      ? ageAtDxDecileChartData
-                      : chartDataByClass[className] || [];
-                  const classChartData = omopChartDataWithIncludedByClass[className] || classData;
-                  const classDisplayName = prettifyClassName(className, "omop");
-                  const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
-                  const sortDimension = omopSortDimensionByClass[className] || "count";
+            {omopFilterSets.length > 0 ? (
+              <Stack spacing={2}>
+                {omopFilterSets.map((filterSet) => {
+                  const sectionHasData = filterSet.filters.some((filter) => {
+                    const className = filter.key;
+                    const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
+                    const classData =
+                      isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
+                        ? ageAtDxDecileChartData
+                        : chartDataByClass[className] || [];
+                    const classChartData =
+                      omopChartDataWithIncludedByClass[className] || classData;
+                    return Array.isArray(classChartData) && classChartData.length > 0;
+                  });
 
                   return (
-                    <Paper
-                      key={className}
-                      elevation={0}
-                      sx={getCardSx()}
-                    >
-                      <Box
-                        ref={setCardContentRef(omopCardContentRefs, `omop-${className}`)}
-                        sx={getCardContentAreaSx("omop")}
-                      >
-                        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
-                          <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
-                            <Typography
-                              variant="h6"
-                              sx={getHeaderSx()}
+                    <Stack key={filterSet.id} spacing={1}>
+                      <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
+                        {filterSet.label}
+                      </Typography>
+                      {cohortSize > 0 && sectionHasData ? (
+                        <Typography variant="caption" color="text.secondary">
+                          Showing distributions for {cohortSize.toLocaleString()} matched patient
+                          {cohortSize === 1 ? "" : "s"}
+                        </Typography>
+                      ) : null}
+                      <Box sx={filterGridSx}>
+                        {filterSet.filters.map((filter, filterIndex) => {
+                        const className = filter.key;
+                        const classError = omopData.errorsByClass[className] || "";
+                        const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
+                        const classData =
+                          isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
+                            ? ageAtDxDecileChartData
+                            : chartDataByClass[className] || [];
+                        const classChartData = omopChartDataWithIncludedByClass[className] || classData;
+                        const classDisplayName =
+                          filter.displayName || getFilterDisplayName("omop", className);
+                        const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
+                        const defaultSortMode = getFilterDefaultSortMode("omop", className);
+                        const customSortOrder = getFilterCustomSortOrder("omop", className);
+                        const sortMode = omopSortModeByClass[className] || defaultSortMode;
+                        const displayMode = resolveDisplayMode(filter, classChartData);
+                        const isCompactMode = displayMode === "compact";
+                        const onSelectionChangeForClass = handleSelectionChange(
+                          setSelectedOmopValuesByClass,
+                          className
+                        );
+
+                        return (
+                          <Paper
+                            key={`${filterSet.id}:${className}`}
+                            elevation={0}
+                            sx={getCardSx(filterIndex)}
+                          >
+                            <Box
+                              ref={
+                                isCompactMode
+                                  ? undefined
+                                  : setCardContentRef(omopCardContentRefs, `omop-${className}`)
+                              }
+                              sx={getCardContentAreaSx("omop", isCompactMode)}
                             >
-                              {classDisplayName}
-                            </Typography>
-                          </Box>
-                          <DistributionStrip data={classData} sortDimension={sortDimension} />
-                        </Box>
-                        {classError ? <Alert severity="error">{classError}</Alert> : null}
-                        <HorizontalBarChart
-                          title={classDisplayName}
-                          showTitle={false}
-                          allowCollapse={false}
-                          showSortDimensionToggle
-                          showSortCycleButton={false}
-                          onSortDimensionChange={handleSortDimensionChange(
-                            setOmopSortDimensionByClass,
-                            className
-                          )}
-                          data={classChartData}
-                          selectedValues={selectedValuesForClass}
-                          onSelectionChange={handleSelectionChange(
-                            setSelectedOmopValuesByClass,
-                            className
-                          )}
-                          height={getNormalizedChartHeight("omop")}
-                          defaultSort="value-desc"
-                          inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                        />
+                              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
+                                <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
+                                  <Typography
+                                    component="h3"
+                                    variant="h6"
+                                    sx={getHeaderSx()}
+                                  >
+                                    {classDisplayName}
+                                  </Typography>
+                                </Box>
+                                {displayMode === "distribution" ? (
+                                  <DistributionStrip
+                                    data={classChartData}
+                                    sortMode={sortMode}
+                                    customSortOrder={customSortOrder}
+                                  />
+                                ) : null}
+                              </Box>
+                              {classError ? <Alert severity="error">{classError}</Alert> : null}
+                              {displayMode === "distribution" ? (
+                                <HorizontalBarChart
+                                  title={classDisplayName}
+                                  showTitle={false}
+                                  allowCollapse={false}
+                                  showSortDimensionToggle
+                                  showSortCycleButton={false}
+                                  onSortModeChange={handleSortModeChange(
+                                    setOmopSortModeByClass,
+                                    className
+                                  )}
+                                  data={classChartData}
+                                  selectedValues={selectedValuesForClass}
+                                  onSelectionChange={onSelectionChangeForClass}
+                                  fontScale={fontScale}
+                                  height={getNormalizedChartHeight("omop")}
+                                  defaultSort={defaultSortMode}
+                                  customSortOrder={customSortOrder}
+                                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                                  getPatientSummary={getPatientSummary}
+                                />
+                              ) : (
+                                <CompactFilterCard
+                                  data={classChartData}
+                                  selectedValues={selectedValuesForClass}
+                                  onSelectionChange={onSelectionChangeForClass}
+                                  sortMode={sortMode}
+                                  customSortOrder={customSortOrder}
+                                />
+                              )}
+                            </Box>
+                          </Paper>
+                        );
+                        })}
                       </Box>
-                    </Paper>
+                    </Stack>
                   );
                 })}
-              </Box>
+              </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary">
                 No OMOP classes returned.
               </Typography>
             )}
 
-            {orderedAttributeFilterClasses.length > 0 ? (
-              <Box sx={filterGridSx}>
-                {orderedAttributeFilterClasses.map((className) => {
-                  const classError = attributeData.errorsByClass[className] || "";
-                  const classData = attributeDisplayChartDataByClass[className] || [];
-                  const classChartData =
-                    attributeChartDataWithIncludedByClass[className] || classData;
-                  const classDisplayName = prettifyClassName(className, "attributes");
-                  const selectedValuesForClass = selectedAttributeValuesByClass[className] || [];
-                  const sortDimension = attributeSortDimensionByClass[className] || "count";
+            {attributeFilterSets.length > 0 ? (
+              <Stack spacing={2}>
+                {attributeFilterSets.map((filterSet) => {
+                  const sectionHasData = filterSet.filters.some((filter) => {
+                    const classChartData =
+                      attributeChartDataWithIncludedByClass[filter.key] ||
+                      attributeDisplayChartDataByClass[filter.key] ||
+                      [];
+                    return Array.isArray(classChartData) && classChartData.length > 0;
+                  });
 
                   return (
-                    <Paper
-                      key={className}
-                      elevation={0}
-                      sx={getCardSx()}
-                    >
-                      <Box
-                        ref={setCardContentRef(
-                          attributeCardContentRefs,
-                          `attribute-${className}`
-                        )}
-                        sx={getCardContentAreaSx("attributes")}
-                      >
-                        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
-                          <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
-                            <Typography
-                              variant="h6"
-                              sx={getHeaderSx()}
+                    <Stack key={filterSet.id} spacing={1}>
+                      <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
+                        {filterSet.label}
+                      </Typography>
+                      {cohortSize > 0 && sectionHasData ? (
+                        <Typography variant="caption" color="text.secondary">
+                          Showing distributions for {cohortSize.toLocaleString()} matched patient
+                          {cohortSize === 1 ? "" : "s"}
+                        </Typography>
+                      ) : null}
+                      <Box sx={filterGridSx}>
+                        {filterSet.filters.map((filter, filterIndex) => {
+                        const className = filter.key;
+                        const classError = attributeData.errorsByClass[className] || "";
+                        const classData = attributeDisplayChartDataByClass[className] || [];
+                        const classChartData =
+                          attributeChartDataWithIncludedByClass[className] || classData;
+                        const classDisplayName =
+                          filter.displayName || getFilterDisplayName("attributes", className);
+                        const selectedValuesForClass = selectedAttributeValuesByClass[className] || [];
+                        const defaultSortMode = getFilterDefaultSortMode("attributes", className);
+                        const customSortOrder = getFilterCustomSortOrder("attributes", className);
+                        const sortMode = attributeSortModeByClass[className] || defaultSortMode;
+                        const displayMode = resolveDisplayMode(filter, classChartData);
+                        const isCompactMode = displayMode === "compact";
+                        const onSelectionChangeForClass = handleSelectionChange(
+                          setSelectedAttributeValuesByClass,
+                          className
+                        );
+
+                        return (
+                          <Paper
+                            key={`${filterSet.id}:${className}`}
+                            elevation={0}
+                            sx={getCardSx(filterIndex)}
+                          >
+                            <Box
+                              ref={
+                                isCompactMode
+                                  ? undefined
+                                  : setCardContentRef(
+                                      attributeCardContentRefs,
+                                      `attribute-${className}`
+                                    )
+                              }
+                              sx={getCardContentAreaSx("attributes", isCompactMode)}
                             >
-                              {classDisplayName}
-                            </Typography>
-                          </Box>
-                          <DistributionStrip data={classData} sortDimension={sortDimension} />
-                        </Box>
-                        {classError ? <Alert severity="error">{classError}</Alert> : null}
-                        <HorizontalBarChart
-                          title={classDisplayName}
-                          showTitle={false}
-                          allowCollapse={false}
-                          showSortDimensionToggle
-                          showSortCycleButton={false}
-                          onSortDimensionChange={handleSortDimensionChange(
-                            setAttributeSortDimensionByClass,
-                            className
-                          )}
-                          data={classChartData}
-                          selectedValues={selectedValuesForClass}
-                          onSelectionChange={handleSelectionChange(
-                            setSelectedAttributeValuesByClass,
-                            className
-                          )}
-                          onRowToggleExpand={handleAttributeParentExpansionChange(className)}
-                          height={getNormalizedChartHeight("attributes")}
-                          defaultSort="value-desc"
-                          inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                        />
+                              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
+                                <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
+                                  <Typography
+                                    component="h3"
+                                    variant="h6"
+                                    sx={getHeaderSx()}
+                                  >
+                                    {classDisplayName}
+                                  </Typography>
+                                </Box>
+                                {displayMode === "distribution" ? (
+                                  <DistributionStrip
+                                    data={classChartData}
+                                    sortMode={sortMode}
+                                    customSortOrder={customSortOrder}
+                                  />
+                                ) : null}
+                              </Box>
+                              {classError ? <Alert severity="error">{classError}</Alert> : null}
+                              {displayMode === "distribution" ? (
+                                <HorizontalBarChart
+                                  title={classDisplayName}
+                                  showTitle={false}
+                                  allowCollapse={false}
+                                  showSortDimensionToggle
+                                  showSortCycleButton={false}
+                                  onSortModeChange={handleSortModeChange(
+                                    setAttributeSortModeByClass,
+                                    className
+                                  )}
+                                  data={classChartData}
+                                  selectedValues={selectedValuesForClass}
+                                  onSelectionChange={onSelectionChangeForClass}
+                                  onRowToggleExpand={handleAttributeParentExpansionChange(className)}
+                                  fontScale={fontScale}
+                                  height={getNormalizedChartHeight("attributes")}
+                                  defaultSort={defaultSortMode}
+                                  customSortOrder={customSortOrder}
+                                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                                  getPatientSummary={getPatientSummary}
+                                />
+                              ) : (
+                                <CompactFilterCard
+                                  data={classChartData}
+                                  selectedValues={selectedValuesForClass}
+                                  onSelectionChange={onSelectionChangeForClass}
+                                  sortMode={sortMode}
+                                  customSortOrder={customSortOrder}
+                                />
+                              )}
+                            </Box>
+                          </Paper>
+                        );
+                        })}
                       </Box>
-                    </Paper>
+                    </Stack>
                   );
                 })}
-              </Box>
+              </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary">
-                None of the requested Attribute filters were returned (T Stage, N Stage, M Stage, Grade_Numeric, Behavior).
+                No Attribute classes returned.
               </Typography>
             )}
           </Stack>
         ) : null}
-
-        <MuiLink
-          component={RouterLink}
-          to="/"
-          underline="hover"
-          sx={{ width: "fit-content", color: "text.secondary" }}
-        >
-          Back Home
-        </MuiLink>
-      </Stack>
-    </Box>
+          </Stack>
+        </Box>
+      </Box>
     </ThemeProvider>
   );
 }

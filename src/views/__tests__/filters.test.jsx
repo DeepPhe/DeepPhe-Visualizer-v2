@@ -3,13 +3,17 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 
+const mockHorizontalBarChart = jest.fn();
+
 jest.mock("../../components/HorizontalBarChart", () => (props) => {
+  mockHorizontalBarChart(props);
   const selectedValues = Array.isArray(props.selectedValues) ? props.selectedValues : [];
 
   return (
     <div data-testid={`chart-${props.title}`}>
       {props.data.map((row) => {
         const isSelected = selectedValues.includes(row.label);
+        const textLabel = row.displayLabel || row.label;
         return (
           <button
             key={row.label}
@@ -21,7 +25,7 @@ jest.mock("../../components/HorizontalBarChart", () => (props) => {
               props.onSelectionChange?.(nextValues);
             }}
           >
-            {row.label}
+            {textLabel}
           </button>
         );
       })}
@@ -30,26 +34,25 @@ jest.mock("../../components/HorizontalBarChart", () => (props) => {
 });
 
 jest.mock("../../controllers/omap", () => ({
-  getClasses: jest.fn(),
-  getInstances: jest.fn(),
+  getSummary: jest.fn(),
 }));
 
 jest.mock("../../controllers/attributes", () => ({
-  getClasses: jest.fn(),
-  getInstances: jest.fn(),
+  getSummary: jest.fn(),
 }));
 
 jest.mock("../../clients/deepphe-data-api", () => ({
   fetchDeepPheFilterCount: jest.fn(),
+  fetchDeepPheFilterSummary: jest.fn(),
 }));
 
 import FiltersView from "../filters";
-import { getClasses as getOmopClasses, getInstances as getOmopInstances } from "../../controllers/omap";
+import { getSummary as getOmopSummary } from "../../controllers/omap";
+import { getSummary as getAttributeSummary } from "../../controllers/attributes";
 import {
-  getClasses as getAttributeClasses,
-  getInstances as getAttributeInstances,
-} from "../../controllers/attributes";
-import { fetchDeepPheFilterCount } from "../../clients/deepphe-data-api";
+  fetchDeepPheFilterCount,
+  fetchDeepPheFilterSummary,
+} from "../../clients/deepphe-data-api";
 
 function renderComponent(element) {
   const container = document.createElement("div");
@@ -105,79 +108,54 @@ async function waitFor(assertion, timeoutMs = 2500) {
 describe("FiltersView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockHorizontalBarChart.mockClear();
 
-    getOmopClasses.mockResolvedValue(["AGE_AT_DX", "GENDER", "RACE", "CANCER"]);
-    getOmopInstances.mockImplementation((attribute) => {
-      if (String(attribute).toUpperCase() === "AGE_AT_DX") {
-        return Promise.resolve([
+    getOmopSummary.mockResolvedValue({
+      classes: ["AGE_AT_DX", "GENDER", "RACE", "CANCER"],
+      instancesByClass: {
+        AGE_AT_DX: [
           { age_at_dx: "40-49", count: 11 },
           { age_at_dx: "50-59", count: 7 },
-        ]);
-      }
-
-      if (String(attribute).toUpperCase() === "GENDER") {
-        return Promise.resolve([
+        ],
+        GENDER: [
           { gender: "Female", count: 13 },
           { gender: "Male", count: 9 },
-        ]);
-      }
-
-      if (String(attribute).toUpperCase() === "RACE") {
-        return Promise.resolve([
+        ],
+        RACE: [
           { race: "White", count: 12 },
           { race: "Black", count: 7 },
-        ]);
-      }
-
-      if (String(attribute).toUpperCase() === "CANCER") {
-        return Promise.resolve([
+        ],
+        CANCER: [
           { cancer: "Breast", count: 6 },
           { cancer: "Lung", count: 5 },
-        ]);
-      }
-
-      return Promise.resolve([]);
+        ],
+      },
     });
 
-    getAttributeClasses.mockResolvedValue([
-      "Behavior",
-      "Grade_Numeric",
-      "M Stage",
-      "N Stage",
-      "T Stage",
-    ]);
-    getAttributeInstances.mockImplementation((className) => {
-      if (className === "T Stage") {
-        return Promise.resolve([
+    getAttributeSummary.mockResolvedValue({
+      classes: ["Behavior", "Grade_Numeric", "M Stage", "N Stage", "T Stage"],
+      instancesByClass: {
+        "T Stage": [
           { value: "T1", count: 9 },
           { value: "T2", count: 4 },
-        ]);
-      }
-      if (className === "N Stage") {
-        return Promise.resolve([
+        ],
+        "N Stage": [
           { value: "N0", count: 8 },
           { value: "N1", count: 3 },
-        ]);
-      }
-      if (className === "M Stage") {
-        return Promise.resolve([
+        ],
+        "M Stage": [
           { value: "M0", count: 10 },
           { value: "M1", count: 2 },
-        ]);
-      }
-      if (className === "Grade_Numeric") {
-        return Promise.resolve([
+        ],
+        Grade_Numeric: [
           { value: "Grade 2", count: 6 },
           { value: "Grade 3", count: 5 },
-        ]);
-      }
-      if (className === "Behavior") {
-        return Promise.resolve([
+        ],
+        Behavior: [
           { value: "Invasive", count: 7 },
           { value: "Malignant", count: 6 },
-        ]);
-      }
-      return Promise.resolve([]);
+        ],
+      },
     });
 
     fetchDeepPheFilterCount.mockResolvedValue({
@@ -191,6 +169,7 @@ describe("FiltersView", () => {
         itemCounts: [11, 13, 12, 6, 5, 7],
       },
     });
+    fetchDeepPheFilterSummary.mockResolvedValue([]);
   });
 
   it("builds OMOP + Attribute endpoint filters from selected class charts", async () => {
@@ -209,19 +188,15 @@ describe("FiltersView", () => {
       const cancerButton = Array.from(container.querySelectorAll("button")).find(
         (button) => button.textContent === "Breast"
       );
-      const gradeButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "G3"
-      );
-      const behaviorButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Malignant"
+      const tStageButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "T2"
       );
 
       expect(ageButton).not.toBeUndefined();
       expect(genderButton).not.toBeUndefined();
       expect(raceButton).not.toBeUndefined();
       expect(cancerButton).not.toBeUndefined();
-      expect(gradeButton).not.toBeUndefined();
-      expect(behaviorButton).not.toBeUndefined();
+      expect(tStageButton).not.toBeUndefined();
     });
 
     const ageButton = Array.from(container.querySelectorAll("button")).find(
@@ -236,19 +211,15 @@ describe("FiltersView", () => {
     const cancerButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent === "Breast"
     );
-    const gradeButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "G3"
-    );
-    const behaviorButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Malignant"
+    const tStageButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "T2"
     );
 
     await clickAsync(ageButton);
     await clickAsync(genderButton);
     await clickAsync(raceButton);
     await clickAsync(cancerButton);
-    await clickAsync(gradeButton);
-    await clickAsync(behaviorButton);
+    await clickAsync(tStageButton);
 
     await waitFor(() => {
       expect(fetchDeepPheFilterCount).toHaveBeenCalledWith({
@@ -257,33 +228,34 @@ describe("FiltersView", () => {
           { type: "omop", class: "RACE", instances: ["White"] },
           { type: "omop", class: "GENDER", instances: ["Female"] },
           { type: "omop", class: "CANCER", instances: ["Breast"] },
-          { type: "attributes", class: "Grade_Numeric", instances: ["Grade 3"] },
-          { type: "attributes", class: "Behavior", instances: ["Invasive", "Malignant"] },
+          { type: "attributes", class: "T Stage", instances: ["T2"] },
         ],
         includePatientIds: false,
       });
     });
 
     expect(container.textContent).toContain(
-      "There are 4 40-49 year old white female patients in the cohort with breast cancer, malignant neoplasm behavior, and grade G3."
+      "There are 4 40-49 year old white female patients in the cohort with breast cancer, and T stage T2."
     );
 
     unmount();
   });
 
   it("expands age decile selections into underlying AGE_AT_DX instances", async () => {
-    getOmopClasses.mockResolvedValue(["AGE_AT_DX"]);
-    getOmopInstances.mockImplementation((attribute) => {
-      if (String(attribute).toUpperCase() === "AGE_AT_DX") {
-        return Promise.resolve([
+    getOmopSummary.mockResolvedValue({
+      classes: ["AGE_AT_DX"],
+      instancesByClass: {
+        AGE_AT_DX: [
           { age_at_dx: "41", count: 4 },
           { age_at_dx: "44", count: 3 },
           { age_at_dx: "52", count: 2 },
-        ]);
-      }
-      return Promise.resolve([]);
+        ],
+      },
     });
-    getAttributeClasses.mockResolvedValue([]);
+    getAttributeSummary.mockResolvedValue({
+      classes: [],
+      instancesByClass: {},
+    });
     fetchDeepPheFilterCount.mockResolvedValue({
       count: 7,
       patient_ids: [],
@@ -345,13 +317,13 @@ describe("FiltersView", () => {
       const cancerButton = Array.from(container.querySelectorAll("button")).find(
         (button) => button.textContent === "Breast"
       );
-      const behaviorButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Malignant"
+      const tStageButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "T2"
       );
       expect(genderButton).not.toBeUndefined();
       expect(raceButton).not.toBeUndefined();
       expect(cancerButton).not.toBeUndefined();
-      expect(behaviorButton).not.toBeUndefined();
+      expect(tStageButton).not.toBeUndefined();
     });
 
     const genderButton = Array.from(container.querySelectorAll("button")).find(
@@ -363,13 +335,13 @@ describe("FiltersView", () => {
     const cancerButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent === "Breast"
     );
-    const behaviorButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Malignant"
+    const tStageButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "T2"
     );
     await clickAsync(genderButton);
     await clickAsync(raceButton);
     await clickAsync(cancerButton);
-    await clickAsync(behaviorButton);
+    await clickAsync(tStageButton);
 
     await waitFor(() => {
       expect(container.textContent).toContain("Query took 106.5 ms");
@@ -379,6 +351,160 @@ describe("FiltersView", () => {
     });
 
     expect(container.textContent).toContain("No patients matched these criteria.");
+
+    unmount();
+  });
+
+  it("loads patient_ids for low-count gender rows and passes them to chart data", async () => {
+    getOmopSummary.mockResolvedValue({
+      classes: ["GENDER"],
+      instancesByClass: {
+        GENDER: [
+          { gender: "U", count: 15 },
+          { gender: "F", count: 40 },
+        ],
+      },
+      timing: { totalMs: 1 },
+    });
+    getAttributeSummary.mockResolvedValue({
+      classes: [],
+      instancesByClass: {},
+      timing: { totalMs: 1 },
+    });
+
+    const expectedPatientIds = [
+      "TEST-PATIENT-001",
+      "TEST-PATIENT-002",
+      "TEST-PATIENT-003",
+      "TEST-PATIENT-004",
+      "TEST-PATIENT-005",
+      "TEST-PATIENT-006",
+      "TEST-PATIENT-007",
+      "TEST-PATIENT-008",
+      "TEST-PATIENT-009",
+      "TEST-PATIENT-010",
+      "TEST-PATIENT-011",
+      "TEST-PATIENT-012",
+      "TEST-PATIENT-013",
+      "TEST-PATIENT-014",
+      "TEST-PATIENT-015",
+    ];
+
+    fetchDeepPheFilterCount.mockImplementation(({ filters, includePatientIds }) => {
+      const firstFilter = Array.isArray(filters) ? filters[0] : null;
+      const isGenderURequest =
+        firstFilter?.type === "omop" &&
+        firstFilter?.class === "GENDER" &&
+        Array.isArray(firstFilter?.instances) &&
+        firstFilter.instances.length === 1 &&
+        firstFilter.instances[0] === "U";
+
+      if (isGenderURequest && includePatientIds) {
+        return Promise.resolve({
+          count: 15,
+          patient_ids: expectedPatientIds,
+          timing: {
+            queryMs: 0.3,
+            bitmapMs: 0.05,
+            resolveMs: 0.23,
+            totalMs: 0.58,
+            itemCounts: [15],
+          },
+        });
+      }
+
+      return Promise.resolve({
+        count: 0,
+        patient_ids: [],
+        timing: {
+          queryMs: 0,
+          bitmapMs: 0,
+          resolveMs: 0,
+          totalMs: 0,
+          itemCounts: [],
+        },
+      });
+    });
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    await waitFor(() => {
+      const unknownGenderButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Unknown"
+      );
+      const femaleGenderButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Female"
+      );
+      expect(unknownGenderButton).not.toBeUndefined();
+      expect(femaleGenderButton).not.toBeUndefined();
+    });
+
+    const unknownGenderButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Unknown"
+    );
+    await clickAsync(unknownGenderButton);
+
+    await waitFor(() => {
+      expect(fetchDeepPheFilterCount).toHaveBeenCalledWith({
+        filters: [{ type: "omop", class: "GENDER", instances: ["U"] }],
+        includePatientIds: true,
+      });
+    });
+
+    await waitFor(() => {
+      const genderChartCall = [...mockHorizontalBarChart.mock.calls]
+        .reverse()
+        .map(([props]) => props)
+        .find((props) => props.title === "Gender");
+      expect(genderChartCall).toBeDefined();
+      const unknownRow = Array.isArray(genderChartCall?.data)
+        ? genderChartCall.data.find(
+            (row) => row?.label === "U" || row?.displayLabel === "Unknown"
+          )
+        : null;
+      expect(unknownRow?.displayLabel).toBe("Unknown");
+      expect(Array.isArray(unknownRow?.patientIds)).toBe(true);
+      expect(unknownRow?.patientIds?.length).toBe(expectedPatientIds.length);
+    });
+
+    unmount();
+  });
+
+  it("expands compact cancer short codes to display labels", async () => {
+    getOmopSummary.mockResolvedValue({
+      classes: ["CANCER"],
+      instancesByClass: {
+        CANCER: [
+          { cancer: "B", count: 48_586 },
+          { cancer: "M", count: 13_713 },
+          { cancer: "O", count: 7_560 },
+        ],
+      },
+      timing: { totalMs: 1 },
+    });
+    getAttributeSummary.mockResolvedValue({
+      classes: [],
+      instancesByClass: {},
+      timing: { totalMs: 1 },
+    });
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    await waitFor(() => {
+      const breastButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Breast"
+      );
+      const melanomaButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Melanoma"
+      );
+      const ovarianButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Ovarian Cancer"
+      );
+
+      expect(breastButton).not.toBeUndefined();
+      expect(melanomaButton).not.toBeUndefined();
+      expect(ovarianButton).not.toBeUndefined();
+    });
 
     unmount();
   });
