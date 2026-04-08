@@ -2,7 +2,7 @@
 
 ## Leadership Summary
 
-This review documents the current user-facing state of DeepPhe Visualizer v3 using automated Playwright captures of the live application routes. The primary workflow (`/filters`) was validated for page framing, filter taxonomy coverage, theme switching, filter selection behavior, patient details controls, and supporting demo/debug/accessibility routes. The result is a reproducible evidence pack designed for release-readiness discussions, stakeholder walkthroughs, and regression baselining.
+This review documents the current user-facing state of DeepPhe Visualizer v3 using automated Playwright captures of the live application routes. The primary workflow (`/filters`) was validated for page framing, filter taxonomy coverage, theme switching, filter selection behavior, patient details controls, and supporting operational routes (`/debug`, `/accessibility`). The result is a reproducible evidence pack designed for release-readiness discussions, stakeholder walkthroughs, and regression baselining.
 
 ![Home route](assets/screenshots/01-home.png)
 *Figure 01. Home route used as navigation hub for all reviewed views.*
@@ -37,7 +37,7 @@ When patient detail data was available, captures validated search, column visibi
 
 ## Secondary Route Findings
 
-Component demos and operational pages (`/horizontal-bar-chart-demo`, `/filter-bar-chart-demo`, `/filter-list-control-demo`, `/patient-grid-demo`, `/debug`, `/accessibility`) were captured to document behavior outside the primary cohort route and to preserve evidence for UI regression checks.
+Operational pages (`/debug`, `/accessibility`) were captured to document behavior outside the primary cohort route and to preserve evidence for UI regression checks.
 
 ![Debug route](assets/screenshots/30-debug-view.png)
 *Figure 30. Debug instrumentation surface for data-distribution troubleshooting.*

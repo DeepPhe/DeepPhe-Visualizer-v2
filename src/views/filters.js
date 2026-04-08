@@ -20,6 +20,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 import {
   ThemeProvider,
@@ -33,7 +34,6 @@ import AddIcon from "@mui/icons-material/Add";
 import ContrastIcon from "@mui/icons-material/Contrast";
 import MotionPhotosOffIcon from "@mui/icons-material/MotionPhotosOff";
 import RemoveIcon from "@mui/icons-material/Remove";
-import TextFieldsIcon from "@mui/icons-material/TextFields";
 import TuneIcon from "@mui/icons-material/Tune";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
@@ -48,7 +48,7 @@ import {
   fetchDeepPheFilterSummary,
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
-import HorizontalBarChart from "../components/HorizontalBarChart";
+import HorizontalBarFilter from "../components/HorizontalBarFilter";
 import PatientGrid from "../components/PatientGrid";
 import AccessibilityBadge from "../components/AccessibilityBadge";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
@@ -59,6 +59,7 @@ import {
   FILTER_ENTRY_BY_TYPE_CLASS,
   resolveFilterSetsWithExtras,
 } from "./filterSets";
+import { buildFilterSectionLayout } from "./filterLayout";
 import {
   buildChildChartData,
   buildRollupInstanceMap,
@@ -69,7 +70,7 @@ import {
 } from "./rollup";
 
 const SLOW_QUERY_THRESHOLD_MS = 100;
-const PATIENT_GRID_PAGE_SIZE = 20;
+const PATIENT_GRID_PAGE_SIZE = 10;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
 const AGE_AT_DX_CLASS = "AGE_AT_DX";
 const AGE_SELECTION_MODE = {
@@ -86,11 +87,18 @@ const CARD_HEIGHT_MODE = {
   NORMALIZE: "normalize",
   FIT: "fit",
 };
+const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
+  xs: 1,
+  sm: 2,
+  md: 3,
+  lg: 3,
+  xl: 3,
+});
 const NORMALIZED_CARD_MIN_HEIGHT = 180;
 const NORMALIZED_CARD_MAX_HEIGHT = 320;
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
-const CHART_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
-const DEFAULT_CHART_SORT_MODE = "value-desc";
+const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
+const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
 const FILTER_SORT_DIMENSION = {
   COUNT: "count",
   LABEL: "label",
@@ -105,19 +113,18 @@ const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
 const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
 const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
-const GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY = "filterPageGlobalDisplayMode";
-const GLOBAL_FILTER_DISPLAY_MODE = {
-  AUTO: "auto",
-  DISTRIBUTION: "distribution",
-  COMPACT: "compact",
-};
-const GLOBAL_FILTER_DISPLAY_MODE_OPTIONS = [
-  { key: GLOBAL_FILTER_DISPLAY_MODE.AUTO, label: "Auto" },
-  { key: GLOBAL_FILTER_DISPLAY_MODE.DISTRIBUTION, label: "Distribution" },
-  { key: GLOBAL_FILTER_DISPLAY_MODE.COMPACT, label: "Compact" },
-];
+const THEME_COLOR_OVERRIDES_STORAGE_KEY = "filterPageThemeColorOverrides";
+const THEME_EDITOR_MENU_VALUE = "__theme-builder__";
+const THEME_COLOR_VALUE_PATTERN =
+  /#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})\b|rgba?\([^)]*\)|hsla?\([^)]*\)|\b(?:transparent|currentColor)\b/gi;
+const THEME_COLOR_VALUE_EXACT_PATTERN =
+  /^(?:#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\)|hsla?\([^)]*\)|transparent|currentColor)$/i;
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+const THEME_COLOR_ROOT_KEYS = ["palette", "custom", "components"];
+const EMPTY_THEME_COLOR_OVERRIDES = Object.freeze({});
 const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 const FONT_FAMILY_OPTIONS = [
+  { key: "wcag-sans", label: "WCAG Sans", stack: 'Inter, Roboto, "Open Sans", sans-serif' },
   { key: "theme-default", label: "Theme Default", stack: null },
   {
     key: "system-sans",
@@ -159,6 +166,54 @@ const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
   "sections",
 ];
 
+function toResolvedColumnCap(value, fallback = 1) {
+  const numericValue = Number(value);
+  const safeFallback = Math.max(1, Number(fallback) || 1);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? Math.max(1, Math.floor(numericValue))
+    : safeFallback;
+}
+
+function resolveResponsiveColumnCap(
+  columnCapByBreakpoint = FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
+  {
+    isSmUp = false,
+    isMdUp = false,
+    isLgUp = false,
+    isXlUp = false,
+  } = {}
+) {
+  const xsCap = toResolvedColumnCap(columnCapByBreakpoint?.xs, 1);
+  const smCap = toResolvedColumnCap(columnCapByBreakpoint?.sm, xsCap);
+  const mdCap = toResolvedColumnCap(columnCapByBreakpoint?.md, smCap);
+  const lgCap = toResolvedColumnCap(columnCapByBreakpoint?.lg, mdCap);
+  const xlCap = toResolvedColumnCap(columnCapByBreakpoint?.xl, lgCap);
+
+  if (isXlUp) {
+    return xlCap;
+  }
+  if (isLgUp) {
+    return lgCap;
+  }
+  if (isMdUp) {
+    return mdCap;
+  }
+  if (isSmUp) {
+    return smCap;
+  }
+  return xsCap;
+}
+
+function getColumnCapMaxWidthPx(columnCap, columnWidthPx, columnGapPx) {
+  const resolvedColumnCap = toResolvedColumnCap(columnCap, 1);
+  const resolvedColumnWidth = Math.max(1, Number(columnWidthPx) || 1);
+  const resolvedColumnGap = Math.max(0, Number(columnGapPx) || 0);
+  return (
+    resolvedColumnCap * resolvedColumnWidth +
+    Math.max(0, resolvedColumnCap - 1) * resolvedColumnGap
+  );
+}
+
 function getInitialThemeKey() {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
@@ -171,7 +226,7 @@ function getInitialThemeKey() {
   if (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
     return "obsidian";
   }
-  return "solstice";
+  return "govuk";
 }
 
 function getInitialFontScale() {
@@ -196,7 +251,7 @@ function getInitialFontFamilyKey() {
   } catch {
     // localStorage unavailable
   }
-  return "theme-default";
+  return "wcag-sans";
 }
 
 function getInitialBooleanPref(storageKey) {
@@ -208,18 +263,255 @@ function getInitialBooleanPref(storageKey) {
   return false;
 }
 
-function getInitialGlobalFilterDisplayMode() {
-  try {
-    const stored = String(localStorage.getItem(GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY) || "")
-      .trim()
-      .toLowerCase();
-    if (GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.some((option) => option.key === stored)) {
-      return stored;
+function normalizeThemeColorOverridesByTheme(rawValue) {
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    return {};
+  }
+
+  const validThemeKeys = new Set(THEME_OPTIONS.map((option) => option.key));
+  const normalized = {};
+
+  Object.entries(rawValue).forEach(([themeKey, rawOverrides]) => {
+    if (!validThemeKeys.has(themeKey) || !rawOverrides || typeof rawOverrides !== "object") {
+      return;
     }
+
+    const normalizedThemeOverrides = {};
+    Object.entries(rawOverrides).forEach(([entryId, entryValue]) => {
+      if (typeof entryId !== "string" || typeof entryValue !== "string") {
+        return;
+      }
+      const normalizedValue = entryValue.trim();
+      if (normalizedValue) {
+        normalizedThemeOverrides[entryId] = normalizedValue;
+      }
+    });
+
+    if (Object.keys(normalizedThemeOverrides).length > 0) {
+      normalized[themeKey] = normalizedThemeOverrides;
+    }
+  });
+
+  return normalized;
+}
+
+function getInitialThemeColorOverridesByTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_COLOR_OVERRIDES_STORAGE_KEY);
+    if (!stored) {
+      return {};
+    }
+    return normalizeThemeColorOverridesByTheme(JSON.parse(stored));
   } catch {
     // localStorage unavailable
   }
-  return GLOBAL_FILTER_DISPLAY_MODE.AUTO;
+  return {};
+}
+
+function toThemeColorPathKey(pathSegments) {
+  return pathSegments.join("\u0001");
+}
+
+function isArrayIndexPathSegment(segment) {
+  return /^\d+$/.test(String(segment || ""));
+}
+
+function setObjectValueAtPath(target, pathSegments, nextValue) {
+  if (!target || typeof target !== "object" || !Array.isArray(pathSegments) || pathSegments.length === 0) {
+    return;
+  }
+
+  let cursor = target;
+  for (let index = 0; index < pathSegments.length - 1; index += 1) {
+    const segment = pathSegments[index];
+    const nextSegment = pathSegments[index + 1];
+    const shouldCreateArray = isArrayIndexPathSegment(nextSegment);
+    const existingValue = cursor[segment];
+
+    if (!existingValue || typeof existingValue !== "object") {
+      cursor[segment] = shouldCreateArray ? [] : {};
+    }
+    cursor = cursor[segment];
+  }
+
+  const lastSegment = pathSegments[pathSegments.length - 1];
+  cursor[lastSegment] = nextValue;
+}
+
+function collectThemeColorEntries(theme) {
+  const entries = [];
+  const visited = new WeakSet();
+
+  const visitValue = (value, pathSegments) => {
+    if (typeof value === "string") {
+      const tokenPattern = new RegExp(THEME_COLOR_VALUE_PATTERN.source, "gi");
+      const tokenMatches = [...value.matchAll(tokenPattern)];
+      if (tokenMatches.length === 0) {
+        return;
+      }
+
+      const pathKey = toThemeColorPathKey(pathSegments);
+      const pathLabel = pathSegments.join(".");
+      const trimmedValue = value.trim();
+      const isDirectColor =
+        tokenMatches.length === 1 && THEME_COLOR_VALUE_EXACT_PATTERN.test(trimmedValue);
+
+      if (isDirectColor) {
+        entries.push({
+          id: pathKey,
+          kind: "direct",
+          pathKey,
+          pathLabel,
+          pathSegments,
+          defaultValue: trimmedValue,
+          sourceValue: trimmedValue,
+          tokenIndex: 0,
+          tokenStart: 0,
+          tokenEnd: trimmedValue.length,
+        });
+        return;
+      }
+
+      tokenMatches.forEach((match, tokenIndex) => {
+        const tokenValue = String(match[0] || "").trim();
+        if (!tokenValue) {
+          return;
+        }
+        const tokenStart = Number(match.index) || 0;
+        entries.push({
+          id: `${pathKey}::token:${tokenIndex}`,
+          kind: "token",
+          pathKey,
+          pathLabel,
+          pathSegments,
+          defaultValue: tokenValue,
+          sourceValue: value,
+          tokenIndex,
+          tokenStart,
+          tokenEnd: tokenStart + tokenValue.length,
+        });
+      });
+      return;
+    }
+
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if (visited.has(value)) {
+      return;
+    }
+    visited.add(value);
+
+    if (Array.isArray(value)) {
+      value.forEach((nestedValue, index) => {
+        visitValue(nestedValue, [...pathSegments, String(index)]);
+      });
+      return;
+    }
+
+    Object.entries(value).forEach(([key, nestedValue]) => {
+      if (typeof nestedValue === "function") {
+        return;
+      }
+      visitValue(nestedValue, [...pathSegments, key]);
+    });
+  };
+
+  THEME_COLOR_ROOT_KEYS.forEach((rootKey) => {
+    visitValue(theme?.[rootKey], [rootKey]);
+  });
+
+  return entries.sort((leftEntry, rightEntry) => {
+    const pathCompare = leftEntry.pathLabel.localeCompare(rightEntry.pathLabel, undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
+    if (pathCompare !== 0) {
+      return pathCompare;
+    }
+    return leftEntry.tokenIndex - rightEntry.tokenIndex;
+  });
+}
+
+function buildThemeColorOverridePatch(entries, overridesByEntryId) {
+  const normalizedEntries = Array.isArray(entries) ? entries : [];
+  const normalizedOverrides =
+    overridesByEntryId && typeof overridesByEntryId === "object"
+      ? overridesByEntryId
+      : EMPTY_THEME_COLOR_OVERRIDES;
+  const entriesByPath = new Map();
+
+  normalizedEntries.forEach((entry) => {
+    if (!entry?.pathKey) {
+      return;
+    }
+    if (!entriesByPath.has(entry.pathKey)) {
+      entriesByPath.set(entry.pathKey, []);
+    }
+    entriesByPath.get(entry.pathKey).push(entry);
+  });
+
+  const overridePatch = {};
+  entriesByPath.forEach((entriesForPath) => {
+    const directEntry = entriesForPath.find((entry) => entry.kind === "direct");
+    if (directEntry) {
+      const overriddenValue = normalizedOverrides[directEntry.id];
+      if (
+        typeof overriddenValue === "string" &&
+        overriddenValue.length > 0 &&
+        overriddenValue !== directEntry.defaultValue
+      ) {
+        setObjectValueAtPath(overridePatch, directEntry.pathSegments, overriddenValue);
+      }
+      return;
+    }
+
+    const tokenEntries = entriesForPath
+      .filter((entry) => entry.kind === "token")
+      .sort((leftEntry, rightEntry) => leftEntry.tokenIndex - rightEntry.tokenIndex);
+    if (tokenEntries.length === 0) {
+      return;
+    }
+
+    const templateValue = String(tokenEntries[0].sourceValue || "");
+    let hasOverride = false;
+    let cursor = 0;
+    const rebuiltParts = [];
+
+    tokenEntries.forEach((entry) => {
+      const overriddenToken = normalizedOverrides[entry.id];
+      const nextToken =
+        typeof overriddenToken === "string" && overriddenToken.length > 0
+          ? overriddenToken
+          : entry.defaultValue;
+      if (nextToken !== entry.defaultValue) {
+        hasOverride = true;
+      }
+      rebuiltParts.push(templateValue.slice(cursor, entry.tokenStart));
+      rebuiltParts.push(nextToken);
+      cursor = entry.tokenEnd;
+    });
+
+    rebuiltParts.push(templateValue.slice(cursor));
+    if (hasOverride) {
+      setObjectValueAtPath(overridePatch, tokenEntries[0].pathSegments, rebuiltParts.join(""));
+    }
+  });
+
+  return overridePatch;
+}
+
+function toColorInputHexValue(colorValue) {
+  const normalizedValue = String(colorValue || "").trim();
+  if (!HEX_COLOR_PATTERN.test(normalizedValue)) {
+    return null;
+  }
+  if (normalizedValue.length === 4) {
+    const [r, g, b] = normalizedValue.slice(1).split("");
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return normalizedValue.toLowerCase();
 }
 
 const REDUCED_MOTION_STYLES = (
@@ -454,13 +746,22 @@ function getFilterDisplayName(type, className) {
 
 function getFilterDefaultSortMode(type, className) {
   return normalizeChartSortMode(
-    getFilterEntry(type, className)?.defaultSortMode || DEFAULT_CHART_SORT_MODE
+    getFilterEntry(type, className)?.defaultSortMode || DEFAULT_FILTER_VALUE_SORT_MODE
   );
 }
 
 function getFilterCustomSortOrder(type, className) {
   const configuredOrder = getFilterEntry(type, className)?.customSortOrder;
   return Array.isArray(configuredOrder) ? configuredOrder : [];
+}
+
+function getFilterMaxHeightPx(type, className) {
+  const numericMaxHeight = Number(getFilterEntry(type, className)?.maxHeightPx);
+  if (!Number.isFinite(numericMaxHeight) || numericMaxHeight <= 0) {
+    return null;
+  }
+
+  return Math.max(1, Math.round(numericMaxHeight));
 }
 
 function isAttributeRollupClass(className) {
@@ -902,17 +1203,6 @@ function buildIdentifiedSummary(filters, count) {
       conditionClauses.push(`${classLabel} ${joinWithConjunction(values, "or")}`);
     });
 
-  const noun = safeCount === 1 ? "patient" : "patients";
-  const verb = safeCount === 1 ? "is" : "are";
-  const subjectText = subjectDescriptors.length > 0 ? `${subjectDescriptors.join(" ")} ${noun}` : noun;
-
-  if (conditionClauses.length === 0) {
-    return `There ${verb} ${safeCount.toLocaleString()} ${subjectText} in the cohort.`;
-  }
-
-  return `There ${verb} ${safeCount.toLocaleString()} ${subjectText} in the cohort with ${joinCohortConditions(
-    conditionClauses
-  )}.`;
 }
 
 function toFilterItem(type, className, values) {
@@ -1880,10 +2170,10 @@ function getZeroResultHint(filters, itemCounts) {
 
 function normalizeChartSortMode(sortMode) {
   const normalizedSortMode = String(sortMode || "").trim();
-  if (CHART_SORT_MODES.includes(normalizedSortMode)) {
+  if (FILTER_VALUE_SORT_MODES.includes(normalizedSortMode)) {
     return normalizedSortMode;
   }
-  return DEFAULT_CHART_SORT_MODE;
+  return DEFAULT_FILTER_VALUE_SORT_MODE;
 }
 
 function getSortDimensionFromMode(sortMode) {
@@ -1926,142 +2216,35 @@ function filterRowsByQuery(data, searchQuery) {
   });
 }
 
-function buildTallestAlignedLayout(
-  classNames,
-  baseCardHeightByClass,
-  measuredCardHeightByClass,
-  naturalGapPx = 24,
-  maxColumns = 3
-) {
-  const normalizedClassNames = Array.isArray(classNames) ? classNames : [];
-  const cardHeightOverrideByClass = {};
-  const cardMarginBottomByClass = {};
-  const resolvedNaturalGap = Math.max(0, Number(naturalGapPx) || 0);
-  const getBaseHeight = (className) =>
-    Math.max(0, Number(baseCardHeightByClass?.[className]) || 0);
-  const getMeasuredHeight = (className) =>
-    Math.max(0, Number(measuredCardHeightByClass?.[className]) || 0);
-  const getEffectiveHeight = (className) => {
-    const measuredHeight = getMeasuredHeight(className);
-    if (measuredHeight > 0) {
-      return measuredHeight;
-    }
-    return getBaseHeight(className);
-  };
-  const resolvedMaxColumns = Math.max(
-    1,
-    Math.min(
-      normalizedClassNames.length || 1,
-      Number.isFinite(maxColumns) ? Math.floor(maxColumns) : 3
-    )
-  );
-
-  if (normalizedClassNames.length === 0) {
-    return {
-      tallestFilterBoxHeight: 0,
-      cardHeightOverrideByClass,
-      cardMarginBottomByClass,
-    };
-  }
-
-  const columnGroups = Array.from({ length: resolvedMaxColumns }, () => []);
-  const naturalColumnHeights = Array.from({ length: resolvedMaxColumns }, () => 0);
-
-  normalizedClassNames.forEach((className, classIndex) => {
-    const cardHeight = getBaseHeight(className);
-    const initialColumnIndex = classIndex;
-
-    // Seed one card per column first, then keep stacking into the shortest column.
-    if (initialColumnIndex < resolvedMaxColumns) {
-      columnGroups[initialColumnIndex].push(className);
-      naturalColumnHeights[initialColumnIndex] = cardHeight;
-      return;
-    }
-
-    let targetColumnIndex = 0;
-    for (let columnIndex = 1; columnIndex < resolvedMaxColumns; columnIndex += 1) {
-      if (naturalColumnHeights[columnIndex] < naturalColumnHeights[targetColumnIndex]) {
-        targetColumnIndex = columnIndex;
-      }
-    }
-
-    const existingCount = columnGroups[targetColumnIndex].length;
-    columnGroups[targetColumnIndex].push(className);
-    naturalColumnHeights[targetColumnIndex] += cardHeight + (existingCount > 0 ? resolvedNaturalGap : 0);
-  });
-
-  const activeColumnGroups = columnGroups.filter((group) => group.length > 0);
-  const activeNaturalHeights = activeColumnGroups.map((group) =>
-    group.reduce((sum, className, index) => {
-      const cardHeight = getBaseHeight(className);
-      return sum + cardHeight + (index > 0 ? resolvedNaturalGap : 0);
-    }, 0)
-  );
-  const activeMeasuredHeights = activeColumnGroups.map((group) =>
-    group.reduce((sum, className, index) => {
-      const cardHeight = getMeasuredHeight(className);
-      return sum + cardHeight + (index > 0 ? resolvedNaturalGap : 0);
-    }, 0)
-  );
-  const tallestFilterBoxHeight =
-    activeNaturalHeights.length > 0 ? Math.max(...activeNaturalHeights) : 0;
-  const tallestMeasuredFilterBoxHeight =
-    activeMeasuredHeights.length > 0 ? Math.max(...activeMeasuredHeights) : 0;
-  const alignmentTargetHeight =
-    tallestMeasuredFilterBoxHeight > 0 ? tallestMeasuredFilterBoxHeight : tallestFilterBoxHeight;
-
-  activeColumnGroups.forEach((group) => {
-    if (group.length === 1) {
-      const className = group[0];
-      const measuredHeight = getMeasuredHeight(className);
-      const naturalHeight = measuredHeight > 0 ? measuredHeight : getBaseHeight(className);
-      const isTallestCard =
-        Math.abs(naturalHeight - alignmentTargetHeight) < 0.5 ||
-        naturalHeight >= alignmentTargetHeight;
-      const shouldStretchSoloCard =
-        measuredHeight > 0 &&
-        !isTallestCard &&
-        naturalHeight >= alignmentTargetHeight / 2 &&
-        naturalHeight < alignmentTargetHeight;
-
-      if (shouldStretchSoloCard) {
-        cardHeightOverrideByClass[className] = alignmentTargetHeight;
-      }
-      cardMarginBottomByClass[className] = 0;
-      return;
-    }
-
-    const groupHeight = group.reduce(
-      (sum, className) => sum + getEffectiveHeight(className),
-      0
-    );
-    const gapCount = Math.max(1, group.length - 1);
-    const gapPx = Math.max(0, (alignmentTargetHeight - groupHeight) / gapCount);
-
-    group.forEach((className, index) => {
-      cardMarginBottomByClass[className] = index < group.length - 1 ? gapPx : 0;
-    });
-  });
-
-  return {
-    tallestFilterBoxHeight,
-    tallestMeasuredFilterBoxHeight,
-    cardHeightOverrideByClass,
-    cardMarginBottomByClass,
-  };
-}
-
 function FiltersView() {
   const [themeKey, setThemeKey] = useState(getInitialThemeKey);
   const [fontScale, setFontScale] = useState(getInitialFontScale);
-  const [fontFamilyKey, setFontFamilyKey] = useState(getInitialFontFamilyKey);
+  const [fontFamilyKey] = useState(getInitialFontFamilyKey);
   const [highContrast, setHighContrast] = useState(() => getInitialBooleanPref(HIGH_CONTRAST_STORAGE_KEY));
   const [reducedMotion, setReducedMotion] = useState(() => getInitialBooleanPref(REDUCED_MOTION_STORAGE_KEY));
-  const [globalFilterDisplayMode, setGlobalFilterDisplayMode] = useState(
-    getInitialGlobalFilterDisplayMode
+  const [isThemeBuilderOpen, setIsThemeBuilderOpen] = useState(false);
+  const [themeBuilderThemeKey, setThemeBuilderThemeKey] = useState(getInitialThemeKey);
+  const [themeBuilderSearchQuery, setThemeBuilderSearchQuery] = useState("");
+  const [themeColorOverridesByTheme, setThemeColorOverridesByTheme] = useState(
+    getInitialThemeColorOverridesByTheme
+  );
+  const selectedBaseTheme = useMemo(() => getThemeByKey(themeKey), [themeKey]);
+  const activeThemeColorEntries = useMemo(
+    () => collectThemeColorEntries(selectedBaseTheme),
+    [selectedBaseTheme]
+  );
+  const activeThemeColorOverrides = themeColorOverridesByTheme[themeKey] || EMPTY_THEME_COLOR_OVERRIDES;
+  const activeThemeColorPatch = useMemo(
+    () => buildThemeColorOverridePatch(activeThemeColorEntries, activeThemeColorOverrides),
+    [activeThemeColorEntries, activeThemeColorOverrides]
   );
   const activeTheme = useMemo(() => {
-    let theme = getThemeByKey(themeKey);
+    let theme = selectedBaseTheme;
+
+    if (Object.keys(activeThemeColorPatch).length > 0) {
+      theme = createTheme(theme, activeThemeColorPatch);
+    }
+
     const selectedFontFamily = FONT_FAMILY_OPTIONS.find((option) => option.key === fontFamilyKey);
 
     if (selectedFontFamily?.stack) {
@@ -2083,7 +2266,21 @@ function FiltersView() {
     }
 
     return theme;
-  }, [fontFamilyKey, fontScale, highContrast, themeKey]);
+  }, [activeThemeColorPatch, fontFamilyKey, fontScale, highContrast, selectedBaseTheme]);
+  const isSmUp = useMediaQuery(activeTheme.breakpoints.up("sm"), { noSsr: true });
+  const isMdUp = useMediaQuery(activeTheme.breakpoints.up("md"), { noSsr: true });
+  const isLgUp = useMediaQuery(activeTheme.breakpoints.up("lg"), { noSsr: true });
+  const isXlUp = useMediaQuery(activeTheme.breakpoints.up("xl"), { noSsr: true });
+  const resolvedSectionColumnCap = useMemo(
+    () =>
+      resolveResponsiveColumnCap(FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT, {
+        isSmUp,
+        isMdUp,
+        isLgUp,
+        isXlUp,
+      }),
+    [isLgUp, isMdUp, isSmUp, isXlUp]
+  );
   const custom = activeTheme.custom || {};
   const initialLoadStartRef = useRef(
     typeof performance !== "undefined" && typeof performance.now === "function"
@@ -2093,14 +2290,124 @@ function FiltersView() {
   const hasLoggedInitialLoadRef = useRef(false);
 
   const handleThemeChange = useCallback((event) => {
-    const nextKey = event.target.value;
+    const nextKey = String(event?.target?.value || "");
+    if (nextKey === THEME_EDITOR_MENU_VALUE) {
+      setThemeBuilderThemeKey(themeKey);
+      setThemeBuilderSearchQuery("");
+      setIsThemeBuilderOpen(true);
+      return;
+    }
+    if (!THEME_OPTIONS.some((option) => option.key === nextKey)) {
+      return;
+    }
     setThemeKey(nextKey);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, nextKey);
     } catch {
       // localStorage unavailable
     }
+  }, [themeKey]);
+
+  const themeBuilderTheme = useMemo(() => getThemeByKey(themeBuilderThemeKey), [themeBuilderThemeKey]);
+  const themeBuilderColorEntries = useMemo(
+    () => collectThemeColorEntries(themeBuilderTheme),
+    [themeBuilderTheme]
+  );
+  const themeBuilderThemeOverrides =
+    themeColorOverridesByTheme[themeBuilderThemeKey] || EMPTY_THEME_COLOR_OVERRIDES;
+  const filteredThemeBuilderColorEntries = useMemo(() => {
+    const normalizedQuery = String(themeBuilderSearchQuery || "")
+      .trim()
+      .toLowerCase();
+    if (!normalizedQuery) {
+      return themeBuilderColorEntries;
+    }
+    return themeBuilderColorEntries.filter((entry) => {
+      const pathText = String(entry?.pathLabel || "").toLowerCase();
+      const valueText = String(entry?.defaultValue || "").toLowerCase();
+      return pathText.includes(normalizedQuery) || valueText.includes(normalizedQuery);
+    });
+  }, [themeBuilderColorEntries, themeBuilderSearchQuery]);
+  const hasThemeBuilderOverrides = Object.keys(themeBuilderThemeOverrides).length > 0;
+  const hasAnyThemeColorOverrides = Object.keys(themeColorOverridesByTheme).length > 0;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        THEME_COLOR_OVERRIDES_STORAGE_KEY,
+        JSON.stringify(normalizeThemeColorOverridesByTheme(themeColorOverridesByTheme))
+      );
+    } catch {
+      // localStorage unavailable
+    }
+  }, [themeColorOverridesByTheme]);
+
+  const handleThemeBuilderClose = useCallback(() => {
+    setIsThemeBuilderOpen(false);
   }, []);
+
+  const handleThemeBuilderThemeChange = useCallback((event) => {
+    const nextThemeKey = String(event?.target?.value || "");
+    if (!THEME_OPTIONS.some((option) => option.key === nextThemeKey)) {
+      return;
+    }
+    setThemeBuilderThemeKey(nextThemeKey);
+    setThemeBuilderSearchQuery("");
+  }, []);
+
+  const handleThemeBuilderEntryChange = useCallback((entry, rawNextValue) => {
+    if (!entry?.id || !entry?.defaultValue) {
+      return;
+    }
+
+    const normalizedNextValue = String(rawNextValue ?? "").trim();
+    setThemeColorOverridesByTheme((previousOverridesByTheme) => {
+      const previousThemeOverrides =
+        previousOverridesByTheme[themeBuilderThemeKey] || EMPTY_THEME_COLOR_OVERRIDES;
+      const nextThemeOverrides = { ...previousThemeOverrides };
+
+      if (!normalizedNextValue || normalizedNextValue === entry.defaultValue) {
+        delete nextThemeOverrides[entry.id];
+      } else {
+        nextThemeOverrides[entry.id] = normalizedNextValue;
+      }
+
+      const nextOverridesByTheme = { ...previousOverridesByTheme };
+      if (Object.keys(nextThemeOverrides).length === 0) {
+        delete nextOverridesByTheme[themeBuilderThemeKey];
+      } else {
+        nextOverridesByTheme[themeBuilderThemeKey] = nextThemeOverrides;
+      }
+      return nextOverridesByTheme;
+    });
+  }, [themeBuilderThemeKey]);
+
+  const handleThemeBuilderThemeReset = useCallback(() => {
+    setThemeColorOverridesByTheme((previousOverridesByTheme) => {
+      if (!previousOverridesByTheme[themeBuilderThemeKey]) {
+        return previousOverridesByTheme;
+      }
+      const nextOverridesByTheme = { ...previousOverridesByTheme };
+      delete nextOverridesByTheme[themeBuilderThemeKey];
+      return nextOverridesByTheme;
+    });
+  }, [themeBuilderThemeKey]);
+
+  const handleThemeBuilderResetAll = useCallback(() => {
+    setThemeColorOverridesByTheme({});
+  }, []);
+
+  const handleThemeBuilderApplyTheme = useCallback(() => {
+    if (!THEME_OPTIONS.some((option) => option.key === themeBuilderThemeKey)) {
+      return;
+    }
+    setThemeKey(themeBuilderThemeKey);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, themeBuilderThemeKey);
+    } catch {
+      // localStorage unavailable
+    }
+  }, [themeBuilderThemeKey]);
 
   const handleFontScaleChange = useCallback((delta) => {
     setFontScale((previousScale) => {
@@ -2123,16 +2430,6 @@ function FiltersView() {
 
       return nextScale;
     });
-  }, []);
-
-  const handleFontFamilyChange = useCallback((event) => {
-    const nextFontFamilyKey = event.target.value;
-    setFontFamilyKey(nextFontFamilyKey);
-    try {
-      localStorage.setItem(FONT_FAMILY_STORAGE_KEY, nextFontFamilyKey);
-    } catch {
-      // localStorage unavailable
-    }
   }, []);
 
   const handleHighContrastToggle = useCallback(() => {
@@ -2158,21 +2455,6 @@ function FiltersView() {
       return nextValue;
     });
   }, []);
-  const handleGlobalFilterDisplayModeChange = useCallback((event) => {
-    const requestedMode = String(event?.target?.value || "")
-      .trim()
-      .toLowerCase();
-    const nextMode = GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.some((option) => option.key === requestedMode)
-      ? requestedMode
-      : GLOBAL_FILTER_DISPLAY_MODE.AUTO;
-    setGlobalFilterDisplayMode(nextMode);
-    try {
-      localStorage.setItem(GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY, nextMode);
-    } catch {
-      // localStorage unavailable
-    }
-  }, []);
-
   const getOmopSummaryForFilters = useCallback(
     () => getOmopSummary({ includePatientIds: false }),
     []
@@ -2202,6 +2484,7 @@ function FiltersView() {
   const [isPatientGridPageLoading, setIsPatientGridPageLoading] = useState(false);
   const [patientGridPageError, setPatientGridPageError] = useState("");
   const [patientGridPageRetryToken, setPatientGridPageRetryToken] = useState(0);
+  const [isPatientGridDockExpanded, setIsPatientGridDockExpanded] = useState(true);
   const [cardHeightMode, setCardHeightMode] = useState(CARD_HEIGHT_MODE.FIT);
   const [normalizedCardHeights, setNormalizedCardHeights] = useState({
     omop: null,
@@ -2752,6 +3035,14 @@ function FiltersView() {
 
     const nextHeights = {};
     entries.forEach(([key, node]) => {
+      if (node?.hasAttribute?.("data-card-height-override")) {
+        const previousHeight = Number(cardNaturalHeightByKey[key]);
+        if (Number.isFinite(previousHeight) && previousHeight > 0) {
+          nextHeights[key] = previousHeight;
+        }
+        return;
+      }
+
       const rect = node?.getBoundingClientRect?.();
       const height = Number(rect?.height);
       if (Number.isFinite(height) && height > 0) {
@@ -2783,6 +3074,7 @@ function FiltersView() {
     ageAtDxDecileChartData,
     attributeDisplayChartDataByClass,
     attributeFilterSets,
+    cardNaturalHeightByKey,
     chartDataByClass,
     omopFilterSets,
   ]);
@@ -2999,6 +3291,137 @@ function FiltersView() {
     [currentPatientGridPage, patientGridPageCache]
   );
   const shouldShowPatientDetailGrid = Boolean(countResult);
+  const isPatientGridDockVisible = Boolean(
+    hasSelections && (isCountLoading || Boolean(countResult) || Boolean(countError) || patientGridPageCache.size > 0)
+  );
+  const patientGridDrawerPanelId = "patient-grid-drawer-panel";
+  const patientGridDrawerStatusText = isCountLoading
+    ? "Updating matched patients…"
+    : cohortSize > 0
+      ? `Showing page ${(currentPatientGridPage + 1).toLocaleString()} of ${Math.max(
+          1,
+          totalPatientGridPages
+        ).toLocaleString()} · ${cohortSize.toLocaleString()} matched patient${cohortSize === 1 ? "" : "s"}.`
+      : "No matched patients.";
+  const patientGridCollapsedHeaderSummary = useMemo(() => {
+    const hasFilterSummaries = activeFilters.length > 0;
+    const hasPerfSummary = SHOULD_LOG_FILTERS_PERF && Boolean(countResult);
+    const hasSlowWarning = Boolean(countResult) && isSlowQuery;
+    const hasZeroHint = Boolean(countResult) && Boolean(zeroResultHint);
+    const hasIdentifiedSummary = Boolean(countResult && identifiedSummary);
+    const hasStatusCopy =
+      isCountLoading ||
+      Boolean(countError) ||
+      hasIdentifiedSummary ||
+      hasFilterSummaries ||
+      hasSlowWarning ||
+      hasZeroHint ||
+      hasPerfSummary;
+
+    if (!hasStatusCopy) {
+      return null;
+    }
+
+    return (
+      <Stack spacing={0.75}>
+        {isCountLoading ? (
+          <Typography variant="body2" color="text.secondary">
+            Querying patient count...
+          </Typography>
+        ) : null}
+        {countError ? <Alert severity="error">{countError}</Alert> : null}
+        {hasIdentifiedSummary ? (
+          <Typography variant="body2" color="text.secondary">
+            {identifiedSummary}
+          </Typography>
+        ) : null}
+        {hasFilterSummaries ? (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+            {activeFilters.map((filter, index) => (
+              <Box
+                key={`${filter.class}-${index}`}
+                sx={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 0.75,
+                  px: 0.75,
+                  py: 0.3,
+                  border: custom.chipInactiveBorder || "1px solid",
+                  borderColor: custom.chipInactiveBorder ? undefined : "divider",
+                  borderRadius: custom.chipRadius || "4px",
+                  bgcolor: custom.chipActiveBg || "grey.50",
+                  color: custom.chipActiveText || "text.primary",
+                  boxShadow: custom.chipActiveGlow || "none",
+                  maxWidth: "100%",
+                  transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+                }}
+              >
+                <Typography variant="body2" sx={{ color: "inherit", opacity: 0.9 }}>
+                  {prettifyClassName(filter.class, filter.type)} (
+                  {formatSelectionText(
+                    filter.instances.map((value) =>
+                      toDisplayInstanceValue(filter.type, filter.class, value)
+                    )
+                  )}
+                  )
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                    fontWeight: 700,
+                    color: "inherit",
+                    fontFamily: custom.countFontFamily || "inherit",
+                  }}
+                >
+                  {formatItemCount(timing.itemCounts?.[index])}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+        {hasSlowWarning ? (
+          <Alert severity="warning">
+            Query took {formatMs(timing.totalMs)} ms. Consider narrowing selections for faster response.
+          </Alert>
+        ) : null}
+        {hasZeroHint ? <Alert severity="info">{zeroResultHint}</Alert> : null}
+        {hasPerfSummary ? (
+          <Typography
+            variant="caption"
+            sx={{
+              textAlign: "right",
+              fontVariantNumeric: "tabular-nums",
+              color: custom.statsColor || "text.secondary",
+              fontFamily: custom.countFontFamily || "inherit",
+              pt: 0.25,
+            }}
+          >
+            Query {formatMs(timing.queryMs)} ms | Bitmap {formatMs(timing.bitmapMs)} ms | Resolve{" "}
+            {formatMs(timing.resolveMs)} ms | Total {formatMs(timing.totalMs)} ms
+          </Typography>
+        ) : null}
+      </Stack>
+    );
+  }, [
+    activeFilters,
+    countError,
+    countResult,
+    custom,
+    identifiedSummary,
+    isCountLoading,
+    isSlowQuery,
+    timing,
+    zeroResultHint,
+  ]);
+  const patientGridDrawerBottomPadding = isPatientGridDockVisible
+    ? {
+        xs: isPatientGridDockExpanded ? "56vh" : "104px",
+        md: isPatientGridDockExpanded ? "min(64vh, 640px)" : "116px",
+      }
+    : 0;
+  const patientGridDrawerTableLoading = isCountLoading || isPatientGridPageLoading;
 
   useEffect(() => {
     setCurrentPatientGridPage(0);
@@ -3337,47 +3760,201 @@ function FiltersView() {
   const cardHeightToggleTooltip = isNormalizedHeightMode
     ? "Switch to fit content heights"
     : "Switch to normalized row heights";
-  const getCardContentAreaSx = (sectionKey, isCompactCard = false, stretch = false) => {
+  const CARD_COLUMN_WIDTH = 350;
+  const CARD_COLUMN_GAP_PX = 24;
+  const FILTER_SECTION_HEIGHT_CAP_PX = 700;
+  const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
+  const ROW_HEIGHT_ESTIMATE = 36;
+  const CARD_OVERHEAD_ESTIMATE = 120;
+  const NATURAL_STACK_GAP_PX = 24;
+  const CARD_BOTTOM_MARGIN = 24;
+  const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const numericHeightCap = Number(sectionHeightCap);
+    if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
+      return FILTER_SECTION_HEIGHT_CAP_PX;
+    }
+    return Math.max(1, Math.round(numericHeightCap));
+  };
+  const resolveCardChartHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return Math.max(220, resolvedSectionHeightCapPx - FILTER_CARD_CHART_HEIGHT_OFFSET_PX);
+  };
+  const toSectionHeightPx = (
+    sectionHeight,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const numericSectionHeight = Number(sectionHeight);
+    if (!Number.isFinite(numericSectionHeight) || numericSectionHeight <= 0) {
+      return "auto";
+    }
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return `${Math.min(Math.round(numericSectionHeight), resolvedSectionHeightCapPx)}px`;
+  };
+  const getFilterSetSx = (sectionHeight, sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    const resolvedCardChartHeightCapPx = resolveCardChartHeightCapPx(resolvedSectionHeightCapPx);
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, resolvedSectionHeightCapPx),
+      "--filter-section-height-cap": `${resolvedSectionHeightCapPx}px`,
+      "--filter-card-chart-height-cap": `${resolvedCardChartHeightCapPx}px`,
+      "& > .filter-section-grid": {
+        maxHeight: { xs: "none", md: "var(--filter-section-height-cap)" },
+      },
+    };
+  };
+  const getCardContentAreaSx = (
+    sectionKey,
+    isCompactCard = false,
+    stretch = false,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
     const sectionHeight = normalizedCardHeights[sectionKey];
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    const normalizedHeightPx =
+      isNormalizedHeightMode && Number.isFinite(sectionHeight)
+        ? Math.min(Math.round(sectionHeight), resolvedSectionHeightCapPx)
+        : null;
 
     return {
       display: "flex",
       flexDirection: "column",
       gap: 0,
+      minHeight: 0,
       height:
         isCompactCard || stretch
           ? "auto"
-          : isNormalizedHeightMode && Number.isFinite(sectionHeight)
-            ? `${sectionHeight}px`
+          : Number.isFinite(normalizedHeightPx)
+            ? `${normalizedHeightPx}px`
             : "auto",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
       overflowY: "hidden",
+      overflowX: "hidden",
       pr: 0,
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
     };
   };
-  const CARD_COLUMN_WIDTH = 300;
-  const CARD_COLUMN_COUNT = 3;
-  const CATEGORY_MAX_HEIGHT = 700;
-  const ROW_HEIGHT_ESTIMATE = 36;
-  const CARD_OVERHEAD_ESTIMATE = 120;
-  const NATURAL_STACK_GAP_PX = 24;
-  const CARD_BOTTOM_MARGIN = 24;
-  const estimateCardHeight = (rowCount = 0) => {
-    const safeRowCount = Number.isFinite(rowCount) ? Math.max(0, rowCount) : 0;
-    return CARD_OVERHEAD_ESTIMATE + safeRowCount * ROW_HEIGHT_ESTIMATE;
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    return {
+      ...buildFilterSectionLayout({
+        classNames,
+        rowCountByClass,
+        measuredCardHeightByClass,
+        naturalGapPx: NATURAL_STACK_GAP_PX,
+        maxColumns: resolvedSectionColumnCap,
+        categoryMaxHeight: sectionHeightCap,
+        cardBottomMargin: CARD_BOTTOM_MARGIN,
+        rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+        cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+      }),
+      sectionHeightCap,
+    };
   };
-  const getFilterGridSx = (sectionHeight) => ({
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => ({
+    "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+    "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+    "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
     width: "100%",
-    columnWidth: `${CARD_COLUMN_WIDTH}px`,
-    columnGap: 3,
-    columnFill: "auto",
-    height: {
-      xs: "auto",
-      md:
-        Number.isFinite(sectionHeight) && sectionHeight > 0
-          ? `${sectionHeight}px`
-          : "auto",
+    maxWidth: {
+      xs: `${getColumnCapMaxWidthPx(
+        columnCapByBreakpoint?.xs,
+        CARD_COLUMN_WIDTH,
+        CARD_COLUMN_GAP_PX
+      )}px`,
+      sm: `${getColumnCapMaxWidthPx(
+        columnCapByBreakpoint?.sm,
+        CARD_COLUMN_WIDTH,
+        CARD_COLUMN_GAP_PX
+      )}px`,
+      md: `${getColumnCapMaxWidthPx(
+        columnCapByBreakpoint?.md,
+        CARD_COLUMN_WIDTH,
+        CARD_COLUMN_GAP_PX
+      )}px`,
+      lg: `${getColumnCapMaxWidthPx(
+        columnCapByBreakpoint?.lg,
+        CARD_COLUMN_WIDTH,
+        CARD_COLUMN_GAP_PX
+      )}px`,
+      xl: `${getColumnCapMaxWidthPx(
+        columnCapByBreakpoint?.xl,
+        CARD_COLUMN_WIDTH,
+        CARD_COLUMN_GAP_PX
+      )}px`,
     },
-    overflow: "hidden",
+    display: "flex",
+    alignItems: "stretch",
+    gap: 3,
+    flexWrap: "wrap",
+    minHeight: {
+      xs: "auto",
+      md: "var(--filter-section-height)",
+    },
+    maxHeight: {
+      xs: "none",
+      md: "var(--filter-section-height-cap)",
+    },
+    overflowY: {
+      xs: "visible",
+      md: "auto",
+    },
+    overflowX: "hidden",
+    "& > .filter-section-column": {
+      display: "flex",
+      flexDirection: "column",
+      alignSelf: "stretch",
+      minHeight: {
+        xs: "auto",
+        md: "var(--filter-section-height)",
+      },
+      height: {
+        xs: "auto",
+        md: "var(--filter-section-height)",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflow: "hidden",
+    },
+  });
+  const getFilterSectionColumnSx = () => ({
+    flex: { xs: "1 1 100%", sm: `0 0 ${CARD_COLUMN_WIDTH}px` },
+    maxWidth: { xs: "100%", sm: `${CARD_COLUMN_WIDTH}px` },
   });
   const getCardSx = (cardIndex = 0) => {
     void cardIndex;
@@ -3387,9 +3964,10 @@ function FiltersView() {
       verticalAlign: "top",
       breakInside: "avoid",
       mb: 3,
-      p: custom.cardPadding || { xs: 2, md: 3 },
+      p: custom.cardPadding || 0,
       position: "relative",
       overflow: "visible",
+      boxSizing: "border-box",
       transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease",
     };
     if (custom.cardBeforePseudo === "vapor-glass") {
@@ -3444,7 +4022,7 @@ function FiltersView() {
         }}
       >
         <Box component="main" aria-labelledby="filters-page-title">
-          <Stack spacing={2}>
+          <Stack spacing={2} sx={{ pb: patientGridDrawerBottomPadding }}>
             <Typography
               id="filters-page-title"
               component="h1"
@@ -3468,7 +4046,11 @@ function FiltersView() {
               alignItems: "start",
             }}
           >
-            <Paper elevation={0} sx={{ p: 1, border: 1, borderColor: "divider" }}>
+            <Paper
+              elevation={0}
+              data-testid="identified-patients-panel"
+              sx={{ p: 1, border: 1, borderColor: "divider" }}
+            >
               <Stack spacing={0.5}>
                 <Box
                   sx={{
@@ -3490,29 +4072,27 @@ function FiltersView() {
                     }}
                   >
                     <Box component="nav" aria-label="Primary navigation" sx={{ display: "inline-flex", flexShrink: 0 }}>
-                      <MuiLink
-                        component={RouterLink}
-                        to="/"
-                        underline="none"
-                        sx={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 0.5,
-                          color: "text.secondary",
-                          "&:hover": {
-                            color: "text.primary",
-                          },
-                        }}
-                      >
+	                      <MuiLink
+	                        component={RouterLink}
+	                        to="/"
+	                        underline="none"
+	                        sx={{
+	                          display: "inline-flex",
+	                          alignItems: "center",
+	                          gap: 0.5,
+	                          color: "text.primary",
+	                          "&:hover": {
+	                            color: "text.primary",
+	                            textDecoration: "underline",
+	                          },
+	                        }}
+	                      >
                         <ArrowBackIcon fontSize="small" />
                         <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
                           Home
                         </Typography>
                       </MuiLink>
                     </Box>
-                    <Typography component="h2" variant="h6" color="text.primary" sx={CONTEXT_HEADER_SX}>
-                      Identified Patients
-                    </Typography>
                   </Box>
                   {countResult ? (
                     <Box
@@ -3524,21 +4104,6 @@ function FiltersView() {
                         flexShrink: 0,
                       }}
                     >
-                      <Typography
-                        component="span"
-                        variant="h4"
-                        sx={{
-                          textAlign: "right",
-                          fontVariantNumeric: "tabular-nums",
-                          lineHeight: 1.1,
-                          fontSize: custom.patientCountSize || "1.25rem",
-                          fontWeight: custom.patientCountWeight || 400,
-                          color: custom.patientCountColor || "text.primary",
-                          fontFamily: custom.countFontFamily || "inherit",
-                        }}
-                      >
-                        {countResult.count.toLocaleString()} patient{countResult.count === 1 ? "" : "s"}
-                      </Typography>
                     </Box>
                   ) : null}
                   <Box
@@ -3552,72 +4117,6 @@ function FiltersView() {
                     }}
                   >
                     <AccessibilityBadge label="Accessibility" />
-                    <FormControl
-                      size="small"
-                      sx={{
-                        minWidth: 150,
-                        fontSize: "0.75rem",
-                        height: 32,
-                        bgcolor: "background.paper",
-                      }}
-                    >
-                      <InputLabel id="global-display-mode-select-label">All filters</InputLabel>
-                      <Select
-                        labelId="global-display-mode-select-label"
-                        id="global-display-mode-select"
-                        value={globalFilterDisplayMode}
-                        onChange={handleGlobalFilterDisplayModeChange}
-                        label="All filters"
-                        sx={{
-                          height: 32,
-                          "& .MuiSelect-select": { py: 0.5 },
-                        }}
-                      >
-                        {GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.map((option) => (
-                          <MenuItem key={option.key} value={option.key} sx={{ fontSize: "0.8rem" }}>
-                            {option.label}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                      <TextFieldsIcon fontSize="small" sx={{ color: "text.secondary", flexShrink: 0 }} />
-                      <FormControl
-                        size="small"
-                        sx={{
-                          minWidth: 150,
-                          fontSize: "0.75rem",
-                          height: 32,
-                          bgcolor: "background.paper",
-                        }}
-                      >
-                        <InputLabel id="font-family-select-label">Font</InputLabel>
-                        <Select
-                          labelId="font-family-select-label"
-                          id="font-family-select"
-                          value={fontFamilyKey}
-                          onChange={handleFontFamilyChange}
-                          label="Font"
-                          sx={{
-                            height: 32,
-                            "& .MuiSelect-select": { py: 0.5 },
-                          }}
-                        >
-                          {FONT_FAMILY_OPTIONS.map((option) => (
-                            <MenuItem
-                              key={option.key}
-                              value={option.key}
-                              sx={{
-                                fontSize: "0.8rem",
-                                fontFamily: option.stack || "inherit",
-                              }}
-                            >
-                              {option.label}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Box>
                     <Box
                       role="group"
                       aria-label="Font size"
@@ -3633,13 +4132,13 @@ function FiltersView() {
                         pr: 0.25,
                         bgcolor: "background.paper",
                       }}
-                    >
-                      <Typography
-                        variant="caption"
-                        sx={{ color: "text.secondary", fontWeight: 600, letterSpacing: 0.2, userSelect: "none" }}
-                      >
-                        Aa
-                      </Typography>
+	                    >
+	                      <Typography
+	                        variant="caption"
+	                        sx={{ color: "text.primary", fontWeight: 600, letterSpacing: 0.2, userSelect: "none" }}
+	                      >
+	                        Aa
+	                      </Typography>
                       <IconButton
                         size="small"
                         onClick={() => handleFontScaleChange(-1)}
@@ -3702,18 +4201,29 @@ function FiltersView() {
                           fontSize: "0.75rem",
                           height: 32,
                           bgcolor: "background.paper",
-                        }}
-                      >
-                        <InputLabel id="theme-select-label">Theme</InputLabel>
-                        <Select
-                          labelId="theme-select-label"
-                          id="theme-select"
-                          value={themeKey}
-                          onChange={handleThemeChange}
-                          label="Theme"
-                          sx={{
-                            height: 32,
-                            "& .MuiSelect-select": { py: 0.5 },
+	                        }}
+	                      >
+	                        <InputLabel
+	                          id="theme-select-label"
+	                          htmlFor="theme-select-input"
+	                          sx={{ "&.MuiInputLabel-shrink": { color: "text.primary" } }}
+	                        >
+	                          Theme
+	                        </InputLabel>
+	                        <Select
+	                          labelId="theme-select-label"
+	                          id="theme-select"
+	                          value={themeKey}
+	                          onChange={handleThemeChange}
+	                          label="Theme"
+	                          inputProps={{
+	                            id: "theme-select-input",
+	                            "aria-label": "Theme",
+	                            "aria-labelledby": "theme-select-label",
+	                          }}
+	                          sx={{
+	                            height: 32,
+	                            "& .MuiSelect-select": { py: 0.5 },
                           }}
                         >
                           {THEME_OPTIONS.map((option) => (
@@ -3721,123 +4231,22 @@ function FiltersView() {
                               {option.label}
                             </MenuItem>
                           ))}
+                          <MenuItem
+                            value={THEME_EDITOR_MENU_VALUE}
+                            sx={{ fontSize: "0.8rem", fontStyle: "italic", borderTop: 1, borderColor: "divider" }}
+                          >
+                            Theme Builder...
+                          </MenuItem>
                         </Select>
                       </FormControl>
                     </Box>
                   </Box>
                 </Box>
-                {isCountLoading ? (
-                  <Typography variant="body2" color="text.secondary">
-                    Querying patient count...
-                  </Typography>
-                ) : null}
-                {countError ? <Alert severity="error">{countError}</Alert> : null}
-                {countResult ? (
-                  <Stack spacing={0.35}>
-                    {identifiedSummary ? (
-                      <Typography variant="body2" color="text.secondary">
-                        {identifiedSummary}
-                      </Typography>
-                    ) : null}
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                      {activeFilters.map((filter, index) => (
-                        <Box
-                          key={`${filter.class}-${index}`}
-                          sx={{
-                            display: "inline-flex",
-                            alignItems: "baseline",
-                            gap: 0.75,
-                            px: 0.75,
-                            py: 0.3,
-                            border: custom.chipInactiveBorder || "1px solid",
-                            borderColor: custom.chipInactiveBorder ? undefined : "divider",
-                            borderRadius: custom.chipRadius || "4px",
-                            bgcolor: custom.chipActiveBg || "grey.50",
-                            color: custom.chipActiveText || "text.primary",
-                            boxShadow: custom.chipActiveGlow || "none",
-                            maxWidth: "100%",
-                            transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-                          }}
-                        >
-                          <Typography variant="body2" sx={{ color: "inherit", opacity: 0.9 }}>
-                            {prettifyClassName(filter.class, filter.type)} (
-                            {formatSelectionText(
-                              filter.instances.map((value) =>
-                                toDisplayInstanceValue(filter.type, filter.class, value)
-                              )
-                            )}
-                            )
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              whiteSpace: "nowrap",
-                              fontVariantNumeric: "tabular-nums",
-                              fontWeight: 700,
-                              color: "inherit",
-                              fontFamily: custom.countFontFamily || "inherit",
-                            }}
-                          >
-                            {formatItemCount(timing.itemCounts?.[index])}
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Box>
-                    {cohortSize === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        No patients match the current filters.
-                      </Typography>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        Showing page {(currentPatientGridPage + 1).toLocaleString()} of{" "}
-                        {Math.max(1, totalPatientGridPages).toLocaleString()} ·{" "}
-                        {cohortSize.toLocaleString()} matched patients.
-                      </Typography>
-                    )}
-                    {isSlowQuery ? (
-                      <Alert severity="warning">
-                        Query took {formatMs(timing.totalMs)} ms. Consider narrowing selections for faster response.
-                      </Alert>
-                    ) : null}
-                    {zeroResultHint ? <Alert severity="info">{zeroResultHint}</Alert> : null}
-                    {SHOULD_LOG_FILTERS_PERF ? (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          textAlign: "right",
-                          fontVariantNumeric: "tabular-nums",
-                          color: custom.statsColor || "text.secondary",
-                          fontFamily: custom.countFontFamily || "inherit",
-                          pt: 0.25,
-                        }}
-                      >
-                        Query {formatMs(timing.queryMs)} ms | Bitmap {formatMs(timing.bitmapMs)} ms | Resolve{" "}
-                        {formatMs(timing.resolveMs)} ms | Total {formatMs(timing.totalMs)} ms
-                      </Typography>
-                    ) : null}
-                  </Stack>
-                ) : null}
+
               </Stack>
             </Paper>
           </Box>
         </Box>
-
-        {countResult && shouldShowPatientDetailGrid ? (
-          <Box>
-            <PatientGrid
-              data={patientGridRows}
-              cohortSize={cohortSize}
-              totalCohortCount={cohortSize}
-              totalPages={totalPatientGridPages}
-              currentPage={currentPatientGridPage}
-              pageSize={PATIENT_GRID_PAGE_SIZE}
-              onPageChange={setCurrentPatientGridPage}
-              isLoading={isPatientGridPageLoading}
-              error={patientGridPageError}
-              onRetry={handleRetryPatientSummary}
-            />
-          </Box>
-        ) : null}
 
         {isLoading || isAttributeLoading ? (
           <Typography variant="body2" color="text.secondary">
@@ -3891,67 +4300,34 @@ function FiltersView() {
                     classChartDataByClass[className] =
                       omopChartDataWithIncludedByClass[className] || classData;
                   });
-                  const measuredCardHeightByClass = {};
-                  const baseCardHeightByClass = Object.fromEntries(
-                    filterSet.filters.map((filter) => {
-                      const className = filter.key;
-                      const measuredHeight = Number(
-                        cardNaturalHeightByKey[getCardMeasureKey("omop", className)]
-                      );
-                      const normalizedMeasuredHeight =
-                        Number.isFinite(measuredHeight) && measuredHeight > 0
-                          ? measuredHeight
-                          : 0;
-                      measuredCardHeightByClass[className] = normalizedMeasuredHeight;
-                      const classChartData = classChartDataByClass[className] || [];
-                      const estimatedHeight = estimateCardHeight(
-                        Array.isArray(classChartData) ? classChartData.length : 0
-                      );
-                      return [
-                        className,
-                        normalizedMeasuredHeight > 0
-                          ? normalizedMeasuredHeight
-                          : estimatedHeight,
-                      ];
-                    })
-                  );
-                  const classNames = filterSet.filters.map((filter) => filter.key);
                   const {
-                    tallestFilterBoxHeight,
-                    tallestMeasuredFilterBoxHeight,
+                    columnGroups,
+                    measuredCardHeightByClass,
                     cardHeightOverrideByClass,
                     cardMarginBottomByClass,
-                  } = buildTallestAlignedLayout(
-                    classNames,
-                    baseCardHeightByClass,
-                    measuredCardHeightByClass,
-                    NATURAL_STACK_GAP_PX,
-                    CARD_COLUMN_COUNT
+                    sectionHeight,
+                    sectionHeightCap,
+                  } = buildSectionLayout(
+                    "omop",
+                    filterSet.filters,
+                    classChartDataByClass
                   );
-                  const getResolvedCardHeight = (className) => {
-                    const baseHeight =
-                      baseCardHeightByClass[className] || estimateCardHeight(0);
-                    const overrideHeight = Number(cardHeightOverrideByClass[className]);
-                    if (Number.isFinite(overrideHeight) && overrideHeight > 0) {
-                      return Math.max(baseHeight, overrideHeight);
-                    }
-                    return baseHeight;
-                  };
-                  const cardEstimates = filterSet.filters.map((filter) =>
-                    getResolvedCardHeight(filter.key)
+                  const filterByClassName = Object.fromEntries(
+                    filterSet.filters.map((filter) => [filter.key, filter])
                   );
-                  const tallestCard = Math.max(0, ...cardEstimates);
-                  const sectionTargetHeight =
-                    tallestMeasuredFilterBoxHeight > 0
-                      ? tallestMeasuredFilterBoxHeight
-                      : Math.max(tallestCard, tallestFilterBoxHeight);
-                  const sectionHeight = Math.min(
-                    CATEGORY_MAX_HEIGHT,
-                    sectionTargetHeight + CARD_BOTTOM_MARGIN
-                  );
+                  const orderedClassGroups =
+                    Array.isArray(columnGroups) && columnGroups.length > 0
+                      ? columnGroups
+                      : [filterSet.filters.map((filter) => filter.key)];
 
                   return (
-                    <Stack key={filterSet.id} spacing={1}>
+                    <Stack
+                      key={filterSet.id}
+                      spacing={1}
+                      className="filter-set"
+                      data-section-height-cap={sectionHeightCap}
+                      sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
+                    >
                       <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
                         {filterSet.label}
                       </Typography>
@@ -3961,9 +4337,27 @@ function FiltersView() {
                           {cohortSize === 1 ? "" : "s"}
                         </Typography>
                       ) : null}
-                      <Box sx={getFilterGridSx(sectionHeight)}>
-                        {filterSet.filters.map((filter, filterIndex) => {
-                        const className = filter.key;
+                      <Box
+                        className="filter-section-grid"
+                        data-column-cap={resolvedSectionColumnCap}
+                        data-section-height-cap={sectionHeightCap}
+                        sx={getFilterGridSx(
+                          sectionHeight,
+                          FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
+                          sectionHeightCap
+                        )}
+                      >
+                        {orderedClassGroups.map((classGroup, columnIndex) => (
+                          <Box
+                            key={`${filterSet.id}:column:${columnIndex}`}
+                            className="filter-section-column"
+                            sx={getFilterSectionColumnSx()}
+                          >
+                          {classGroup.map((className, classIndex) => {
+                        const filter = filterByClassName[className];
+                        if (!filter) {
+                          return null;
+                        }
                         const classError = omopData.errorsByClass[className] || "";
                         const classChartData = classChartDataByClass[className] || [];
                         const classDisplayName =
@@ -3978,33 +4372,64 @@ function FiltersView() {
                         const customSortOrder = getFilterCustomSortOrder("omop", className);
                         const selectedCount = selectedValuesForClass.length;
                         const cardHeightOverride = cardHeightOverrideByClass[className];
+                        const measuredCardHeight =
+                          Number(measuredCardHeightByClass[className]) || 0;
+                        const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+                        const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
+                        const resolvedCardHeightCapPx =
+                          configuredCardHeightCapPx == null
+                            ? resolvedSectionHeightCapPx
+                            : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx);
+                        const boundedCardHeightOverride = Math.min(
+                          resolvedCardHeightCapPx,
+                          Math.max(0, Number(cardHeightOverride) || 0)
+                        );
+                        const shouldApplyCardHeightOverride =
+                          boundedCardHeightOverride > 0 && measuredCardHeight > 0;
                         const cardMarginBottom = Math.max(
                           0,
                           Number(cardMarginBottomByClass[className]) || 0
                         );
+                        const cardOuterStyle = {
+                          "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
+                          "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
+                            resolvedCardHeightCapPx
+                          )}px`,
+                          maxHeight: `${resolvedCardHeightCapPx}px`,
+                          ...(shouldApplyCardHeightOverride
+                            ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+                            : {}),
+                        };
                         return (
                           <Paper
                             key={`${filterSet.id}:${className}`}
                             elevation={0}
+                            className="filter-card"
+                            ref={setCardMeasureRef("omop", className)}
+                            style={cardOuterStyle}
+                            data-card-margin-bottom={Math.round(cardMarginBottom)}
+                            data-card-height-cap={resolvedCardHeightCapPx}
+                            data-card-height-override={
+                              shouldApplyCardHeightOverride
+                                ? Math.round(boundedCardHeightOverride)
+                                : undefined
+                            }
                             sx={{
-                              ...getCardSx(filterIndex),
+                              ...getCardSx(classIndex),
                               mb: { xs: 3, md: `${cardMarginBottom}px` },
                             }}
                           >
                             <Box
+                              className="filter-card-content"
                               ref={setCardContentRef(omopCardContentRefs, `omop-${className}`)}
-                              sx={{
-                                ...getCardContentAreaSx("omop"),
-                                ...(Number.isFinite(cardHeightOverride)
-                                  ? { minHeight: `${Math.round(cardHeightOverride)}px` }
-                                  : {}),
-                              }}
+                              sx={getCardContentAreaSx("omop", false, false, sectionHeightCap)}
                             >
                               <Box
-                                ref={setCardMeasureRef("omop", className)}
-                                sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                                className="filter-card-body"
+                                sx={{ display: "flex", flexDirection: "column", gap: 0 }}
                               >
                                 <Button
+                                  className="filter-card-open-button"
                                   type="button"
                                   variant={selectedCount > 0 ? "contained" : "outlined"}
                                   onClick={() => handleOpenFilterModal("omop", className, classDisplayName)}
@@ -4021,8 +4446,9 @@ function FiltersView() {
                                   <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
                                 </Button>
                                 {classError ? <Alert severity="error">{classError}</Alert> : null}
-                                <HorizontalBarChart
+                                <HorizontalBarFilter
                                   key={`inline:omop:${className}:${sortMode}`}
+                                  className="filter-card-chart"
                                   title={classDisplayName}
                                   showTitle={false}
                                   allowCollapse={false}
@@ -4042,6 +4468,8 @@ function FiltersView() {
                           </Paper>
                         );
                         })}
+                          </Box>
+                        ))}
                       </Box>
                     </Stack>
                   );
@@ -4070,67 +4498,34 @@ function FiltersView() {
                     classChartDataByClass[className] =
                       attributeChartDataWithIncludedByClass[className] || classData;
                   });
-                  const measuredCardHeightByClass = {};
-                  const baseCardHeightByClass = Object.fromEntries(
-                    filterSet.filters.map((filter) => {
-                      const className = filter.key;
-                      const measuredHeight = Number(
-                        cardNaturalHeightByKey[getCardMeasureKey("attributes", className)]
-                      );
-                      const normalizedMeasuredHeight =
-                        Number.isFinite(measuredHeight) && measuredHeight > 0
-                          ? measuredHeight
-                          : 0;
-                      measuredCardHeightByClass[className] = normalizedMeasuredHeight;
-                      const classChartData = classChartDataByClass[className] || [];
-                      const estimatedHeight = estimateCardHeight(
-                        Array.isArray(classChartData) ? classChartData.length : 0
-                      );
-                      return [
-                        className,
-                        normalizedMeasuredHeight > 0
-                          ? normalizedMeasuredHeight
-                          : estimatedHeight,
-                      ];
-                    })
-                  );
-                  const classNames = filterSet.filters.map((filter) => filter.key);
                   const {
-                    tallestFilterBoxHeight,
-                    tallestMeasuredFilterBoxHeight,
+                    columnGroups,
+                    measuredCardHeightByClass,
                     cardHeightOverrideByClass,
                     cardMarginBottomByClass,
-                  } = buildTallestAlignedLayout(
-                    classNames,
-                    baseCardHeightByClass,
-                    measuredCardHeightByClass,
-                    NATURAL_STACK_GAP_PX,
-                    CARD_COLUMN_COUNT
+                    sectionHeight,
+                    sectionHeightCap,
+                  } = buildSectionLayout(
+                    "attributes",
+                    filterSet.filters,
+                    classChartDataByClass
                   );
-                  const getResolvedCardHeight = (className) => {
-                    const baseHeight =
-                      baseCardHeightByClass[className] || estimateCardHeight(0);
-                    const overrideHeight = Number(cardHeightOverrideByClass[className]);
-                    if (Number.isFinite(overrideHeight) && overrideHeight > 0) {
-                      return Math.max(baseHeight, overrideHeight);
-                    }
-                    return baseHeight;
-                  };
-                  const cardEstimates = filterSet.filters.map((filter) => {
-                    return getResolvedCardHeight(filter.key);
-                  });
-                  const tallestCard = Math.max(0, ...cardEstimates);
-                  const sectionTargetHeight =
-                    tallestMeasuredFilterBoxHeight > 0
-                      ? tallestMeasuredFilterBoxHeight
-                      : Math.max(tallestCard, tallestFilterBoxHeight);
-                  const sectionHeight = Math.min(
-                    CATEGORY_MAX_HEIGHT,
-                    sectionTargetHeight + CARD_BOTTOM_MARGIN
+                  const filterByClassName = Object.fromEntries(
+                    filterSet.filters.map((filter) => [filter.key, filter])
                   );
+                  const orderedClassGroups =
+                    Array.isArray(columnGroups) && columnGroups.length > 0
+                      ? columnGroups
+                      : [filterSet.filters.map((filter) => filter.key)];
 
                   return (
-                    <Stack key={filterSet.id} spacing={1}>
+                    <Stack
+                      key={filterSet.id}
+                      spacing={1}
+                      className="filter-set"
+                      data-section-height-cap={sectionHeightCap}
+                      sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
+                    >
                       <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
                         {filterSet.label}
                       </Typography>
@@ -4140,9 +4535,27 @@ function FiltersView() {
                           {cohortSize === 1 ? "" : "s"}
                         </Typography>
                       ) : null}
-                      <Box sx={getFilterGridSx(sectionHeight)}>
-                        {filterSet.filters.map((filter, filterIndex) => {
-                        const className = filter.key;
+                      <Box
+                        className="filter-section-grid"
+                        data-column-cap={resolvedSectionColumnCap}
+                        data-section-height-cap={sectionHeightCap}
+                        sx={getFilterGridSx(
+                          sectionHeight,
+                          FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
+                          sectionHeightCap
+                        )}
+                      >
+                        {orderedClassGroups.map((classGroup, columnIndex) => (
+                          <Box
+                            key={`${filterSet.id}:column:${columnIndex}`}
+                            className="filter-section-column"
+                            sx={getFilterSectionColumnSx()}
+                          >
+                          {classGroup.map((className, classIndex) => {
+                        const filter = filterByClassName[className];
+                        if (!filter) {
+                          return null;
+                        }
                         const classError = attributeData.errorsByClass[className] || "";
                         const classChartData = classChartDataByClass[className] || [];
                         const classDisplayName =
@@ -4158,33 +4571,64 @@ function FiltersView() {
                         const customSortOrder = getFilterCustomSortOrder("attributes", className);
                         const selectedCount = selectedValuesForClass.length;
                         const cardHeightOverride = cardHeightOverrideByClass[className];
+                        const measuredCardHeight =
+                          Number(measuredCardHeightByClass[className]) || 0;
+                        const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+                        const configuredCardHeightCapPx = getFilterMaxHeightPx("attributes", className);
+                        const resolvedCardHeightCapPx =
+                          configuredCardHeightCapPx == null
+                            ? resolvedSectionHeightCapPx
+                            : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx);
+                        const boundedCardHeightOverride = Math.min(
+                          resolvedCardHeightCapPx,
+                          Math.max(0, Number(cardHeightOverride) || 0)
+                        );
+                        const shouldApplyCardHeightOverride =
+                          boundedCardHeightOverride > 0 && measuredCardHeight > 0;
                         const cardMarginBottom = Math.max(
                           0,
                           Number(cardMarginBottomByClass[className]) || 0
                         );
+                        const cardOuterStyle = {
+                          "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
+                          "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
+                            resolvedCardHeightCapPx
+                          )}px`,
+                          maxHeight: `${resolvedCardHeightCapPx}px`,
+                          ...(shouldApplyCardHeightOverride
+                            ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+                            : {}),
+                        };
                         return (
                           <Paper
                             key={`${filterSet.id}:${className}`}
                             elevation={0}
+                            className="filter-card"
+                            ref={setCardMeasureRef("attributes", className)}
+                            style={cardOuterStyle}
+                            data-card-margin-bottom={Math.round(cardMarginBottom)}
+                            data-card-height-cap={resolvedCardHeightCapPx}
+                            data-card-height-override={
+                              shouldApplyCardHeightOverride
+                                ? Math.round(boundedCardHeightOverride)
+                                : undefined
+                            }
                             sx={{
-                              ...getCardSx(filterIndex),
+                              ...getCardSx(classIndex),
                               mb: { xs: 3, md: `${cardMarginBottom}px` },
                             }}
                           >
                             <Box
+                              className="filter-card-content"
                               ref={setCardContentRef(attributeCardContentRefs, `attribute-${className}`)}
-                              sx={{
-                                ...getCardContentAreaSx("attributes"),
-                                ...(Number.isFinite(cardHeightOverride)
-                                  ? { minHeight: `${Math.round(cardHeightOverride)}px` }
-                                  : {}),
-                              }}
+                              sx={getCardContentAreaSx("attributes", false, false, sectionHeightCap)}
                             >
                               <Box
-                                ref={setCardMeasureRef("attributes", className)}
-                                sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                                className="filter-card-body"
+                                sx={{ display: "flex", flexDirection: "column", gap: 0 }}
                               >
                                 <Button
+                                  className="filter-card-open-button"
                                   type="button"
                                   variant={selectedCount > 0 ? "contained" : "outlined"}
                                   onClick={() =>
@@ -4203,8 +4647,9 @@ function FiltersView() {
                                   <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
                                 </Button>
                                 {classError ? <Alert severity="error">{classError}</Alert> : null}
-                                <HorizontalBarChart
+                                <HorizontalBarFilter
                                   key={`inline:attributes:${className}:${sortMode}`}
+                                  className="filter-card-chart"
                                   title={classDisplayName}
                                   showTitle={false}
                                   allowCollapse={false}
@@ -4225,6 +4670,8 @@ function FiltersView() {
                           </Paper>
                         );
                         })}
+                          </Box>
+                        ))}
                       </Box>
                     </Stack>
                   );
@@ -4237,6 +4684,211 @@ function FiltersView() {
             )}
           </Stack>
         ) : null}
+        {isPatientGridDockVisible ? (
+          <Box
+            sx={{
+              position: "fixed",
+              left: { xs: 8, md: 16 },
+              right: { xs: 8, md: 16 },
+              bottom: { xs: 8, md: 16 },
+              zIndex: (theme) => theme.zIndex.modal - 1,
+              pointerEvents: "none",
+            }}
+          >
+            <Paper
+              elevation={10}
+              data-testid="patient-grid-drawer"
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && isPatientGridDockExpanded) {
+                  setIsPatientGridDockExpanded(false);
+                }
+              }}
+              sx={{
+                pointerEvents: "auto",
+                overflow: "hidden",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 2,
+                bgcolor: alpha(activeTheme.palette.background.paper, 0.9),
+                opacity: 0.9,
+                backdropFilter: "blur(14px)",
+                WebkitBackdropFilter: "blur(14px)",
+                boxShadow: (theme) => theme.shadows[12],
+                maxHeight: { xs: "60vh", md: "min(64vh, 640px)" },
+                transition: "box-shadow 0.2s ease, transform 0.2s ease",
+              }}
+            >
+              <Box sx={{ px: 1.5, py: 1.25, minHeight: 0 }}>
+                <PatientGrid
+                  data={patientGridRows}
+                  cohortSize={cohortSize}
+                  totalCohortCount={cohortSize}
+                  totalPages={totalPatientGridPages}
+                  currentPage={currentPatientGridPage}
+                  pageSize={PATIENT_GRID_PAGE_SIZE}
+                  onPageChange={setCurrentPatientGridPage}
+                  isLoading={patientGridDrawerTableLoading}
+                  error={patientGridPageError}
+                  onRetry={handleRetryPatientSummary}
+                  embedded
+                  title="Selected Patients"
+                  subtitle={isPatientGridDockExpanded ? patientGridDrawerStatusText : ""}
+                  collapsible
+                  expanded={isPatientGridDockExpanded}
+                  onToggleExpanded={() => setIsPatientGridDockExpanded((previousValue) => !previousValue)}
+                  compactHeader
+                  toggleButtonTestId="patient-grid-drawer-toggle"
+                  collapsiblePanelId={patientGridDrawerPanelId}
+                  collapsedHeaderSummary={patientGridCollapsedHeaderSummary}
+                />
+              </Box>
+            </Paper>
+          </Box>
+        ) : null}
+        <Dialog
+          open={isThemeBuilderOpen}
+          onClose={handleThemeBuilderClose}
+          fullWidth
+          maxWidth="lg"
+          aria-labelledby="theme-builder-modal-title"
+        >
+          <DialogTitle id="theme-builder-modal-title">Theme Builder</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={1.5}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
+                <FormControl size="small" sx={{ minWidth: 190 }}>
+                  <InputLabel id="theme-builder-theme-select-label">Theme</InputLabel>
+                  <Select
+                    labelId="theme-builder-theme-select-label"
+                    value={themeBuilderThemeKey}
+                    label="Theme"
+                    onChange={handleThemeBuilderThemeChange}
+                  >
+                    {THEME_OPTIONS.map((option) => (
+                      <MenuItem key={option.key} value={option.key}>
+                        {option.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleThemeBuilderApplyTheme}
+                  disabled={themeBuilderThemeKey === themeKey}
+                >
+                  {themeBuilderThemeKey === themeKey ? "Active Theme" : "Use This Theme"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  onClick={handleThemeBuilderThemeReset}
+                  disabled={!hasThemeBuilderOverrides}
+                >
+                  Reset Theme Colors
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  onClick={handleThemeBuilderResetAll}
+                  disabled={!hasAnyThemeColorOverrides}
+                >
+                  Reset All Themes
+                </Button>
+              </Stack>
+              <TextField
+                size="small"
+                label="Search color paths"
+                placeholder="palette.primary.main or #00619E"
+                value={themeBuilderSearchQuery}
+                onChange={(event) => setThemeBuilderSearchQuery(event.target.value)}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Showing {filteredThemeBuilderColorEntries.length.toLocaleString()} of{" "}
+                {themeBuilderColorEntries.length.toLocaleString()} color entries ·{" "}
+                {Object.keys(themeBuilderThemeOverrides).length.toLocaleString()} overrides for this theme
+              </Typography>
+              <Box
+                sx={{
+                  maxHeight: { xs: "52vh", md: "60vh" },
+                  overflowY: "auto",
+                  pr: 0.5,
+                }}
+              >
+                <Stack spacing={1}>
+                  {filteredThemeBuilderColorEntries.length > 0 ? (
+                    filteredThemeBuilderColorEntries.map((entry) => {
+                      const overriddenValue = themeBuilderThemeOverrides[entry.id];
+                      const displayValue = overriddenValue ?? entry.defaultValue;
+                      const colorPickerValue = toColorInputHexValue(displayValue);
+                      const hasEntryOverride =
+                        typeof overriddenValue === "string" && overriddenValue.length > 0;
+
+                      return (
+                        <Paper key={entry.id} variant="outlined" sx={{ p: 1 }}>
+                          <Stack spacing={0.75}>
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "text.secondary", fontFamily: MONOSPACE_STACK, wordBreak: "break-word" }}
+                            >
+                              {entry.pathLabel}
+                              {entry.kind === "token" ? ` [color ${entry.tokenIndex + 1}]` : ""}
+                            </Typography>
+                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+                              {colorPickerValue ? (
+                                <TextField
+                                  size="small"
+                                  type="color"
+                                  label="Pick"
+                                  value={colorPickerValue}
+                                  onChange={(event) =>
+                                    handleThemeBuilderEntryChange(entry, event.target.value)
+                                  }
+                                  sx={{ width: 96, flexShrink: 0 }}
+                                  inputProps={{
+                                    "aria-label": `${entry.pathLabel} color picker`,
+                                  }}
+                                />
+                              ) : null}
+                              <TextField
+                                size="small"
+                                fullWidth
+                                label={entry.kind === "direct" ? "Color value" : "Color token"}
+                                value={displayValue}
+                                onChange={(event) =>
+                                  handleThemeBuilderEntryChange(entry, event.target.value)
+                                }
+                                inputProps={{
+                                  "aria-label": `${entry.pathLabel} color value`,
+                                }}
+                              />
+                              <Button
+                                size="small"
+                                onClick={() => handleThemeBuilderEntryChange(entry, entry.defaultValue)}
+                                disabled={!hasEntryOverride}
+                              >
+                                Reset
+                              </Button>
+                            </Stack>
+                          </Stack>
+                        </Paper>
+                      );
+                    })
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      No matching color entries for this query.
+                    </Typography>
+                  )}
+                </Stack>
+              </Box>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleThemeBuilderClose}>Close</Button>
+          </DialogActions>
+        </Dialog>
         <Dialog
           open={Boolean(activeFilterDetail)}
           onClose={handleCloseFilterModal}
@@ -4301,11 +4953,16 @@ function FiltersView() {
                 <Alert severity="error">{activeFilterDetail.classError}</Alert>
               ) : null}
               {filteredModalChartData.length > 0 ? (
-                <HorizontalBarChart
+                <HorizontalBarFilter
                   key={
                     activeFilterDetail
                       ? `modal:${activeFilterDetail.type}:${activeFilterDetail.className}:${activeFilterDetail.sortMode}`
                       : "modal:chart"
+                  }
+                  className={
+                    activeFilterDetail?.type === "attributes"
+                      ? "filter-modal-chart filter-modal-chart-attributes"
+                      : "filter-modal-chart filter-modal-chart-omop"
                   }
                   title={activeFilterDetail?.classDisplayName || "Filter details"}
                   showTitle={false}
@@ -4331,7 +4988,7 @@ function FiltersView() {
                   }
                   fontScale={fontScale}
                   fillContainer={false}
-                  defaultSort={activeFilterDetail?.sortMode || DEFAULT_CHART_SORT_MODE}
+                  defaultSort={activeFilterDetail?.sortMode || DEFAULT_FILTER_VALUE_SORT_MODE}
                   customSortOrder={
                     activeFilterDetail
                       ? getFilterCustomSortOrder(activeFilterDetail.type, activeFilterDetail.className)

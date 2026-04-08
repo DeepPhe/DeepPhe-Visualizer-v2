@@ -45,7 +45,7 @@ import {
 } from "../utils/dataProcessing";
 import { useDataLoader } from "../hooks/useDataLoader";
 import SectionJumpLinks from "../components/debug/SectionJumpLinks";
-import HorizontalBarChart from "../components/HorizontalBarChart";
+import HorizontalBarFilter from "../components/HorizontalBarFilter";
 
 const DEFAULT_SECTION_STATE = {
   omop: false,
@@ -75,7 +75,7 @@ function SectionTitle({ title, accent = false }) {
   );
 }
 
-function toHorizontalChartData(distribution) {
+function toFilterValueData(distribution) {
   if (!Array.isArray(distribution)) {
     return [];
   }
@@ -232,9 +232,8 @@ function DebugView() {
                                 </Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <HorizontalBarChart
-                                    title={`${String(className)} Distribution`}
-                                    data={toHorizontalChartData(chartDistribution)}
+                                  <HorizontalBarFilter
+                                    data={toFilterValueData(chartDistribution)}
                                     height={320}
                                     defaultSort="value-desc"
                                   />
@@ -336,9 +335,8 @@ function DebugView() {
                                 <Alert severity="error">{attributeData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <HorizontalBarChart
-                                    title={`${classKey} Distribution`}
-                                    data={toHorizontalChartData(chartDistribution)}
+                                  <HorizontalBarFilter
+                                    data={toFilterValueData(chartDistribution)}
                                     height={320}
                                     defaultSort="value-desc"
                                   />
@@ -436,9 +434,8 @@ function DebugView() {
                                 <Alert severity="error">{conceptData.errorsByClass[classKey]}</Alert>
                               ) : classSummary.length > 0 ? (
                                 chartDistribution.length > 0 ? (
-                                  <HorizontalBarChart
-                                    title={`${classKey} Distribution`}
-                                    data={toHorizontalChartData(chartDistribution)}
+                                  <HorizontalBarFilter
+                                    data={toFilterValueData(chartDistribution)}
                                     height={320}
                                     defaultSort="value-desc"
                                   />
@@ -513,7 +510,7 @@ function DebugView() {
                         sx={{ px: 3, pt: 3, pb: 1 }}
                       />
                       <CardContent sx={{ px: 3, pb: 3, pt: 0 }}>
-                        <HorizontalBarChart
+                        <HorizontalBarFilter
                           title="Cancer Counts Distribution"
                           data={cancerCountRows.map((row) => ({
                             label: row.label,

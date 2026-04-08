@@ -19,8 +19,8 @@ const SORT_MODE_LABELS = {
   "alpha-asc": "value: A to Z",
   "alpha-desc": "value: Z to A",
 };
-const DEFAULT_SORT_MODE = "value-desc";
-const DEFAULT_TITLE = "Horizontal Bar Chart";
+const DEFAULT_SORT_MODE = "alpha-asc";
+const DEFAULT_TITLE = "Horizontal Bar Filter";
 const NOOP = () => {};
 
 const FALLBACK_CHART_WIDTH = 780;
@@ -43,6 +43,13 @@ const visuallyHiddenStyles = {
   whiteSpace: "nowrap",
   border: 0,
 };
+
+function joinClassNames(...values) {
+  return values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
 
 function clampFontScale(value) {
   const numericValue = Number(value);
@@ -294,7 +301,7 @@ function sortHierarchicalRows(rows, sortMode, customSortIndexMap = null) {
   });
 }
 
-export default function HorizontalBarChart({
+export default function HorizontalBarFilter({
   title = "",
   data = [],
   selectedValues = [],
@@ -315,6 +322,7 @@ export default function HorizontalBarChart({
   customSortOrder = [],
   inlinePatientIdsThreshold = 0,
   getPatientSummary,
+  className = "",
 }) {
   const theme = useTheme();
   const generatedId = useId();
@@ -722,6 +730,7 @@ export default function HorizontalBarChart({
 
   return (
     <Box
+      className={joinClassNames("horizontal-bar-filter", className)}
       sx={{
         width: "100%",
         ...(fillContainer
@@ -736,6 +745,7 @@ export default function HorizontalBarChart({
     >
       {shouldRenderHeaderRow ? (
         <Box
+          className="horizontal-bar-filter-header"
           sx={{
             display: "flex",
             alignItems: "center",
@@ -743,9 +753,13 @@ export default function HorizontalBarChart({
             gap: 1,
           }}
         >
-          <Box sx={{ display: "inline-flex", alignItems: "center", gap: 1, minHeight: 32 }}>
+          <Box
+            className="horizontal-bar-filter-header-main"
+            sx={{ display: "inline-flex", alignItems: "center", gap: 1, minHeight: 32 }}
+          >
             {allowCollapse ? (
               <Box
+                className="horizontal-bar-filter-toggle-button"
                 component="button"
                 type="button"
                 aria-expanded={isChartExpanded}
@@ -783,6 +797,7 @@ export default function HorizontalBarChart({
                 />
                 {showInlineTitle ? (
                   <Typography
+                    className="horizontal-bar-filter-title"
                     variant="subtitle1"
                     color="text.primary"
                     sx={{
@@ -796,6 +811,7 @@ export default function HorizontalBarChart({
               </Box>
             ) : showInlineTitle ? (
               <Typography
+                className="horizontal-bar-filter-title"
                 variant="subtitle1"
                 color="text.primary"
                 sx={{
@@ -811,6 +827,7 @@ export default function HorizontalBarChart({
           {showSortCycleControl ? (
             <Tooltip title={`Sort: ${currentSortLabel}`}>
               <IconButton
+                className="horizontal-bar-filter-sort-cycle-button"
                 size="small"
                 aria-label={sortButtonLabel}
                 onClick={handleSortClick}
@@ -822,11 +839,17 @@ export default function HorizontalBarChart({
         </Box>
       ) : null}
 
-      <Box component="span" aria-live="polite" sx={visuallyHiddenStyles}>
+      <Box
+        component="span"
+        className="horizontal-bar-filter-sort-announcement"
+        aria-live="polite"
+        sx={visuallyHiddenStyles}
+      >
         {sortAnnouncement}
       </Box>
 
       <Box
+        className="horizontal-bar-filter-chart-region"
         id={chartRegionId}
         role="region"
         aria-label={chartRegionAriaLabel}
@@ -846,6 +869,7 @@ export default function HorizontalBarChart({
       >
         {showColumnSortHeader ? (
           <Box
+            className="horizontal-bar-filter-column-sort-header"
             sx={{
               display: "flex",
               alignItems: "center",
@@ -856,6 +880,7 @@ export default function HorizontalBarChart({
             }}
           >
             <Box
+              className="horizontal-bar-filter-sort-label-button"
               component="button"
               type="button"
               onClick={() => handleColumnSortClick("instance")}
@@ -913,6 +938,7 @@ export default function HorizontalBarChart({
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }} />
             <Box
+              className="horizontal-bar-filter-sort-count-button"
               component="button"
               type="button"
               onClick={() => handleColumnSortClick("count")}
@@ -971,6 +997,7 @@ export default function HorizontalBarChart({
         ) : null}
         {sortedData.length === 0 ? (
           <Typography
+            className="horizontal-bar-filter-empty"
             variant="body2"
             color="text.secondary"
             sx={{ fontSize: `${textFontSize}px` }}
@@ -979,6 +1006,7 @@ export default function HorizontalBarChart({
           </Typography>
         ) : (
           <Box
+            className="horizontal-bar-filter-chart-viewport"
             ref={chartContainerRef}
             sx={{
               width: "100%",
@@ -999,6 +1027,7 @@ export default function HorizontalBarChart({
             }}
           >
             <svg
+              className="horizontal-bar-filter-svg"
               role="group"
               aria-label={chartAriaLabel}
               width={chartWidth}
@@ -1051,6 +1080,12 @@ export default function HorizontalBarChart({
 
                 return (
                   <g
+                    className={joinClassNames(
+                      "horizontal-bar-filter-row",
+                      isSelected ? "is-selected" : "",
+                      row.isChild ? "is-child" : "",
+                      isDisabled ? "is-disabled" : ""
+                    )}
                     key={`${row.label}-${index}`}
                     opacity={disabledOpacity}
                     style={{ pointerEvents: isDisabled ? "none" : undefined }}
@@ -1058,6 +1093,7 @@ export default function HorizontalBarChart({
                   >
                     {index % 2 === 1 ? (
                       <rect
+                        className="horizontal-bar-filter-row-stripe"
                         x={0}
                         y={rowTop}
                         width={chartWidth}
@@ -1066,6 +1102,7 @@ export default function HorizontalBarChart({
                       />
                     ) : null}
                     <rect
+                      className="horizontal-bar-filter-row-hover"
                       x={0}
                       y={rowTop}
                       width={chartWidth}
@@ -1078,6 +1115,7 @@ export default function HorizontalBarChart({
                     />
                     {isSelected ? (
                       <rect
+                        className="horizontal-bar-filter-row-selected-bg"
                         x={0}
                         y={rowTop}
                         width={chartWidth}
@@ -1089,6 +1127,7 @@ export default function HorizontalBarChart({
                     {/* Selected row left accent */}
                     {isSelected ? (
                       <rect
+                        className="horizontal-bar-filter-row-selected-accent"
                         x={0}
                         y={rowTop}
                         width={3}
@@ -1098,6 +1137,7 @@ export default function HorizontalBarChart({
                     ) : null}
                     {isFocused ? (
                       <rect
+                        className="horizontal-bar-filter-row-focus-ring"
                         x={1}
                         y={rowTop + 1}
                         width={Math.max(0, chartWidth - 2)}
@@ -1112,6 +1152,7 @@ export default function HorizontalBarChart({
                     ) : null}
 
                     <text
+                      className="horizontal-bar-filter-row-label"
                       x={labelX}
                       y={rowCenterY}
                       dominantBaseline="middle"
@@ -1125,6 +1166,7 @@ export default function HorizontalBarChart({
 
                     {row.isExpandable ? (
                       <path
+                        className="horizontal-bar-filter-row-expand-icon"
                         d={iconPath}
                         fill={labelFill}
                         fillOpacity={canToggleExpand ? 0.95 : 0.55}
@@ -1133,6 +1175,7 @@ export default function HorizontalBarChart({
 
                     {/* Bar track */}
                     <rect
+                      className="horizontal-bar-filter-row-bar-track"
                       x={barStartX}
                       y={barY}
                       width={barMaxWidth}
@@ -1144,6 +1187,7 @@ export default function HorizontalBarChart({
                     {/* Bar fill */}
                     {!showPatientDots ? (
                       <rect
+                        className="horizontal-bar-filter-row-bar"
                         x={barStartX}
                         y={barY}
                         width={barWidth}
@@ -1157,6 +1201,7 @@ export default function HorizontalBarChart({
                     ) : null}
 
                     <text
+                      className="horizontal-bar-filter-row-count"
                       x={chartWidth - RIGHT_PADDING}
                       y={rowCenterY}
                       dominantBaseline="middle"
@@ -1172,6 +1217,7 @@ export default function HorizontalBarChart({
 
                     {/* Interactive overlay */}
                     <rect
+                      className="horizontal-bar-filter-row-overlay"
                       x={0}
                       y={rowTop}
                       width={chartWidth}
@@ -1239,6 +1285,7 @@ export default function HorizontalBarChart({
 
                           return (
                             <circle
+                              className="horizontal-bar-filter-patient-dot"
                               key={`${row.label}-${patientId}-${dotIndex}`}
                               cx={dotCenterX}
                               cy={rowCenterY}
@@ -1273,6 +1320,7 @@ export default function HorizontalBarChart({
                       : null}
                     {row.isExpandable ? (
                       <rect
+                        className="horizontal-bar-filter-row-expand-hitbox"
                         x={LEFT_PADDING - 2}
                         y={rowTop}
                         width={HIERARCHY_ICON_HIT_WIDTH + 4}
@@ -1347,7 +1395,7 @@ export default function HorizontalBarChart({
   );
 }
 
-HorizontalBarChart.propTypes = {
+HorizontalBarFilter.propTypes = {
   title: PropTypes.string,
   data: PropTypes.arrayOf(
     PropTypes.shape({
@@ -1380,4 +1428,5 @@ HorizontalBarChart.propTypes = {
   customSortOrder: PropTypes.arrayOf(PropTypes.string),
   inlinePatientIdsThreshold: PropTypes.number,
   getPatientSummary: PropTypes.func,
+  className: PropTypes.string,
 };

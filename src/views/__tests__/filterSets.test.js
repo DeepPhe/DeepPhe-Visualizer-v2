@@ -21,6 +21,10 @@ describe("filterSets", () => {
       "N Stage",
       "M Stage",
       "Lymph Involvement",
+      "Grade_Numeric",
+      "Grade_Differentiated",
+      "Grade_Tiered",
+      "Grade_Gleason",
     ]);
   });
 
@@ -30,16 +34,18 @@ describe("filterSets", () => {
       "attributes"
     );
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Uncategorized"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Grading", "Uncategorized"]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["T Stage"]);
-    expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["Novel Class"]);
+    expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["Grade_Numeric"]);
+    expect(resolvedSets[2].filters.map((filter) => filter.key)).toEqual(["Novel Class"]);
   });
 
   it("matches configured classes by normalized key and preserves API class strings", () => {
     const resolvedSets = resolveFilterSetsWithExtras(["grade numeric", "n stage"], "attributes");
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Grading"]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["n stage"]);
+    expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["grade numeric"]);
   });
 
   it("provides a flat lookup map keyed by type:class", () => {
@@ -55,6 +61,26 @@ describe("filterSets", () => {
       hasRollup: true,
       enabled: true,
     });
+    expect(FILTER_ENTRY_BY_TYPE_CLASS.get("attributes:Lymph Involvement")).toMatchObject({
+      type: "attributes",
+      key: "Lymph Involvement",
+      maxHeightPx: 300,
+      enabled: true,
+    });
+  });
+
+  it("passes maxHeightPx through configured set resolution and defaults to undefined otherwise", () => {
+    const resolvedSets = resolveFilterSetsWithExtras(
+      ["lymph involvement", "novel class"],
+      "attributes"
+    );
+
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Uncategorized"]);
+    expect(resolvedSets[0].filters[0]).toMatchObject({
+      key: "lymph involvement",
+      maxHeightPx: 300,
+    });
+    expect(resolvedSets[1].filters[0].maxHeightPx).toBeUndefined();
   });
 
   it("returns only sets for the requested type", () => {

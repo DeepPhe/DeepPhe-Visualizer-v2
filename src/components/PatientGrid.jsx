@@ -61,7 +61,7 @@ const FLAG_CHIP_DEFINITIONS = [
 ];
 
 const CLINICAL_SEARCH_FIELDS = ["diagnoses", "biomarkers", "treatments", "procedures", "findings"];
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10;
 const MIN_TOOLTIP_TEXT_LENGTH = 25;
 
 function csvEscape(value) {
@@ -682,16 +682,26 @@ export default function PatientGrid({
   isLoading = false,
   error = "",
   onRetry = () => {},
+  embedded = false,
+  title = embedded ? "Patient Grid" : "Patient Details",
+  subtitle = "",
+  collapsible = false,
+  expanded = true,
+  onToggleExpanded = () => {},
+  compactHeader = false,
+  toggleButtonTestId = undefined,
+  collapsiblePanelId = undefined,
+  collapsedHeaderSummary = null,
 }) {
   const theme = useTheme();
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState([]);
-  const [expanded, setExpanded] = useState({});
+  const [expandedRows, setExpandedRows] = useState({});
   const [columnVisibility, setColumnVisibility] = useState({});
   const [columnMenuAnchorEl, setColumnMenuAnchorEl] = useState(null);
 
   const toggleRowExpansion = useCallback((rowId) => {
-    setExpanded((previous) => (previous?.[rowId] ? {} : { [rowId]: true }));
+    setExpandedRows((previous) => (previous?.[rowId] ? {} : { [rowId]: true }));
   }, []);
 
   const columns = useMemo(() => createColumns({ onToggleRow: toggleRowExpansion }), [toggleRowExpansion]);
@@ -706,7 +716,7 @@ export default function PatientGrid({
   );
 
   const handleExpandedChange = useCallback((updater) => {
-    setExpanded((previous) => {
+    setExpandedRows((previous) => {
       const nextExpanded = typeof updater === "function" ? updater(previous) : updater;
       return toExpandedState(nextExpanded);
     });
@@ -718,7 +728,7 @@ export default function PatientGrid({
     state: {
       globalFilter,
       sorting,
-      expanded,
+      expanded: expandedRows,
       columnVisibility,
     },
     getRowCanExpand: (row) => Boolean(row?.original?._raw),
@@ -783,134 +793,178 @@ export default function PatientGrid({
   const isColumnMenuOpen = Boolean(columnMenuAnchorEl);
   const hideableColumns = table.getAllLeafColumns().filter((column) => column.getCanHide());
   const isSearchActive = Boolean(String(globalFilter || "").trim());
+  const showToolbarTitle = Boolean(String(title || "").trim());
+  const showToolbarSubtitle = Boolean(String(subtitle || "").trim());
+  const showSummaryRow = !(embedded && compactHeader);
+  const shouldRenderGridBody = !collapsible || expanded;
+  const showCollapsedHeaderSummary = Boolean(collapsible && collapsedHeaderSummary);
 
-  return (
-    <Card
-      elevation={0}
-      sx={{
-        border: "1px solid",
-        borderColor: "divider",
-        bgcolor: "background.paper",
-      }}
-    >
-      <CardContent sx={{ pb: 1 }}>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            alignItems={{ xs: "stretch", sm: "center" }}
-            justifyContent="space-between"
-            spacing={1.5}
-            sx={{ mb: 1.5 }}
-          >
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-              Patient Details
-              <Typography component="span" variant="body2" sx={{ ml: 1, color: "text.secondary" }}>
-                {cohortSize.toLocaleString()} patients
+  const content = (
+    <>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        justifyContent="space-between"
+        spacing={1.5}
+        sx={{ mb: 1.5 }}
+      >
+        {showToolbarTitle || showToolbarSubtitle ? (
+          <Stack spacing={0.25} sx={{ minWidth: 0, flex: "1 1 260px" }}>
+            {showToolbarTitle ? (
+              <Typography variant={embedded ? "subtitle1" : "h6"} sx={{ fontWeight: 700 }}>
+                {title}
+                {!embedded ? (
+                  <Typography component="span" variant="body2" sx={{ ml: 1, color: "text.secondary" }}>
+                    {cohortSize.toLocaleString()} patients
+                  </Typography>
+                ) : null}
               </Typography>
-            </Typography>
-
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <TextField
-                size="small"
-                variant="outlined"
-                placeholder="Search patient details..."
-                value={globalFilter}
-                onChange={(event) => setGlobalFilter(event.target.value)}
-                sx={{ width: { xs: "100%", sm: 290 } }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" color="action" />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-
-              <Tooltip title="Choose visible columns">
-                <IconButton
-                  size="small"
-                  aria-label="Toggle visible patient columns"
-                  onClick={(event) => setColumnMenuAnchorEl(event.currentTarget)}
-                >
-                  <ViewColumnIcon />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title="Export current page to CSV">
-                <IconButton
-                  size="small"
-                  aria-label="Export filtered cohort rows to CSV"
-                  onClick={() => exportFilteredSortedRowsToCsv(table, "cohort-patients.csv")}
-                >
-                  <FileDownloadIcon />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Stack>
-
-          <Menu
-            anchorEl={columnMenuAnchorEl}
-            open={isColumnMenuOpen}
-            onClose={() => setColumnMenuAnchorEl(null)}
-            keepMounted
-            PaperProps={{
-              sx: {
-                minWidth: 220,
-                bgcolor: "background.paper",
-                border: "1px solid",
-                borderColor: "divider",
-              },
-            }}
-          >
-            <Box sx={{ px: 1.5, py: 0.75 }}>
-              <FormControlLabel
-                sx={{ m: 0 }}
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={table.getIsAllColumnsVisible()}
-                    indeterminate={table.getIsSomeColumnsVisible() && !table.getIsAllColumnsVisible()}
-                    onChange={table.getToggleAllColumnsVisibilityHandler()}
-                  />
-                }
-                label={<Typography variant="body2">Toggle all columns</Typography>}
-              />
-            </Box>
-            <Divider sx={{ borderColor: "divider" }} />
-            {hideableColumns.map((column) => {
-              const header = column.columnDef.header;
-              const label = typeof header === "string" ? header : column.id;
-
-              return (
-                <MenuItem key={column.id} dense disableRipple sx={{ py: 0 }}>
-                  <FormControlLabel
-                    sx={{ m: 0, width: "100%", py: 0.5 }}
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={column.getIsVisible()}
-                        onChange={column.getToggleVisibilityHandler()}
-                      />
-                    }
-                    label={<Typography variant="body2">{label}</Typography>}
-                  />
-                </MenuItem>
-              );
-            })}
-          </Menu>
-
-          <Stack spacing={0.35} sx={{ mb: 1 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              {isSearchActive
-                ? `Showing ${filteredCount.toLocaleString()} of ${loadedRowCount.toLocaleString()} loaded (filtered) · ${safeTotalCohortCount.toLocaleString()} in cohort`
-                : `Showing ${loadedRowCount.toLocaleString()} of ${safeTotalCohortCount.toLocaleString()} patients`}
-            </Typography>
-            {isSearchActive ? (
-              <Typography variant="caption" color="text.secondary">
-                Searching within loaded page
+            ) : null}
+            {showToolbarSubtitle ? (
+              <Typography variant="body2" color="text.secondary" noWrap>
+                {subtitle}
               </Typography>
             ) : null}
           </Stack>
+        ) : (
+          <Box sx={{ flex: "1 1 auto" }} />
+        )}
 
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          sx={{ flexWrap: "wrap", justifyContent: { xs: "flex-start", sm: "flex-end" } }}
+        >
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="Search patient details..."
+            value={globalFilter}
+            onChange={(event) => setGlobalFilter(event.target.value)}
+            sx={{ width: { xs: "100%", sm: 290 } }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          <Tooltip title="Choose visible columns">
+            <IconButton
+              size="small"
+              aria-label="Toggle visible patient columns"
+              onClick={(event) => setColumnMenuAnchorEl(event.currentTarget)}
+            >
+              <ViewColumnIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="Export current page to CSV">
+            <IconButton
+              size="small"
+              aria-label="Export filtered cohort rows to CSV"
+              onClick={() => exportFilteredSortedRowsToCsv(table, "cohort-patients.csv")}
+            >
+              <FileDownloadIcon />
+            </IconButton>
+          </Tooltip>
+
+          {collapsible ? (
+            <Button
+              size="small"
+              variant={expanded ? "outlined" : "contained"}
+              onClick={onToggleExpanded}
+              aria-expanded={expanded}
+              aria-controls={collapsiblePanelId}
+              data-testid={toggleButtonTestId}
+            >
+              {expanded ? "Collapse" : "Expand"}
+            </Button>
+          ) : null}
+        </Stack>
+      </Stack>
+
+      {showCollapsedHeaderSummary ? (
+        <Box sx={{ mb: 1.25 }} data-testid="patient-grid-collapsed-summary">
+          {collapsedHeaderSummary}
+        </Box>
+      ) : null}
+
+      <Menu
+        anchorEl={columnMenuAnchorEl}
+        open={isColumnMenuOpen}
+        onClose={() => setColumnMenuAnchorEl(null)}
+        keepMounted
+        PaperProps={{
+          sx: {
+            minWidth: 220,
+            bgcolor: "background.paper",
+            border: "1px solid",
+            borderColor: "divider",
+          },
+        }}
+      >
+        <Box sx={{ px: 1.5, py: 0.75 }}>
+          <FormControlLabel
+            sx={{ m: 0 }}
+            control={
+              <Checkbox
+                size="small"
+                checked={table.getIsAllColumnsVisible()}
+                indeterminate={table.getIsSomeColumnsVisible() && !table.getIsAllColumnsVisible()}
+                onChange={table.getToggleAllColumnsVisibilityHandler()}
+              />
+            }
+            label={<Typography variant="body2">Toggle all columns</Typography>}
+          />
+        </Box>
+        <Divider sx={{ borderColor: "divider" }} />
+        {hideableColumns.map((column) => {
+          const header = column.columnDef.header;
+          const label = typeof header === "string" ? header : column.id;
+
+          return (
+            <MenuItem key={column.id} dense disableRipple sx={{ py: 0 }}>
+              <FormControlLabel
+                sx={{ m: 0, width: "100%", py: 0.5 }}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={column.getIsVisible()}
+                    onChange={column.getToggleVisibilityHandler()}
+                  />
+                }
+                label={<Typography variant="body2">{label}</Typography>}
+              />
+            </MenuItem>
+          );
+        })}
+      </Menu>
+
+      {showSummaryRow ? (
+        <Stack spacing={0.35} sx={{ mb: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            {isSearchActive
+              ? `Showing ${filteredCount.toLocaleString()} of ${loadedRowCount.toLocaleString()} loaded (filtered) · ${safeTotalCohortCount.toLocaleString()} in cohort`
+              : `Showing ${loadedRowCount.toLocaleString()} of ${safeTotalCohortCount.toLocaleString()} patients`}
+          </Typography>
+          {isSearchActive ? (
+            <Typography variant="caption" color="text.secondary">
+              Searching within loaded page
+            </Typography>
+          ) : null}
+        </Stack>
+      ) : null}
+
+      <Box
+        id={collapsiblePanelId}
+        hidden={!shouldRenderGridBody}
+        aria-hidden={!shouldRenderGridBody}
+        sx={{ display: shouldRenderGridBody ? "block" : "none" }}
+      >
           <TableContainer
             sx={{
               maxHeight: 560,
@@ -921,117 +975,117 @@ export default function PatientGrid({
             }}
           >
             <Table stickyHeader size="small" sx={{ tableLayout: "fixed", minWidth: tableMinWidth }}>
-              <TableHead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      const canSort = header.column.getCanSort();
-                      return (
-                        <TableCell
-                          key={header.id}
-                          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                          sx={{
-                            fontWeight: 700,
-                            cursor: canSort ? "pointer" : "default",
-                            userSelect: "none",
-                            whiteSpace: "nowrap",
-                            width: header.column.columnDef.size,
-                            bgcolor: (muiTheme) =>
-                              alpha(
-                                muiTheme.palette.background.paper,
-                                muiTheme.palette.mode === "dark" ? 0.92 : 0.98
-                              ),
-                          }}
-                        >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                          {canSort ? <SortIndicator column={header.column} /> : null}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableHead>
+          <TableHead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort();
+                  return (
+                    <TableCell
+                      key={header.id}
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                      sx={{
+                        fontWeight: 700,
+                        cursor: canSort ? "pointer" : "default",
+                        userSelect: "none",
+                        whiteSpace: "nowrap",
+                        width: header.column.columnDef.size,
+                        bgcolor: (muiTheme) =>
+                          alpha(
+                            muiTheme.palette.background.paper,
+                            muiTheme.palette.mode === "dark" ? 0.92 : 0.98
+                          ),
+                      }}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {canSort ? <SortIndicator column={header.column} /> : null}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableHead>
 
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 3 }}>
-                      <Stack direction="row" alignItems="center" justifyContent="center" spacing={1}>
-                        <CircularProgress size={16} />
-                        <Typography color="text.secondary">Loading patient details...</Typography>
-                      </Stack>
-                    </TableCell>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 3 }}>
+                  <Stack direction="row" alignItems="center" justifyContent="center" spacing={1}>
+                    <CircularProgress size={16} />
+                    <Typography color="text.secondary">Loading patient details...</Typography>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 2.5 }}>
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    alignItems="center"
+                    justifyContent="center"
+                    spacing={1}
+                  >
+                    <Typography color="error.main">
+                      {String(error || "Failed to load patient details.")}
+                    </Typography>
+                    <Button size="small" variant="outlined" onClick={onRetry}>
+                      Retry
+                    </Button>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row, rowIndex) => (
+                <React.Fragment key={row.id}>
+                  <TableRow
+                    hover
+                    onClick={row.getCanExpand() ? () => toggleRowExpansion(row.id) : undefined}
+                    sx={{
+                      cursor: row.getCanExpand() ? "pointer" : "default",
+                      bgcolor:
+                        rowIndex % 2 === 0
+                          ? "transparent"
+                          : alpha(
+                              theme.palette.mode === "dark"
+                                ? theme.palette.common.white
+                                : theme.palette.common.black,
+                              theme.palette.mode === "dark" ? 0.02 : 0.03
+                            ),
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} sx={{ py: 0.7, verticalAlign: "top" }}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
                   </TableRow>
-                ) : error ? (
-                  <TableRow>
-                    <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 2.5 }}>
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        alignItems="center"
-                        justifyContent="center"
-                        spacing={1}
-                      >
-                        <Typography color="error.main">
-                          {String(error || "Failed to load patient details.")}
-                        </Typography>
-                        <Button size="small" variant="outlined" onClick={onRetry}>
-                          Retry
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row, rowIndex) => (
-                    <React.Fragment key={row.id}>
-                      <TableRow
-                        hover
-                        onClick={row.getCanExpand() ? () => toggleRowExpansion(row.id) : undefined}
+
+                  {row.getIsExpanded() ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={totalColumnCount}
                         sx={{
-                          cursor: row.getCanExpand() ? "pointer" : "default",
-                          bgcolor:
-                            rowIndex % 2 === 0
-                              ? "transparent"
-                              : alpha(
-                                  theme.palette.mode === "dark"
-                                    ? theme.palette.common.white
-                                    : theme.palette.common.black,
-                                  theme.palette.mode === "dark" ? 0.02 : 0.03
-                                ),
+                          py: 0,
+                          px: 0,
+                          bgcolor: theme.custom?.rowHoverBg || alpha(theme.palette.primary.main, 0.08),
                         }}
                       >
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} sx={{ py: 0.7, verticalAlign: "top" }}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
-                      </TableRow>
+                        <DetailPanel row={row} />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </React.Fragment>
+              ))
+            )}
 
-                      {row.getIsExpanded() ? (
-                        <TableRow>
-                          <TableCell
-                            colSpan={totalColumnCount}
-                            sx={{
-                              py: 0,
-                              px: 0,
-                              bgcolor: theme.custom?.rowHoverBg || alpha(theme.palette.primary.main, 0.08),
-                            }}
-                          >
-                            <DetailPanel row={row} />
-                          </TableCell>
-                        </TableRow>
-                      ) : null}
-                    </React.Fragment>
-                  ))
-                )}
-
-                {!isLoading && !error && table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">No patients match your search.</Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </TableBody>
+            {!isLoading && !error && table.getRowModel().rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 4 }}>
+                  <Typography color="text.secondary">No patients match your search.</Typography>
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
             </Table>
           </TableContainer>
 
@@ -1058,7 +1112,24 @@ export default function PatientGrid({
               },
             }}
           />
-      </CardContent>
+      </Box>
+    </>
+  );
+
+  if (embedded) {
+    return <Box data-testid="patient-grid-embedded">{content}</Box>;
+  }
+
+  return (
+    <Card
+      elevation={0}
+      sx={{
+        border: "1px solid",
+        borderColor: "divider",
+        bgcolor: "background.paper",
+      }}
+    >
+      <CardContent sx={{ pb: 1 }}>{content}</CardContent>
     </Card>
   );
 }
@@ -1118,4 +1189,14 @@ PatientGrid.propTypes = {
   isLoading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func,
+  embedded: PropTypes.bool,
+  title: PropTypes.string,
+  subtitle: PropTypes.string,
+  collapsible: PropTypes.bool,
+  expanded: PropTypes.bool,
+  onToggleExpanded: PropTypes.func,
+  compactHeader: PropTypes.bool,
+  toggleButtonTestId: PropTypes.string,
+  collapsiblePanelId: PropTypes.string,
+  collapsedHeaderSummary: PropTypes.node,
 };

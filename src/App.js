@@ -5,10 +5,6 @@ import DebugView from "./views/debug";
 import FiltersView from "./views/filters";
 import AccessibilityStatement from "./views/AccessibilityStatement";
 import FilterSetsConfigView from "./views/filter-sets-config";
-import FilterBarChartDemoView from "./views/filter-bar-chart-demo";
-import FilterListControlDemoView from "./views/filter-list-control-demo";
-import HorizontalBarChartDemoView from "./views/horizontal-bar-chart-demo";
-import PatientGridDemoView from "./views/patient-grid-demo";
 
 function HomeView() {
   return (
@@ -29,18 +25,6 @@ function HomeView() {
       <p>
         <Link to="/filter-sets-config">Open Filter Sets Config</Link>
       </p>
-      <p>
-        <Link to="/filter-bar-chart-demo">Open Filter Bar Chart Demo</Link>
-      </p>
-      <p>
-        <Link to="/filter-list-control-demo">Open Filter List Control Demo</Link>
-      </p>
-      <p>
-        <Link to="/horizontal-bar-chart-demo">Open Horizontal Bar Chart Demo</Link>
-      </p>
-      <p>
-        <Link to="/patient-grid-demo">Open Patient Grid Demo</Link>
-      </p>
     </main>
   );
 }
@@ -59,22 +43,6 @@ function App() {
         <Route path="/filters" element={<FiltersView />} />
         <Route path="/accessibility" element={<AccessibilityStatement />} />
         <Route path="/filter-sets-config" element={<FilterSetsConfigView />} />
-        <Route
-          path="/filter-bar-chart-demo"
-          element={<FilterBarChartDemoView />}
-        />
-        <Route
-          path="/filter-list-control-demo"
-          element={<FilterListControlDemoView />}
-        />
-        <Route
-          path="/horizontal-bar-chart-demo"
-          element={<HorizontalBarChartDemoView />}
-        />
-        <Route
-          path="/patient-grid-demo"
-          element={<PatientGridDemoView />}
-        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

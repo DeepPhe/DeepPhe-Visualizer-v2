@@ -36,7 +36,7 @@ function getInitialThemeKey() {
     return "obsidian";
   }
 
-  return "solstice";
+  return "govuk";
 }
 
 function ExternalToolCard({ title, href, description }) {
@@ -75,7 +75,7 @@ export default function AccessibilityStatement() {
   const custom = activeTheme.custom || {};
 
   const handleThemeChange = (event) => {
-    const nextKey = String(event.target.value || "solstice");
+    const nextKey = String(event.target.value || "govuk");
     setThemeKey(nextKey);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, nextKey);
@@ -356,4 +356,3 @@ export default function AccessibilityStatement() {
     </ThemeProvider>
   );
 }
-

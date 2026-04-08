@@ -1,9 +1,13 @@
+      expect(onSortModeChange).toHaveBeenLastCalledWith("alpha-asc");
+    await clickAsync(labelSortButton);
+    const labelSortButton = container.querySelector('button[aria-label^="Sort by label"]');
+    expect(labelSortButton).not.toBeNull();
 /* eslint-disable testing-library/no-unnecessary-act */
 /* eslint-disable testing-library/no-container */
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import HorizontalBarChart from "../HorizontalBarChart";
+import HorizontalBarFilter from "../HorizontalBarFilter";
 
 function renderComponent(element) {
   const container = document.createElement("div");
@@ -64,10 +68,10 @@ function getRowLabelOrder(container, labels) {
     .map((row) => row.label);
 }
 
-describe("HorizontalBarChart patient dots", () => {
+describe("HorizontalBarFilter patient dots", () => {
   it("renders row hover highlight when a chart row is hovered", async () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Hover Test"
         data={[
           {
@@ -108,9 +112,41 @@ describe("HorizontalBarChart patient dots", () => {
     unmount();
   });
 
+  it("renders stable chart class names for predictable selectors", () => {
+    const { container, unmount } = renderComponent(
+      <HorizontalBarFilter
+        title="Class Test"
+        data={[
+          {
+            label: "Group A",
+            displayLabel: "Group A",
+            value: 12,
+          },
+        ]}
+        onSelectionChange={jest.fn()}
+      />
+    );
+
+    expect(container.querySelector(".horizontal-bar-filter")).not.toBeNull();
+    expect(container.querySelector(".horizontal-bar-filter-header")).not.toBeNull();
+    expect(container.querySelector(".horizontal-bar-filter-toggle-button")).not.toBeNull();
+    expect(container.querySelector(".horizontal-bar-filter-sort-cycle-button")).not.toBeNull();
+    expect(container.querySelector(".horizontal-bar-filter-chart-region")).not.toBeNull();
+    expect(container.querySelector(".horizontal-bar-filter-chart-viewport")).not.toBeNull();
+    expect(container.querySelector("svg.horizontal-bar-filter-svg")).not.toBeNull();
+    expect(container.querySelector("g.horizontal-bar-filter-row")).not.toBeNull();
+    expect(container.querySelector("text.horizontal-bar-filter-row-label")).not.toBeNull();
+    expect(container.querySelector("rect.horizontal-bar-filter-row-bar-track")).not.toBeNull();
+    expect(container.querySelector("rect.horizontal-bar-filter-row-bar")).not.toBeNull();
+    expect(container.querySelector("text.horizontal-bar-filter-row-count")).not.toBeNull();
+    expect(container.querySelector("rect.horizontal-bar-filter-row-overlay")).not.toBeNull();
+
+    unmount();
+  });
+
   it("renders an SVG focus ring when a chart row receives keyboard focus", async () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Focus Test"
         data={[
           {
@@ -151,7 +187,7 @@ describe("HorizontalBarChart patient dots", () => {
       (_, index) => `PATIENT_${String.fromCharCode(65 + index)}`
     );
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Test"
         data={[
           {
@@ -166,14 +202,16 @@ describe("HorizontalBarChart patient dots", () => {
     );
 
     const dots = container.querySelectorAll('circle[data-patient-dot="true"]');
+    const classDots = container.querySelectorAll("circle.horizontal-bar-filter-patient-dot");
     expect(dots).toHaveLength(20);
+    expect(classDots).toHaveLength(20);
 
     unmount();
   });
 
   it("does not render dots when patientIds are missing", () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Test"
         data={[
           {
@@ -194,7 +232,7 @@ describe("HorizontalBarChart patient dots", () => {
 
   it("shows numeric count instead of dots when count is above threshold", () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Test"
         data={[
           {
@@ -233,7 +271,7 @@ describe("HorizontalBarChart patient dots", () => {
       negatedFindings: [],
     });
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Test"
         data={[
           {
@@ -280,7 +318,7 @@ describe("HorizontalBarChart patient dots", () => {
       negatedFindings: [],
     });
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="No Count Test"
         data={[
           {
@@ -313,7 +351,7 @@ describe("HorizontalBarChart patient dots", () => {
 
   it("keeps dots visible when display labels are expanded from short codes", () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Gender"
         data={[
           {
@@ -337,7 +375,7 @@ describe("HorizontalBarChart patient dots", () => {
   it("notifies sort mode changes so external distribution strips can sync", async () => {
     const onSortModeChange = jest.fn();
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="Test"
         data={[
           {
@@ -354,16 +392,18 @@ describe("HorizontalBarChart patient dots", () => {
         showSortDimensionToggle
         showSortCycleButton={false}
         onSortModeChange={onSortModeChange}
-      />
+      expect(onSortModeChange).toHaveBeenCalledWith("alpha-asc");
+      expect(getRowLabelOrder(container, ["A", "B"])).toEqual(["A", "B"]);
     );
 
-    await waitFor(() => {
-      expect(onSortModeChange).toHaveBeenCalledWith("value-desc");
+    const countSortButton = container.querySelector('button[aria-label^="Sort by count"]');
+    expect(countSortButton).not.toBeNull();
     });
-
+    await clickAsync(countSortButton);
     const labelSortButton = container.querySelector('button[aria-label^="Sort by label"]');
     expect(labelSortButton).not.toBeNull();
-
+      expect(onSortModeChange).toHaveBeenLastCalledWith("value-desc");
+      expect(getRowLabelOrder(container, ["A", "B"])).toEqual(["B", "A"]);
     await clickAsync(labelSortButton);
 
     await waitFor(() => {
@@ -375,7 +415,7 @@ describe("HorizontalBarChart patient dots", () => {
 
   it("applies custom label sort order while preserving count sort toggle", async () => {
     const { container, unmount } = renderComponent(
-      <HorizontalBarChart
+      <HorizontalBarFilter
         title="TNM"
         data={[
           { label: "T3", displayLabel: "T3", value: 5 },

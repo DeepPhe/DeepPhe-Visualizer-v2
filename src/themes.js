@@ -33,6 +33,19 @@ const obsidianTheme = createTheme({
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   },
   components: {
+    MuiButton: {
+      styleOverrides: {
+        outlinedPrimary: {
+          color: "#60A5FA",          // primary.light — ~5.7:1 on #1A2332
+          borderColor: "#2563EB",
+          "&:hover": {
+            color: "#93C5FD",        // even lighter on hover
+            borderColor: "#3B82F6",
+            backgroundColor: "rgba(59, 130, 246, 0.08)",
+          },
+        },
+      },
+    },
     MuiPaper: {
       styleOverrides: {
         root: {
@@ -126,7 +139,7 @@ const obsidianTheme = createTheme({
     iconHoverBg: "rgba(148, 163, 184, 0.08)",
     iconHoverRadius: "0px",
 
-    cardPadding: "12px 16px",
+    cardPadding: "0px",
     cardBeforePseudo: null,
 
     pageBgExtra: null,
@@ -146,146 +159,7 @@ const obsidianTheme = createTheme({
 });
 
 // ---------------------------------------------------------------------------
-// Theme 2 — Solstice
-// ---------------------------------------------------------------------------
-const solsticeTheme = createTheme({
-  palette: {
-    mode: "light",
-    background: {
-      default: "#FAF8F5",
-      paper: "#FFFFFF",
-    },
-    text: {
-      primary: "#1C1412",
-      secondary: "#6B5C52",
-    },
-    primary: {
-      main: "#C2410C",
-      light: "#DC5B22",
-      dark: "#7C2D12",
-    },
-    divider: "#D9CFC5",
-  },
-  shape: { borderRadius: 12 },
-  typography: {
-    fontFamily:
-      'Inter, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-  },
-  components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          border: "none",
-          borderRadius: 12,
-          boxShadow:
-            "0 1px 2px rgba(120, 80, 50, 0.06), 0 4px 16px rgba(120, 80, 50, 0.04)",
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        },
-      },
-    },
-    MuiButtonBase: {
-      styleOverrides: {
-        root: {
-          "&:focus-visible": {
-            outline: "2px solid #C2410C",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiCheckbox: {
-      styleOverrides: {
-        root: {
-          color: "#A89888",
-          "&.Mui-checked": { color: "#C2410C" },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          color: "#A89888",
-          transition: "background-color 0.2s ease, color 0.2s ease",
-          "&:hover": {
-            color: "#6B5C52",
-            backgroundColor: "#F0EBE4",
-            borderRadius: "50%",
-          },
-          "&:focus-visible": {
-            outline: "2px solid #C2410C",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiToggleButton: {
-      styleOverrides: {
-        root: {
-          color: "#6B5C52",
-          borderColor: "#D9CFC5",
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          "&.Mui-selected": {
-            color: "#1C1412",
-            backgroundColor: "rgba(194, 65, 12, 0.08)",
-          },
-        },
-      },
-    },
-  },
-  custom: {
-    barTrack: "#F0EBE4",
-    barFill: "#C2410C",
-    barHover: "#DC5B22",
-    barActive: "#7C2D12",
-    barActiveAccent: "3px solid #C2410C",
-    barActiveGlow: "none",
-    barMinWidth: "3px",
-    barHeight: "18px",
-
-    rowHoverBg: "rgba(194, 65, 12, 0.04)",
-
-    selectedLabelWeight: 700,
-    selectedCountColor: "#9A3412",
-
-    focusRing: "#C2410C",
-    focusRingOffset: "2px",
-
-    chipActiveBg: "#C2410C",
-    chipActiveText: "#FFFFFF",
-    chipActiveGlow: "none",
-    chipInactiveBg: "#FAF8F5",
-    chipInactiveText: "#6B5C52",
-    chipInactiveBorder: "1px solid #D9CFC5",
-    chipRadius: "20px",
-
-    iconDefault: "#A89888",
-    iconHover: "#6B5C52",
-    iconHoverBg: "#F0EBE4",
-    iconHoverRadius: "50%",
-
-    cardPadding: "20px 24px",
-    cardBeforePseudo: "solstice-underline",
-
-    pageBgExtra: null,
-
-    countFontFamily: "inherit",
-    headerTransform: "none",
-    headerLetterSpacing: "0.02em",
-    headerFontSize: "0.85rem",
-    headerFontWeight: 700,
-    headerColor: "#1C1412",
-    categoryLabelColor: "#44362D",
-    patientCountWeight: 600,
-    patientCountColor: "#1C1412",
-    patientCountSize: "1.85rem",
-    statsColor: "#6B5C52",
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Theme 3 — Vapor
+// Theme 2 — Vapor
 // ---------------------------------------------------------------------------
 const vaporTheme = createTheme({
   palette: {
@@ -411,7 +285,7 @@ const vaporTheme = createTheme({
     iconHoverBg: "rgba(255, 255, 255, 0.06)",
     iconHoverRadius: "50%",
 
-    cardPadding: "16px 20px",
+    cardPadding: "0px",
     cardBeforePseudo: "vapor-glass",
 
     pageBgExtra:
@@ -431,318 +305,82 @@ const vaporTheme = createTheme({
   },
 });
 
+// Theme 3 — GOV.UK
 // ---------------------------------------------------------------------------
-// Theme 4 — Harvard
-// ---------------------------------------------------------------------------
-const harvardTheme = createTheme({
-  palette: {
-    mode: "dark",
-    background: {
-      default: "#1A1014",
-      paper: "#24171D",
-    },
-    text: {
-      primary: "#F9F7F3",
-      secondary: "#B5AAA5",
-    },
-    primary: {
-      main: "#A51C30",
-      light: "#C4283C",
-      dark: "#7C2112",
-    },
-    divider: "#4C3E45",
-  },
-  shape: { borderRadius: 4 },
-  typography: {
-    fontFamily:
-      '"Iowan Old Style", Georgia, "Times New Roman", Times, serif',
-  },
-  components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          boxShadow: "none",
-          border: "1px solid #4C3E45",
-          borderRadius: 4,
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        },
-      },
-    },
-    MuiButtonBase: {
-      styleOverrides: {
-        root: {
-          "&:focus-visible": {
-            outline: "2px solid #6578B4",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiCheckbox: {
-      styleOverrides: {
-        root: {
-          color: "#68666F",
-          "&.Mui-checked": { color: "#A51C30" },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          color: "#8A7C84",
-          transition: "background-color 0.2s ease, color 0.2s ease",
-          "&:hover": {
-            color: "#D5D0CA",
-            backgroundColor: "rgba(165, 28, 48, 0.12)",
-            borderRadius: 4,
-          },
-          "&:focus-visible": {
-            outline: "2px solid #6578B4",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiToggleButton: {
-      styleOverrides: {
-        root: {
-          color: "#B5AAA5",
-          borderColor: "#4C3E45",
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          "&.Mui-selected": {
-            color: "#F9F7F3",
-            backgroundColor: "rgba(165, 28, 48, 0.18)",
-          },
-        },
-      },
-    },
-  },
-  custom: {
-    barTrack: "#2A1A21",
-    barFill: "#A51C30",
-    barHover: "#C4283C",
-    barActive: "#3B2883",
-    barActiveAccent: "3px solid #3B2883",
-    barActiveGlow: "none",
-    barMinWidth: "3px",
-    barHeight: "18px",
-
-    rowHoverBg: "rgba(165, 28, 48, 0.08)",
-
-    selectedLabelWeight: 700,
-    selectedCountColor: "#6578B4",
-
-    focusRing: "#6578B4",
-    focusRingOffset: "2px",
-
-    chipActiveBg: "#A51C30",
-    chipActiveText: "#F9F7F3",
-    chipActiveGlow: "none",
-    chipInactiveBg: "transparent",
-    chipInactiveText: "#B5AAA5",
-    chipInactiveBorder: "1px solid #68666F",
-    chipRadius: "4px",
-
-    iconDefault: "#8A7C84",
-    iconHover: "#D5D0CA",
-    iconHoverBg: "rgba(165, 28, 48, 0.12)",
-    iconHoverRadius: "4px",
-
-    cardPadding: "12px 16px",
-    cardBeforePseudo: null,
-
-    pageBgExtra: null,
-
-    countFontFamily: MONOSPACE_STACK,
-    headerTransform: "uppercase",
-    headerLetterSpacing: "0.11em",
-    headerFontSize: "0.7rem",
-    headerFontWeight: 600,
-    headerColor: "#D5D0CA",
-    categoryLabelColor: "#E8DDD7",
-    patientCountWeight: 600,
-    patientCountColor: "#F9F7F3",
-    patientCountSize: "2rem",
-    statsColor: "#9B8B93",
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Theme 5 — Pitt
-// ---------------------------------------------------------------------------
-const pittTheme = createTheme({
-  palette: {
-    mode: "dark",
-    background: {
-      default: "#000F2E",
-      paper: "#001A4A",
-    },
-    text: {
-      primary: "#EAF2FF",
-      secondary: "#9EB3D1",
-    },
-    primary: {
-      main: "#003594",
-      light: "#1A5BC4",
-      dark: "#00205B",
-    },
-    divider: "rgba(0, 53, 148, 0.35)",
-  },
-  shape: { borderRadius: 8 },
-  typography: {
-    fontFamily:
-      'Inter, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-  },
-  components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          boxShadow: "none",
-          border: "1px solid rgba(0, 53, 148, 0.35)",
-          borderRadius: 8,
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        },
-      },
-    },
-    MuiButtonBase: {
-      styleOverrides: {
-        root: {
-          "&:focus-visible": {
-            outline: "2px solid #FFB81C",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiCheckbox: {
-      styleOverrides: {
-        root: {
-          color: "#66B2E3",
-          "&.Mui-checked": { color: "#FFB81C" },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          color: "#66B2E3",
-          transition: "background-color 0.2s ease, color 0.2s ease",
-          "&:hover": {
-            color: "#FFB81C",
-            backgroundColor: "rgba(255, 184, 28, 0.14)",
-            borderRadius: "50%",
-          },
-          "&:focus-visible": {
-            outline: "2px solid #FFB81C",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiToggleButton: {
-      styleOverrides: {
-        root: {
-          color: "#C4D5ED",
-          borderColor: "rgba(102, 178, 227, 0.35)",
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          "&.Mui-selected": {
-            color: "#EAF2FF",
-            backgroundColor: "rgba(255, 184, 28, 0.18)",
-          },
-        },
-      },
-    },
-  },
-  custom: {
-    barTrack: "#00183F",
-    barFill: "#003594",
-    barHover: "#1A5BC4",
-    barActive: "#FFB81C",
-    barActiveAccent: "3px solid #FFB81C",
-    barActiveGlow: "0 0 10px rgba(255, 184, 28, 0.2)",
-    barMinWidth: "3px",
-    barHeight: "18px",
-
-    rowHoverBg: "rgba(255, 184, 28, 0.08)",
-
-    selectedLabelWeight: 700,
-    selectedCountColor: "#FFB81C",
-
-    focusRing: "#FFB81C",
-    focusRingOffset: "2px",
-
-    chipActiveBg: "#003594",
-    chipActiveText: "#FFFFFF",
-    chipActiveGlow: "0 0 8px rgba(255, 184, 28, 0.22)",
-    chipInactiveBg: "rgba(0, 53, 148, 0.12)",
-    chipInactiveText: "#C4D5ED",
-    chipInactiveBorder: "1px solid rgba(102, 178, 227, 0.35)",
-    chipRadius: "18px",
-
-    iconDefault: "#66B2E3",
-    iconHover: "#FFB81C",
-    iconHoverBg: "rgba(255, 184, 28, 0.14)",
-    iconHoverRadius: "50%",
-
-    cardPadding: "16px 20px",
-    cardBeforePseudo: null,
-
-    pageBgExtra:
-      "radial-gradient(ellipse at 82% 8%, rgba(255, 184, 28, 0.08) 0%, rgba(255, 184, 28, 0) 52%)",
-
-    countFontFamily: MONOSPACE_STACK,
-    headerTransform: "uppercase",
-    headerLetterSpacing: "0.1em",
-    headerFontSize: "0.72rem",
-    headerFontWeight: 700,
-    headerColor: "#DBEEFF",
-    categoryLabelColor: "#DBEEFF",
-    patientCountWeight: 600,
-    patientCountColor: "#FFB81C",
-    patientCountSize: "2rem",
-    statsColor: "#A9B8CC",
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Theme 6 — Brown
-// ---------------------------------------------------------------------------
-const brownTheme = createTheme({
+const govukTheme = createTheme({
   palette: {
     mode: "light",
     background: {
-      default: "#FAF5F0",
+      default: "#F3F2F1",
       paper: "#FFFFFF",
     },
     text: {
-      primary: "#2E2019",
-      secondary: "#6F655E",
+      primary: "#0B0C0C",
+      secondary: "#505A5F",
     },
     primary: {
-      main: "#4E3629",
-      light: "#6B4D3D",
-      dark: "#3A271D",
+      main: "#1D70B8",
+      light: "#D2E2F1",
+      dark: "#0B0C0C",
     },
-    divider: "#D9CBBD",
+    secondary: {
+      main: "#00703C",
+    },
+    success: {
+      main: "#00703C",
+    },
+    info: {
+      main: "#1D70B8",
+    },
+    divider: "#B1B4B6",
   },
-  shape: { borderRadius: 10 },
+  shape: { borderRadius: 0 },
   typography: {
     fontFamily:
-      '"Iowan Old Style", Georgia, "Times New Roman", Times, serif',
+        '"GDS Transport", Arial, "Helvetica Neue", Helvetica, sans-serif',
   },
   components: {
+    MuiSelect: {
+      styleOverrides: {
+        nativeInput: {
+          color: "#0B0C0C !important",
+        },
+      },
+    },
     MuiPaper: {
       styleOverrides: {
         root: {
           backgroundImage: "none",
-          border: "1px solid #E1D6CA",
-          borderRadius: 10,
-          boxShadow: "0 2px 10px rgba(58, 39, 29, 0.06)",
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+          border: "1px solid #B1B4B6",
+          borderRadius: 0,
+          boxShadow: "none",
+          transition: "background-color 0.2s ease, border-color 0.2s ease",
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        notchedOutline: {
+          borderColor: "#505A5F",
+        },
+        root: {
+          "&:hover .MuiOutlinedInput-notchedOutline": {
+            borderColor: "#0B0C0C",
+          },
+          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+            borderColor: "#0B0C0C",
+            borderWidth: "2px",
+          },
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          color: "#505A5F",
+          "&.Mui-focused": {
+            color: "#0B0C0C",
+          },
         },
       },
     },
@@ -750,8 +388,9 @@ const brownTheme = createTheme({
       styleOverrides: {
         root: {
           "&:focus-visible": {
-            outline: "2px solid #ED1C24",
-            outlineOffset: "2px",
+            outline: "3px solid #FFDD00",
+            outlineOffset: "0px",
+            boxShadow: "inset 0 0 0 2px #0B0C0C",
           },
         },
       },
@@ -759,24 +398,25 @@ const brownTheme = createTheme({
     MuiCheckbox: {
       styleOverrides: {
         root: {
-          color: "#98A4AE",
-          "&.Mui-checked": { color: "#4E3629" },
+          color: "#505A5F",
+          "&.Mui-checked": { color: "#1D70B8" },
         },
       },
     },
     MuiIconButton: {
       styleOverrides: {
         root: {
-          color: "#6F655E",
+          color: "#0B0C0C",
           transition: "background-color 0.2s ease, color 0.2s ease",
           "&:hover": {
-            color: "#4E3629",
-            backgroundColor: "#F3E9DF",
-            borderRadius: "10px",
+            color: "#0B0C0C",
+            backgroundColor: "#D2E2F1",
+            borderRadius: 0,
           },
           "&:focus-visible": {
-            outline: "2px solid #ED1C24",
-            outlineOffset: "2px",
+            outline: "3px solid #FFDD00",
+            outlineOffset: "0px",
+            boxShadow: "inset 0 0 0 2px #0B0C0C",
           },
         },
       },
@@ -784,342 +424,65 @@ const brownTheme = createTheme({
     MuiToggleButton: {
       styleOverrides: {
         root: {
-          color: "#6F655E",
-          borderColor: "#D9CBBD",
+          color: "#0B0C0C",
+          borderColor: "#B1B4B6",
           fontSize: "0.65rem",
           padding: "2px 8px",
           "&.Mui-selected": {
-            color: "#3A271D",
-            backgroundColor: "rgba(237, 28, 36, 0.1)",
+            color: "#0B0C0C",
+            backgroundColor: "#D2E2F1",
           },
         },
       },
     },
   },
   custom: {
-    barTrack: "#EDE2D7",
-    barFill: "#4E3629",
-    barHover: "#6B4D3D",
-    barActive: "#ED1C24",
-    barActiveAccent: "3px solid #ED1C24",
+    barTrack: "#F4F8FB",
+    barFill: "#1D70B8",
+    barHover: "#1D70B8",
+    barActive: "#00703C",
+    barActiveAccent: "3px solid #00703C",
     barActiveGlow: "none",
     barMinWidth: "3px",
     barHeight: "18px",
 
-    rowHoverBg: "rgba(78, 54, 41, 0.06)",
+    rowHoverBg: "rgba(29, 112, 184, 0.08)",
 
     selectedLabelWeight: 700,
-    selectedCountColor: "#C00404",
+    selectedCountColor: "#00703C",
 
-    focusRing: "#ED1C24",
-    focusRingOffset: "2px",
+    focusRing: "#FFDD00",
+    focusRingOffset: "0px",
 
-    chipActiveBg: "#4E3629",
+    chipActiveBg: "#1D70B8",
     chipActiveText: "#FFFFFF",
     chipActiveGlow: "none",
-    chipInactiveBg: "#FAF5F0",
-    chipInactiveText: "#6F655E",
-    chipInactiveBorder: "1px solid #D9CBBD",
-    chipRadius: "10px",
+    chipInactiveBg: "#FFFFFF",
+    chipInactiveText: "#0B0C0C",
+    chipInactiveBorder: "1px solid #505A5F",
+    chipRadius: "0px",
 
-    iconDefault: "#6F655E",
-    iconHover: "#4E3629",
-    iconHoverBg: "#F3E9DF",
-    iconHoverRadius: "10px",
+    iconDefault: "#0B0C0C",
+    iconHover: "#0B0C0C",
+    iconHoverBg: "#D2E2F1",
+    iconHoverRadius: "0px",
 
-    cardPadding: "16px 20px",
+    cardPadding: "0px",
     cardBeforePseudo: null,
 
-    pageBgExtra: null,
+    pageBgExtra: "linear-gradient(180deg, #F4F8FB 0%, #F3F2F1 100%)",
 
     countFontFamily: "inherit",
     headerTransform: "none",
-    headerLetterSpacing: "0.02em",
-    headerFontSize: "0.86rem",
-    headerFontWeight: 700,
-    headerColor: "#3A271D",
-    categoryLabelColor: "#4E3629",
-    patientCountWeight: 600,
-    patientCountColor: "#C00404",
-    patientCountSize: "1.95rem",
-    statsColor: "#7A6D64",
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Theme 7 — MGB
-// ---------------------------------------------------------------------------
-const mgbTheme = createTheme({
-  palette: {
-    mode: "dark",
-    background: {
-      default: "#0A1628",
-      paper: "rgba(0, 58, 150, 0.08)",
-    },
-    text: {
-      primary: "#EAF1FA",
-      secondary: "#9FB0C7",
-    },
-    primary: {
-      main: "#003A96",
-      light: "#1A5EC0",
-      dark: "#002460",
-    },
-    divider: "rgba(0, 58, 150, 0.25)",
-  },
-  shape: { borderRadius: 10 },
-  typography: {
-    fontFamily:
-      'Inter, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-  },
-  components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          border: "1px solid rgba(0, 58, 150, 0.28)",
-          borderRadius: 10,
-          boxShadow: "0 6px 20px rgba(0, 14, 39, 0.35)",
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        },
-      },
-    },
-    MuiButtonBase: {
-      styleOverrides: {
-        root: {
-          "&:focus-visible": {
-            outline: "2px solid #009CA6",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiCheckbox: {
-      styleOverrides: {
-        root: {
-          color: "#6B7A8D",
-          "&.Mui-checked": { color: "#009CA6" },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          color: "#6B7A8D",
-          transition: "background-color 0.2s ease, color 0.2s ease",
-          "&:hover": {
-            color: "#B1E4E3",
-            backgroundColor: "rgba(0, 156, 166, 0.14)",
-            borderRadius: "50%",
-          },
-          "&:focus-visible": {
-            outline: "2px solid #009CA6",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiToggleButton: {
-      styleOverrides: {
-        root: {
-          color: "#B9C8D9",
-          borderColor: "rgba(0, 156, 166, 0.35)",
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          "&.Mui-selected": {
-            color: "#EAF1FA",
-            backgroundColor: "rgba(0, 156, 166, 0.2)",
-          },
-        },
-      },
-    },
-  },
-  custom: {
-    barTrack: "#10233F",
-    barFill: "#003A96",
-    barHover: "#1A5EC0",
-    barActive: "#009CA6",
-    barActiveAccent: "3px solid #009CA6",
-    barActiveGlow: "0 0 10px rgba(0, 191, 200, 0.18)",
-    barMinWidth: "3px",
-    barHeight: "18px",
-
-    rowHoverBg: "rgba(0, 156, 166, 0.08)",
-
-    selectedLabelWeight: 700,
-    selectedCountColor: "#00BFC8",
-
-    focusRing: "#009CA6",
-    focusRingOffset: "2px",
-
-    chipActiveBg: "#003A96",
-    chipActiveText: "#FFFFFF",
-    chipActiveGlow: "0 0 8px rgba(0, 191, 200, 0.2)",
-    chipInactiveBg: "rgba(0, 58, 150, 0.14)",
-    chipInactiveText: "#B9C8D9",
-    chipInactiveBorder: "1px solid rgba(0, 156, 166, 0.35)",
-    chipRadius: "14px",
-
-    iconDefault: "#6B7A8D",
-    iconHover: "#B1E4E3",
-    iconHoverBg: "rgba(0, 156, 166, 0.14)",
-    iconHoverRadius: "50%",
-
-    cardPadding: "16px 20px",
-    cardBeforePseudo: null,
-
-    pageBgExtra:
-      "radial-gradient(ellipse at 78% 10%, rgba(177, 228, 227, 0.08) 0%, rgba(177, 228, 227, 0) 55%)",
-
-    countFontFamily: MONOSPACE_STACK,
-    headerTransform: "none",
-    headerLetterSpacing: "0.04em",
+    headerLetterSpacing: "0.01em",
     headerFontSize: "0.84rem",
-    headerFontWeight: 600,
-    headerColor: "#D9E7F7",
-    categoryLabelColor: "#C9D9EA",
-    patientCountWeight: 600,
-    patientCountColor: "#00BFC8",
-    patientCountSize: "2.1rem",
-    statsColor: "#7F92AA",
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Theme 8 — Mayo
-// ---------------------------------------------------------------------------
-const mayoTheme = createTheme({
-  palette: {
-    mode: "light",
-    background: {
-      default: "#F9F8F5",
-      paper: "#FFFFFF",
-    },
-    text: {
-      primary: "#231F20",
-      secondary: "#6F6960",
-    },
-    primary: {
-      main: "#0067B1",
-      light: "#1A8AD4",
-      dark: "#004A80",
-    },
-    divider: "#D8D4CE",
-  },
-  shape: { borderRadius: 8 },
-  typography: {
-    fontFamily:
-      '"Iowan Old Style", Georgia, "Times New Roman", Times, serif',
-  },
-  components: {
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          border: "1px solid #D8D4CE",
-          borderRadius: 8,
-          boxShadow: "0 2px 10px rgba(35, 31, 32, 0.06)",
-          transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-        },
-      },
-    },
-    MuiButtonBase: {
-      styleOverrides: {
-        root: {
-          "&:focus-visible": {
-            outline: "2px solid #0067B1",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiCheckbox: {
-      styleOverrides: {
-        root: {
-          color: "#8C857B",
-          "&.Mui-checked": { color: "#0067B1" },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          color: "#8C857B",
-          transition: "background-color 0.2s ease, color 0.2s ease",
-          "&:hover": {
-            color: "#0067B1",
-            backgroundColor: "rgba(0, 103, 177, 0.1)",
-            borderRadius: "8px",
-          },
-          "&:focus-visible": {
-            outline: "2px solid #0067B1",
-            outlineOffset: "2px",
-          },
-        },
-      },
-    },
-    MuiToggleButton: {
-      styleOverrides: {
-        root: {
-          color: "#6F6960",
-          borderColor: "#D8D4CE",
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          "&.Mui-selected": {
-            color: "#231F20",
-            backgroundColor: "rgba(14, 50, 147, 0.1)",
-          },
-        },
-      },
-    },
-  },
-  custom: {
-    barTrack: "#E9E5DF",
-    barFill: "#0067B1",
-    barHover: "#1A8AD4",
-    barActive: "#0E3293",
-    barActiveAccent: "3px solid #0E3293",
-    barActiveGlow: "none",
-    barMinWidth: "3px",
-    barHeight: "18px",
-
-    rowHoverBg: "rgba(0, 103, 177, 0.06)",
-
-    selectedLabelWeight: 700,
-    selectedCountColor: "#0E3293",
-
-    focusRing: "#0067B1",
-    focusRingOffset: "2px",
-
-    chipActiveBg: "#0067B1",
-    chipActiveText: "#FFFFFF",
-    chipActiveGlow: "none",
-    chipInactiveBg: "#F9F8F5",
-    chipInactiveText: "#6F6960",
-    chipInactiveBorder: "1px solid #D8D4CE",
-    chipRadius: "8px",
-
-    iconDefault: "#8C857B",
-    iconHover: "#0067B1",
-    iconHoverBg: "rgba(0, 103, 177, 0.1)",
-    iconHoverRadius: "8px",
-
-    cardPadding: "16px 20px",
-    cardBeforePseudo: null,
-
-    pageBgExtra: null,
-
-    countFontFamily: "inherit",
-    headerTransform: "none",
-    headerLetterSpacing: "0.02em",
-    headerFontSize: "0.88rem",
     headerFontWeight: 700,
-    headerColor: "#231F20",
-    categoryLabelColor: "#1F3D6B",
-    patientCountWeight: 600,
-    patientCountColor: "#0E3293",
+    headerColor: "#0B0C0C",
+    categoryLabelColor: "#0B0C0C",
+    patientCountWeight: 700,
+    patientCountColor: "#0B0C0C",
     patientCountSize: "2rem",
-    statsColor: "#6F6960",
+    statsColor: "#505A5F",
   },
 });
 
@@ -1128,37 +491,22 @@ const mayoTheme = createTheme({
 // ---------------------------------------------------------------------------
 export const THEME_OPTIONS = [
   { key: "obsidian", label: "Obsidian" },
-  { key: "solstice", label: "Solstice" },
   { key: "vapor", label: "Vapor" },
-  { key: "harvard", label: "Harvard" },
-  { key: "pitt", label: "Pitt" },
-  { key: "brown", label: "Brown" },
-  { key: "mgb", label: "MGB" },
-  { key: "mayo", label: "Mayo" },
+  { key: "govuk", label: "GOV.UK" },
 ];
 
 const THEME_MAP = {
   obsidian: obsidianTheme,
-  solstice: solsticeTheme,
   vapor: vaporTheme,
-  harvard: harvardTheme,
-  pitt: pittTheme,
-  brown: brownTheme,
-  mgb: mgbTheme,
-  mayo: mayoTheme,
+  govuk: govukTheme,
 };
 
 export function getThemeByKey(key) {
-  return THEME_MAP[key] || solsticeTheme;
+  return THEME_MAP[key] || govukTheme;
 }
 
 export {
   obsidianTheme,
-  solsticeTheme,
   vaporTheme,
-  harvardTheme,
-  pittTheme,
-  brownTheme,
-  mgbTheme,
-  mayoTheme,
+  govukTheme,
 };

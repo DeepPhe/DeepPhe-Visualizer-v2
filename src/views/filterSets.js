@@ -13,6 +13,7 @@
  * @property {FilterSortMode} defaultSortMode
  * @property {string[] | undefined} customSortOrder
  * @property {FilterDisplayMode} displayMode
+ * @property {number | undefined} maxHeightPx
  *
  * @typedef {Object} FilterSet
  * @property {string} id
@@ -22,7 +23,7 @@
  * @property {boolean} display
  */
 
-const DEFAULT_SORT_MODE = "value-desc";
+const DEFAULT_SORT_MODE = "alpha-asc";
 const VALID_SORT_MODES = new Set(["value-desc", "value-asc", "alpha-asc", "alpha-desc"]);
 const DEFAULT_DISPLAY_MODE = "auto";
 const VALID_DISPLAY_MODES = new Set(["distribution", "compact", "auto"]);
@@ -53,6 +54,15 @@ function normalizeDisplayMode(value) {
   return VALID_DISPLAY_MODES.has(normalized) ? normalized : DEFAULT_DISPLAY_MODE;
 }
 
+function normalizeMaxHeightPx(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.round(numericValue));
+}
+
 /**
  * @param {Partial<FilterEntry> & { key: string, type: FilterType }} filter
  * @returns {FilterEntry}
@@ -74,6 +84,7 @@ function normalizeFilterEntry(filter) {
       ? [...new Set(filter.customSortOrder.map((item) => String(item || "").trim()).filter(Boolean))]
       : undefined,
     displayMode: normalizeDisplayMode(filter.displayMode),
+    maxHeightPx: normalizeMaxHeightPx(filter.maxHeightPx),
   };
 }
 
@@ -144,6 +155,7 @@ const FILTER_SET_CONFIG = [
       {
         key: "Stage",
         type: "attributes",
+        maxHeightPx: 150,
         hasRollup: true,
         displayMode: "distribution",
         defaultSortMode: "alpha-asc",
@@ -157,6 +169,7 @@ const FILTER_SET_CONFIG = [
           "Advanced Stage",
         ],
       },
+      { key: "Lymph Involvement", type: "attributes", maxHeightPx: 300 },
       {
         key: "T Stage",
         type: "attributes",
@@ -178,8 +191,7 @@ const FILTER_SET_CONFIG = [
         displayMode: "compact",
         defaultSortMode: "alpha-asc",
         customSortOrder: ["M0", "M1", "MX"],
-      },
-      { key: "Lymph Involvement", type: "attributes" },
+      }
     ],
   },
   {
@@ -200,7 +212,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "grading",
     label: "Grading",
-    display: false,
+    display: true,
     defaultExpanded: true,
     filters: [
       { key: "Grade_Numeric", type: "attributes", hasRollup: true },

@@ -37,10 +37,6 @@ const SCREENSHOT_ORDER = [
   "23-patient-details-column-menu.png",
   "24-patient-details-expanded-row.png",
   "25-patient-details-empty-search.png",
-  "26-horizontal-bar-chart-demo.png",
-  "27-filter-bar-chart-demo.png",
-  "28-filter-list-control-demo.png",
-  "29-patient-grid-demo.png",
   "30-debug-view.png",
   "31-accessibility-view.png",
 ];
@@ -292,97 +288,54 @@ async function activateFilterSelection(page) {
 }
 
 async function capturePatientDetailsSeries(page) {
-  const detailsHeading = page.getByRole("heading", { name: /Patient Details/i }).first();
-  const detailsVisible = await waitForLocator(detailsHeading, 15000);
+  const embeddedDetailsRegion = page.locator("[data-testid='patient-grid-embedded']").first();
+  const legacyDetailsHeading = page.getByRole("heading", { name: /Patient Details/i }).first();
+  const embeddedDetailsVisible = await waitForLocator(embeddedDetailsRegion, 15000);
+  const legacyDetailsVisible = embeddedDetailsVisible
+    ? false
+    : await waitForLocator(legacyDetailsHeading, 2000);
+  const detailsVisible = embeddedDetailsVisible || legacyDetailsVisible;
 
   if (!detailsVisible) {
-    summary.runtimeNotes.push(
-      "Patient Details did not render on /filters after filter selection; falling back to /patient-grid-demo coverage."
-    );
+    summary.runtimeNotes.push("Patient Details did not render on /filters after filter selection.");
 
-    await gotoRoute(page, "/patient-grid-demo");
-    await page.getByRole("heading", { name: "Patient Grid Demo", exact: true }).first().waitFor({
-      state: "visible",
-      timeout: 10000,
-    });
-
-    const fallbackCard = page.getByRole("heading", { name: /Patient Details/i }).first()
-      .locator("xpath=ancestor::div[contains(@class,'MuiCard-root')][1]");
-
-    await withCapture(page, {
-      file: "22-patient-details-overview.png",
-      route: "/patient-grid-demo",
-      target: "Patient Details overview",
-      fallbackFullPage: false,
-      run: async () => {
-        await captureLocatorOrFallback(page, fallbackCard, "22-patient-details-overview.png", false);
+    const missingSeries = [
+      {
+        file: "22-patient-details-overview.png",
+        target: "Patient Details overview",
       },
-    });
-
-    await withCapture(page, {
-      file: "23-patient-details-column-menu.png",
-      route: "/patient-grid-demo",
-      target: "Patient Details column chooser menu",
-      fallbackFullPage: false,
-      run: async () => {
-        const columnButton = page.getByLabel("Toggle visible patient columns").first();
-        const hasButton = await waitForLocator(columnButton, 5000);
-        if (!hasButton) {
-          throw new Error("Column chooser button not found");
-        }
-
-        await columnButton.click();
-        const menuReady = await waitForLocator(page.getByText("Toggle all columns", { exact: true }).first(), 5000);
-        if (!menuReady) {
-          throw new Error("Column chooser menu did not open");
-        }
-
-        const menu = page.locator("[role='menu']").first();
-        await captureLocatorOrFallback(page, menu, "23-patient-details-column-menu.png", false);
-        await page.keyboard.press("Escape").catch(() => {});
+      {
+        file: "23-patient-details-column-menu.png",
+        target: "Patient Details column chooser menu",
       },
-    });
-
-    await withCapture(page, {
-      file: "24-patient-details-expanded-row.png",
-      route: "/patient-grid-demo",
-      target: "Expanded row details",
-      fallbackFullPage: false,
-      run: async () => {
-        const expandButton = page.locator("button[aria-label^='Expand row details']").first();
-        if ((await expandButton.count()) === 0) {
-          throw new Error("No expandable patient row available in fallback route");
-        }
-
-        await expandButton.click();
-        await waitForLocator(page.getByText("Diagnoses", { exact: true }).first(), 3000);
-        await captureViewport(page, "24-patient-details-expanded-row.png", false);
+      {
+        file: "24-patient-details-expanded-row.png",
+        target: "Expanded row details",
       },
-    });
-
-    await withCapture(page, {
-      file: "25-patient-details-empty-search.png",
-      route: "/patient-grid-demo",
-      target: "Patient Details empty search state",
-      fallbackFullPage: false,
-      run: async () => {
-        const search = page.getByPlaceholder("Search patient details...").first();
-        const hasSearch = await waitForLocator(search, 4000);
-        if (!hasSearch) {
-          throw new Error("Patient details search input not found");
-        }
-        await search.fill("__no_patient_results_expected__");
-        const emptyText = page.getByText("No patients match your search.", { exact: true }).first();
-        await waitForLocator(emptyText, 5000);
-        await captureViewport(page, "25-patient-details-empty-search.png", false);
-        await search.fill("");
+      {
+        file: "25-patient-details-empty-search.png",
+        target: "Patient Details empty search state",
       },
-    });
+    ];
+
+    for (const entry of missingSeries) {
+      await withCapture(page, {
+        file: entry.file,
+        route: "/filters",
+        target: entry.target,
+        fallbackFullPage: false,
+        run: async () => {
+          throw new Error("Patient Details panel is unavailable on /filters.");
+        },
+      });
+    }
 
     return;
   }
 
-  const detailsCard = detailsHeading.locator("xpath=ancestor::div[contains(@class,'MuiCard-root')][1]");
+  const detailsRegion = embeddedDetailsVisible
+    ? embeddedDetailsRegion
+    : legacyDetailsHeading.locator("xpath=ancestor::div[contains(@class,'MuiCard-root')][1]");
 
   await withCapture(page, {
     file: "22-patient-details-overview.png",
@@ -390,7 +343,7 @@ async function capturePatientDetailsSeries(page) {
     target: "Patient Details overview",
     fallbackFullPage: false,
     run: async () => {
-      await captureLocatorOrFallback(page, detailsCard, "22-patient-details-overview.png", false);
+      await captureLocatorOrFallback(page, detailsRegion, "22-patient-details-overview.png", false);
     },
   });
 
@@ -431,7 +384,7 @@ async function capturePatientDetailsSeries(page) {
 
       await expandButton.click();
       await waitForLocator(page.getByText("Diagnoses", { exact: true }).first(), 5000);
-      await captureLocatorOrFallback(page, detailsCard, "24-patient-details-expanded-row.png", false);
+      await captureLocatorOrFallback(page, detailsRegion, "24-patient-details-expanded-row.png", false);
     },
   });
 
@@ -621,30 +574,6 @@ async function run() {
 
     await capturePatientDetailsSeries(page);
 
-    await captureRouteViewport(
-      page,
-      "/horizontal-bar-chart-demo",
-      "Horizontal Bar Chart Demo",
-      "26-horizontal-bar-chart-demo.png"
-    );
-    await captureRouteViewport(
-      page,
-      "/filter-bar-chart-demo",
-      "Filter Bar Chart Demo",
-      "27-filter-bar-chart-demo.png"
-    );
-    await captureRouteViewport(
-      page,
-      "/filter-list-control-demo",
-      "Filter List Control Demo",
-      "28-filter-list-control-demo.png"
-    );
-    await captureRouteViewport(
-      page,
-      "/patient-grid-demo",
-      "Patient Grid Demo",
-      "29-patient-grid-demo.png"
-    );
     await captureRouteViewport(page, "/debug", "Debug View", "30-debug-view.png");
     await captureRouteViewport(
       page,

@@ -34,10 +34,6 @@ required_files=(
   "23-patient-details-column-menu.png"
   "24-patient-details-expanded-row.png"
   "25-patient-details-empty-search.png"
-  "26-horizontal-bar-chart-demo.png"
-  "27-filter-bar-chart-demo.png"
-  "28-filter-list-control-demo.png"
-  "29-patient-grid-demo.png"
   "30-debug-view.png"
   "31-accessibility-view.png"
 )

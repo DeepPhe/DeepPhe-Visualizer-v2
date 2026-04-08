@@ -44,7 +44,7 @@ function getInitialThemeKey() {
     return "obsidian";
   }
 
-  return "solstice";
+  return "govuk";
 }
 
 const REDUCED_MOTION_STYLES = (
@@ -131,7 +131,7 @@ function FilterEntryRow({ filterEntry, onToggleEnabled }) {
           <Chip
             size="small"
             variant="outlined"
-            label={`Sort: ${String(filterEntry.defaultSortMode || "value-desc")}`}
+            label={`Sort: ${String(filterEntry.defaultSortMode || "alpha-asc")}`}
           />
           <Switch
             size="small"
@@ -153,7 +153,7 @@ export default function FilterSetsConfigView() {
   const custom = activeTheme.custom || {};
 
   const handleThemeChange = useCallback((event) => {
-    const nextKey = String(event.target.value || "solstice");
+    const nextKey = String(event.target.value || "govuk");
     setThemeKey(nextKey);
     try {
       localStorage.setItem(THEME_STORAGE_KEY, nextKey);
@@ -493,4 +493,3 @@ export default function FilterSetsConfigView() {
     </ThemeProvider>
   );
 }
-
