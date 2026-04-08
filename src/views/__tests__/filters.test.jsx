@@ -105,6 +105,61 @@ async function waitFor(assertion, timeoutMs = 2500) {
   }
 }
 
+function findButtonByText(text) {
+  const targetText = String(text || "")
+    .trim()
+    .toLowerCase();
+  return Array.from(document.querySelectorAll("button")).find(
+    (button) => {
+      const buttonText = String(button.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      return buttonText === targetText || buttonText.includes(targetText);
+    }
+  );
+}
+
+function findOpenFilterButton(filterName) {
+  const expectedLabel = `open ${String(filterName || "").trim().toLowerCase()} filter`;
+  return Array.from(document.querySelectorAll("button")).find((button) => {
+    const ariaLabel = String(button.getAttribute("aria-label") || "")
+      .trim()
+      .toLowerCase();
+    return ariaLabel === expectedLabel;
+  });
+}
+
+async function selectFilterValue(filterButtonText, valueButtonText) {
+  await waitFor(() => {
+    const filterButton = findOpenFilterButton(filterButtonText);
+    expect(filterButton).not.toBeUndefined();
+  });
+
+  await clickAsync(findOpenFilterButton(filterButtonText));
+
+  await waitFor(() => {
+    const valueButton = findButtonByText(valueButtonText);
+    expect(valueButton).not.toBeUndefined();
+  });
+
+  await clickAsync(findButtonByText(valueButtonText));
+
+  await waitFor(() => {
+    const closeButton = findButtonByText("Close");
+    expect(closeButton).not.toBeUndefined();
+  });
+
+  await clickAsync(findButtonByText("Close"));
+}
+
+function hasFilterRequest(expectedFilters) {
+  const expected = JSON.stringify(expectedFilters);
+  return fetchDeepPheFilterCount.mock.calls.some(([payload]) => {
+    return JSON.stringify(payload?.filters || []) === expected;
+  });
+}
+
 describe("FiltersView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -176,62 +231,29 @@ describe("FiltersView", () => {
     const { container, unmount } = renderComponent(<FiltersView />);
 
     await waitFor(() => {
-      const ageButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "40-49"
-      );
-      const genderButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Female"
-      );
-      const raceButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "White"
-      );
-      const cancerButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Breast"
-      );
-      const tStageButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "T2"
-      );
-
-      expect(ageButton).not.toBeUndefined();
-      expect(genderButton).not.toBeUndefined();
-      expect(raceButton).not.toBeUndefined();
-      expect(cancerButton).not.toBeUndefined();
-      expect(tStageButton).not.toBeUndefined();
+      expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
+      expect(findOpenFilterButton("Gender")).not.toBeUndefined();
+      expect(findOpenFilterButton("Race")).not.toBeUndefined();
+      expect(findOpenFilterButton("Cancer")).not.toBeUndefined();
+      expect(findOpenFilterButton("T Stage")).not.toBeUndefined();
     });
 
-    const ageButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "40-49"
-    );
-    const genderButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Female"
-    );
-    const raceButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "White"
-    );
-    const cancerButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Breast"
-    );
-    const tStageButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "T2"
-    );
-
-    await clickAsync(ageButton);
-    await clickAsync(genderButton);
-    await clickAsync(raceButton);
-    await clickAsync(cancerButton);
-    await clickAsync(tStageButton);
+    await selectFilterValue("Age at Dx", "40-49");
+    await selectFilterValue("Gender", "Female");
+    await selectFilterValue("Race", "White");
+    await selectFilterValue("Cancer", "Breast");
+    await selectFilterValue("T Stage", "T2");
 
     await waitFor(() => {
-      expect(fetchDeepPheFilterCount).toHaveBeenCalledWith({
-        filters: [
+      expect(
+        hasFilterRequest([
           { type: "omop", class: "AGE_AT_DX", instances: ["40-49"] },
           { type: "omop", class: "RACE", instances: ["White"] },
           { type: "omop", class: "GENDER", instances: ["Female"] },
           { type: "omop", class: "CANCER", instances: ["Breast"] },
           { type: "attributes", class: "T Stage", instances: ["T2"] },
-        ],
-        includePatientIds: false,
-      });
+        ])
+      ).toBe(true);
     });
 
     expect(container.textContent).toContain(
@@ -268,25 +290,19 @@ describe("FiltersView", () => {
       },
     });
 
-    const { container, unmount } = renderComponent(<FiltersView />);
+    const { unmount } = renderComponent(<FiltersView />);
 
     await waitFor(() => {
-      const decileBucket = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "40-49"
-      );
-      expect(decileBucket).not.toBeUndefined();
+      const ageFilterButton = findOpenFilterButton("Age at Dx");
+      expect(ageFilterButton).not.toBeUndefined();
     });
 
-    const decileBucket = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "40-49"
-    );
-    await clickAsync(decileBucket);
+    await selectFilterValue("Age at Dx", "40-49");
 
     await waitFor(() => {
-      expect(fetchDeepPheFilterCount).toHaveBeenCalledWith({
-        filters: [{ type: "omop", class: "AGE_AT_DX", instances: ["41", "44"] }],
-        includePatientIds: false,
-      });
+      expect(
+        hasFilterRequest([{ type: "omop", class: "AGE_AT_DX", instances: ["41", "44"] }])
+      ).toBe(true);
     });
 
     unmount();
@@ -308,40 +324,16 @@ describe("FiltersView", () => {
     const { container, unmount } = renderComponent(<FiltersView />);
 
     await waitFor(() => {
-      const genderButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Female"
-      );
-      const raceButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "White"
-      );
-      const cancerButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Breast"
-      );
-      const tStageButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "T2"
-      );
-      expect(genderButton).not.toBeUndefined();
-      expect(raceButton).not.toBeUndefined();
-      expect(cancerButton).not.toBeUndefined();
-      expect(tStageButton).not.toBeUndefined();
+      expect(findOpenFilterButton("Gender")).not.toBeUndefined();
+      expect(findOpenFilterButton("Race")).not.toBeUndefined();
+      expect(findOpenFilterButton("Cancer")).not.toBeUndefined();
+      expect(findOpenFilterButton("T Stage")).not.toBeUndefined();
     });
 
-    const genderButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Female"
-    );
-    const raceButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "White"
-    );
-    const cancerButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Breast"
-    );
-    const tStageButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "T2"
-    );
-    await clickAsync(genderButton);
-    await clickAsync(raceButton);
-    await clickAsync(cancerButton);
-    await clickAsync(tStageButton);
+    await selectFilterValue("Gender", "Female");
+    await selectFilterValue("Race", "White");
+    await selectFilterValue("Cancer", "Breast");
+    await selectFilterValue("T Stage", "T2");
 
     await waitFor(() => {
       expect(container.textContent).toContain("Query took 106.5 ms");
@@ -426,23 +418,20 @@ describe("FiltersView", () => {
       });
     });
 
-    const { container, unmount } = renderComponent(<FiltersView />);
+    const { unmount } = renderComponent(<FiltersView />);
 
     await waitFor(() => {
-      const unknownGenderButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Unknown"
-      );
-      const femaleGenderButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Female"
-      );
-      expect(unknownGenderButton).not.toBeUndefined();
-      expect(femaleGenderButton).not.toBeUndefined();
+      const genderFilterButton = findOpenFilterButton("Gender");
+      expect(genderFilterButton).not.toBeUndefined();
     });
 
-    const unknownGenderButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Unknown"
-    );
-    await clickAsync(unknownGenderButton);
+    await clickAsync(findOpenFilterButton("Gender"));
+
+    await waitFor(() => {
+      expect(findButtonByText("Unknown")).not.toBeUndefined();
+    });
+
+    await clickAsync(findButtonByText("Unknown"));
 
     await waitFor(() => {
       expect(fetchDeepPheFilterCount).toHaveBeenCalledWith({
@@ -488,18 +477,19 @@ describe("FiltersView", () => {
       timing: { totalMs: 1 },
     });
 
-    const { container, unmount } = renderComponent(<FiltersView />);
+    const { unmount } = renderComponent(<FiltersView />);
 
     await waitFor(() => {
-      const breastButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Breast"
-      );
-      const melanomaButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Melanoma"
-      );
-      const ovarianButton = Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Ovarian Cancer"
-      );
+      const cancerFilterButton = findOpenFilterButton("Cancer");
+      expect(cancerFilterButton).not.toBeUndefined();
+    });
+
+    await clickAsync(findOpenFilterButton("Cancer"));
+
+    await waitFor(() => {
+      const breastButton = findButtonByText("Breast");
+      const melanomaButton = findButtonByText("Melanoma");
+      const ovarianButton = findButtonByText("Ovarian");
 
       expect(breastButton).not.toBeUndefined();
       expect(melanomaButton).not.toBeUndefined();

@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Alert,
   Box,
+  Button,
   CssBaseline,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   GlobalStyles,
   IconButton,
@@ -12,6 +17,7 @@ import {
   Paper,
   Select,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -22,7 +28,6 @@ import {
   darken,
   getContrastRatio,
   lighten,
-  useTheme,
 } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
 import ContrastIcon from "@mui/icons-material/Contrast";
@@ -33,6 +38,8 @@ import TuneIcon from "@mui/icons-material/Tune";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import { Link as RouterLink } from "react-router-dom";
 import { getSummary as getOmopSummary } from "../controllers/omap";
 import { getSummary as getAttributesSummary } from "../controllers/attributes";
@@ -50,7 +57,6 @@ import { getAgeDecileLabel } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
 import {
   FILTER_ENTRY_BY_TYPE_CLASS,
-  MIN_ROWS_FOR_DISTRIBUTION,
   resolveFilterSetsWithExtras,
 } from "./filterSets";
 import {
@@ -82,16 +88,34 @@ const CARD_HEIGHT_MODE = {
 };
 const NORMALIZED_CARD_MIN_HEIGHT = 180;
 const NORMALIZED_CARD_MAX_HEIGHT = 320;
-const NORMALIZED_CHART_HEIGHT_OFFSET = 88;
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
 const CHART_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const DEFAULT_CHART_SORT_MODE = "value-desc";
+const FILTER_SORT_DIMENSION = {
+  COUNT: "count",
+  LABEL: "label",
+};
+const FILTER_SORT_DIRECTION = {
+  ASC: "asc",
+  DESC: "desc",
+};
 
 const THEME_STORAGE_KEY = "filterPageTheme";
 const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
 const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
 const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
+const GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY = "filterPageGlobalDisplayMode";
+const GLOBAL_FILTER_DISPLAY_MODE = {
+  AUTO: "auto",
+  DISTRIBUTION: "distribution",
+  COMPACT: "compact",
+};
+const GLOBAL_FILTER_DISPLAY_MODE_OPTIONS = [
+  { key: GLOBAL_FILTER_DISPLAY_MODE.AUTO, label: "Auto" },
+  { key: GLOBAL_FILTER_DISPLAY_MODE.DISTRIBUTION, label: "Distribution" },
+  { key: GLOBAL_FILTER_DISPLAY_MODE.COMPACT, label: "Compact" },
+];
 const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 const FONT_FAMILY_OPTIONS = [
   { key: "theme-default", label: "Theme Default", stack: null },
@@ -182,6 +206,20 @@ function getInitialBooleanPref(storageKey) {
     // localStorage unavailable
   }
   return false;
+}
+
+function getInitialGlobalFilterDisplayMode() {
+  try {
+    const stored = String(localStorage.getItem(GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY) || "")
+      .trim()
+      .toLowerCase();
+    if (GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.some((option) => option.key === stored)) {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return GLOBAL_FILTER_DISPLAY_MODE.AUTO;
 }
 
 const REDUCED_MOTION_STYLES = (
@@ -423,20 +461,6 @@ function getFilterDefaultSortMode(type, className) {
 function getFilterCustomSortOrder(type, className) {
   const configuredOrder = getFilterEntry(type, className)?.customSortOrder;
   return Array.isArray(configuredOrder) ? configuredOrder : [];
-}
-
-function resolveDisplayMode(filterEntry, chartData) {
-  if (filterEntry?.hasRollup) {
-    return "distribution";
-  }
-
-  const mode = String(filterEntry?.displayMode || "auto").trim().toLowerCase();
-  if (mode === "distribution" || mode === "compact") {
-    return mode;
-  }
-
-  const rowCount = Array.isArray(chartData) ? chartData.length : 0;
-  return rowCount >= MIN_ROWS_FOR_DISTRIBUTION ? "distribution" : "compact";
 }
 
 function isAttributeRollupClass(className) {
@@ -1862,349 +1886,169 @@ function normalizeChartSortMode(sortMode) {
   return DEFAULT_CHART_SORT_MODE;
 }
 
-function normalizeCustomSortToken(value) {
-  return String(value || "")
+function getSortDimensionFromMode(sortMode) {
+  return String(sortMode || "").startsWith("alpha")
+    ? FILTER_SORT_DIMENSION.LABEL
+    : FILTER_SORT_DIMENSION.COUNT;
+}
+
+function getSortDirectionFromMode(sortMode) {
+  return String(sortMode || "").endsWith("asc")
+    ? FILTER_SORT_DIRECTION.ASC
+    : FILTER_SORT_DIRECTION.DESC;
+}
+
+function toSortMode(sortDimension, sortDirection) {
+  const nextDirection =
+    sortDirection === FILTER_SORT_DIRECTION.ASC
+      ? FILTER_SORT_DIRECTION.ASC
+      : FILTER_SORT_DIRECTION.DESC;
+
+  if (sortDimension === FILTER_SORT_DIMENSION.LABEL) {
+    return nextDirection === FILTER_SORT_DIRECTION.ASC ? "alpha-asc" : "alpha-desc";
+  }
+
+  return nextDirection === FILTER_SORT_DIRECTION.ASC ? "value-asc" : "value-desc";
+}
+
+function filterRowsByQuery(data, searchQuery) {
+  const query = String(searchQuery || "")
     .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "");
-}
-
-function createCustomSortIndexMap(customSortOrder) {
-  if (!Array.isArray(customSortOrder) || customSortOrder.length === 0) {
-    return null;
+    .toLowerCase();
+  if (!query) {
+    return Array.isArray(data) ? data : [];
   }
 
-  const indexMap = new Map();
-  customSortOrder.forEach((value, index) => {
-    const token = normalizeCustomSortToken(value);
-    if (!token || indexMap.has(token)) {
-      return;
-    }
-    indexMap.set(token, index);
+  return (Array.isArray(data) ? data : []).filter((row) => {
+    const displayLabel = String(row?.displayLabel || "").trim().toLowerCase();
+    const rawLabel = String(row?.label || "").trim().toLowerCase();
+    return displayLabel.includes(query) || rawLabel.includes(query);
   });
-
-  return indexMap.size > 0 ? indexMap : null;
 }
 
-function compareByCustomSortOrder(leftLabel, rightLabel, sortMode, customSortIndexMap) {
-  if (!customSortIndexMap || !String(sortMode).startsWith("alpha")) {
-    return null;
-  }
-
-  const leftIndex = customSortIndexMap.get(normalizeCustomSortToken(leftLabel));
-  const rightIndex = customSortIndexMap.get(normalizeCustomSortToken(rightLabel));
-  const leftKnown = Number.isFinite(leftIndex);
-  const rightKnown = Number.isFinite(rightIndex);
-
-  if (leftKnown && rightKnown && leftIndex !== rightIndex) {
-    return sortMode === "alpha-desc" ? rightIndex - leftIndex : leftIndex - rightIndex;
-  }
-
-  if (leftKnown !== rightKnown) {
-    return leftKnown ? -1 : 1;
-  }
-
-  return null;
-}
-
-function compareFacetRows(leftItem, rightItem, sortMode, customSortIndexMap) {
-  const leftLabel = String(leftItem?.label || "").trim();
-  const rightLabel = String(rightItem?.label || "").trim();
-  const leftValue = Number(leftItem?.value);
-  const rightValue = Number(rightItem?.value);
-
-  const labelComparison = leftLabel.localeCompare(rightLabel, undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
-
-  const customComparison = compareByCustomSortOrder(
-    leftLabel,
-    rightLabel,
-    sortMode,
-    customSortIndexMap
-  );
-  if (customComparison !== null) {
-    return customComparison;
-  }
-
-  if (sortMode === "alpha-asc") {
-    return labelComparison;
-  }
-  if (sortMode === "alpha-desc") {
-    return -labelComparison;
-  }
-  if (sortMode === "value-asc") {
-    if (leftValue !== rightValue) {
-      return leftValue - rightValue;
-    }
-    return labelComparison;
-  }
-
-  if (leftValue !== rightValue) {
-    return rightValue - leftValue;
-  }
-  return labelComparison;
-}
-
-function sortFacetRows(data, sortMode = DEFAULT_CHART_SORT_MODE, customSortOrder = []) {
-  const normalizedSortMode = normalizeChartSortMode(sortMode);
-  const customSortIndexMap = createCustomSortIndexMap(customSortOrder);
-
-  return (Array.isArray(data) ? data : [])
-    .map((item) => {
-      const label = String(item?.displayLabel ?? item?.label ?? "").trim();
-      const value = Number(item?.value);
-      const includedValue = Number(item?.includedValue);
-      const rowLabel = String(item?.label ?? item?.displayLabel ?? "").trim();
-
-      return {
-        label,
-        rowLabel,
-        value: Number.isFinite(value) ? value : 0,
-        includedValue: Number.isFinite(includedValue) ? includedValue : null,
-      };
-    })
-    .filter((item) => item.label)
-    .sort((leftItem, rightItem) =>
-      compareFacetRows(leftItem, rightItem, normalizedSortMode, customSortIndexMap)
-    );
-}
-
-function buildDistributionSeries(
-  data,
-  sortMode = DEFAULT_CHART_SORT_MODE,
-  maxBars = 28,
-  customSortOrder = []
+function buildTallestAlignedLayout(
+  classNames,
+  baseCardHeightByClass,
+  measuredCardHeightByClass,
+  naturalGapPx = 24,
+  maxColumns = 3
 ) {
-  const rows = sortFacetRows(data, sortMode, customSortOrder).filter((item) => item.value > 0);
-  if (rows.length === 0) {
-    return [];
-  }
-
-  return rows.slice(0, Math.max(1, maxBars)).map((item) => item.value);
-}
-
-function DistributionStrip({ data, sortMode = DEFAULT_CHART_SORT_MODE, customSortOrder = [] }) {
-  const series = useMemo(
-    () => buildDistributionSeries(data, sortMode, 28, customSortOrder),
-    [customSortOrder, data, sortMode]
-  );
-
-  if (series.length === 0) {
-    return null;
-  }
-
-  const maxValue = Math.max(...series, 1);
-
-  return (
-    <Box
-      aria-hidden="true"
-      sx={{
-        display: "flex",
-        alignItems: "flex-end",
-        gap: 0.25,
-        height: 22,
-        width: { xs: 84, md: 108 },
-        ml: "auto",
-        flexShrink: 0,
-      }}
-    >
-      {series.map((value, index) => {
-        const ratio = value / maxValue;
-
-        return (
-          <Box
-            key={`${value}-${index}`}
-            sx={{
-              flex: "1 1 0",
-              minWidth: 2,
-              height: `${Math.max(10, Math.round(ratio * 100))}%`,
-              borderRadius: 0.5,
-              bgcolor: "primary.main",
-              opacity: 0.25 + ratio * 0.65,
-            }}
-          />
-        );
-      })}
-    </Box>
-  );
-}
-
-function formatCompactCountLabel(totalValue, includedValue) {
-  const numericTotalValue = Number(totalValue);
-  const safeTotalValue = Number.isFinite(numericTotalValue)
-    ? Math.max(0, Math.round(numericTotalValue))
-    : 0;
-  const totalLabel = safeTotalValue.toLocaleString();
-
-  if (!Number.isFinite(includedValue)) {
-    return totalLabel;
-  }
-
-  const safeIncludedValue = Math.max(0, Math.round(Number(includedValue)));
-  if (safeIncludedValue === safeTotalValue) {
-    return totalLabel;
-  }
-
-  return `${safeIncludedValue.toLocaleString()} / ${totalLabel}`;
-}
-
-function CompactFilterCard({
-  data,
-  selectedValues = [],
-  onSelectionChange,
-  sortMode = DEFAULT_CHART_SORT_MODE,
-  customSortOrder = [],
-}) {
-  const theme = useTheme();
-  const custom = theme.custom || {};
-  const selectedAccentColor = custom.barActive || theme.palette.primary.main;
-  const baseFillColor = custom.barFill || theme.palette.primary.main;
-  const focusRingColor = custom.focusRing || theme.palette.primary.main;
-  const focusRingWidth = Number.parseFloat(custom.focusRingWidth) || 2;
-  const sortedRows = useMemo(
-    () => sortFacetRows(data, sortMode, customSortOrder),
-    [customSortOrder, data, sortMode]
-  );
-  const selectedSet = useMemo(
-    () => new Set((Array.isArray(selectedValues) ? selectedValues : []).map((value) => String(value || "").trim())),
-    [selectedValues]
-  );
-  const maxValue = useMemo(
-    () => Math.max(1, ...sortedRows.map((row) => Number(row.value) || 0)),
-    [sortedRows]
-  );
-
-  const handleToggle = (label) => {
-    if (typeof onSelectionChange !== "function") {
-      return;
+  const normalizedClassNames = Array.isArray(classNames) ? classNames : [];
+  const cardHeightOverrideByClass = {};
+  const cardMarginBottomByClass = {};
+  const resolvedNaturalGap = Math.max(0, Number(naturalGapPx) || 0);
+  const getBaseHeight = (className) =>
+    Math.max(0, Number(baseCardHeightByClass?.[className]) || 0);
+  const getMeasuredHeight = (className) =>
+    Math.max(0, Number(measuredCardHeightByClass?.[className]) || 0);
+  const getEffectiveHeight = (className) => {
+    const measuredHeight = getMeasuredHeight(className);
+    if (measuredHeight > 0) {
+      return measuredHeight;
     }
-
-    const normalizedLabel = String(label || "").trim();
-    if (!normalizedLabel) {
-      return;
-    }
-
-    const nextValues = selectedSet.has(normalizedLabel)
-      ? [...selectedSet].filter((value) => value !== normalizedLabel)
-      : [...selectedSet, normalizedLabel];
-    onSelectionChange(nextValues);
+    return getBaseHeight(className);
   };
+  const resolvedMaxColumns = Math.max(
+    1,
+    Math.min(
+      normalizedClassNames.length || 1,
+      Number.isFinite(maxColumns) ? Math.floor(maxColumns) : 3
+    )
+  );
 
-  if (sortedRows.length === 0) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        No values available.
-      </Typography>
-    );
+  if (normalizedClassNames.length === 0) {
+    return {
+      tallestFilterBoxHeight: 0,
+      cardHeightOverrideByClass,
+      cardMarginBottomByClass,
+    };
   }
 
-  return (
-    <Stack spacing={0.5}>
-      {sortedRows.map((row) => {
-        const isSelected = selectedSet.has(row.rowLabel);
-        const valueRatio = Math.max(0, Math.min(1, Number(row.value) / maxValue));
-        const countLabel = formatCompactCountLabel(row.value, row.includedValue);
-        const rowText = row.label || row.rowLabel;
+  const columnGroups = Array.from({ length: resolvedMaxColumns }, () => []);
+  const naturalColumnHeights = Array.from({ length: resolvedMaxColumns }, () => 0);
 
-        return (
-          <Box
-            key={row.rowLabel || row.label}
-            sx={{
-              position: "relative",
-              display: "block",
-              width: "100%",
-              minHeight: 30,
-              borderRadius: 1,
-              overflow: "hidden",
-            }}
-          >
-            <Box
-              component="button"
-              type="button"
-              onClick={() => handleToggle(row.rowLabel)}
-              aria-pressed={isSelected}
-              aria-label={`Toggle ${row.label}`}
-              sx={{
-                position: "relative",
-                display: "grid",
-                gridTemplateColumns: "14px minmax(0, 1fr)",
-                alignItems: "center",
-                gap: 0.75,
-                width: "100%",
-                minHeight: 30,
-                border: "1px solid",
-                borderColor: isSelected ? selectedAccentColor : "divider",
-                borderRadius: 1,
-                bgcolor: "background.paper",
-                pl: 1,
-                pr: 8,
-                py: 0.4,
-                textAlign: "left",
-                cursor: "pointer",
-                transition: "border-color 0.15s ease, background-color 0.15s ease",
-                "&:hover": {
-                  bgcolor: "action.hover",
-                },
-                "&:focus-visible": {
-                  outline: `${focusRingWidth}px solid`,
-                  outlineColor: focusRingColor,
-                  outlineOffset: 1,
-                },
-              }}
-            >
-              <Box
-                aria-hidden="true"
-                sx={{
-                  position: "absolute",
-                  inset: 0,
-                  width: `${Math.max(4, Math.round(valueRatio * 100))}%`,
-                  bgcolor: isSelected ? selectedAccentColor : baseFillColor,
-                  opacity: isSelected ? 0.2 : 0.12,
-                }}
-              />
-              <Box
-                aria-hidden="true"
-                sx={{
-                  position: "relative",
-                  width: 14,
-                  height: 14,
-                  border: "1px solid",
-                  borderColor: isSelected ? selectedAccentColor : "divider",
-                  borderRadius: 0.5,
-                  bgcolor: isSelected ? selectedAccentColor : "transparent",
-                  boxShadow: isSelected ? "0 0 0 1px rgba(255,255,255,0.2) inset" : "none",
-                }}
-              />
-              <Typography
-                variant="body2"
-                noWrap
-                sx={{ position: "relative", minWidth: 0, color: "text.primary" }}
-              >
-                {rowText}
-              </Typography>
-            </Box>
-            <Typography
-              aria-hidden="true"
-              variant="caption"
-              sx={{
-                position: "absolute",
-                top: "50%",
-                right: 8,
-                transform: "translateY(-50%)",
-                color: "text.secondary",
-                fontVariantNumeric: "tabular-nums",
-                pointerEvents: "none",
-              }}
-            >
-              {countLabel}
-            </Typography>
-          </Box>
-        );
-      })}
-    </Stack>
+  normalizedClassNames.forEach((className, classIndex) => {
+    const cardHeight = getBaseHeight(className);
+    const initialColumnIndex = classIndex;
+
+    // Seed one card per column first, then keep stacking into the shortest column.
+    if (initialColumnIndex < resolvedMaxColumns) {
+      columnGroups[initialColumnIndex].push(className);
+      naturalColumnHeights[initialColumnIndex] = cardHeight;
+      return;
+    }
+
+    let targetColumnIndex = 0;
+    for (let columnIndex = 1; columnIndex < resolvedMaxColumns; columnIndex += 1) {
+      if (naturalColumnHeights[columnIndex] < naturalColumnHeights[targetColumnIndex]) {
+        targetColumnIndex = columnIndex;
+      }
+    }
+
+    const existingCount = columnGroups[targetColumnIndex].length;
+    columnGroups[targetColumnIndex].push(className);
+    naturalColumnHeights[targetColumnIndex] += cardHeight + (existingCount > 0 ? resolvedNaturalGap : 0);
+  });
+
+  const activeColumnGroups = columnGroups.filter((group) => group.length > 0);
+  const activeNaturalHeights = activeColumnGroups.map((group) =>
+    group.reduce((sum, className, index) => {
+      const cardHeight = getBaseHeight(className);
+      return sum + cardHeight + (index > 0 ? resolvedNaturalGap : 0);
+    }, 0)
   );
+  const activeMeasuredHeights = activeColumnGroups.map((group) =>
+    group.reduce((sum, className, index) => {
+      const cardHeight = getMeasuredHeight(className);
+      return sum + cardHeight + (index > 0 ? resolvedNaturalGap : 0);
+    }, 0)
+  );
+  const tallestFilterBoxHeight =
+    activeNaturalHeights.length > 0 ? Math.max(...activeNaturalHeights) : 0;
+  const tallestMeasuredFilterBoxHeight =
+    activeMeasuredHeights.length > 0 ? Math.max(...activeMeasuredHeights) : 0;
+  const alignmentTargetHeight =
+    tallestMeasuredFilterBoxHeight > 0 ? tallestMeasuredFilterBoxHeight : tallestFilterBoxHeight;
+
+  activeColumnGroups.forEach((group) => {
+    if (group.length === 1) {
+      const className = group[0];
+      const measuredHeight = getMeasuredHeight(className);
+      const naturalHeight = measuredHeight > 0 ? measuredHeight : getBaseHeight(className);
+      const isTallestCard =
+        Math.abs(naturalHeight - alignmentTargetHeight) < 0.5 ||
+        naturalHeight >= alignmentTargetHeight;
+      const shouldStretchSoloCard =
+        measuredHeight > 0 &&
+        !isTallestCard &&
+        naturalHeight >= alignmentTargetHeight / 2 &&
+        naturalHeight < alignmentTargetHeight;
+
+      if (shouldStretchSoloCard) {
+        cardHeightOverrideByClass[className] = alignmentTargetHeight;
+      }
+      cardMarginBottomByClass[className] = 0;
+      return;
+    }
+
+    const groupHeight = group.reduce(
+      (sum, className) => sum + getEffectiveHeight(className),
+      0
+    );
+    const gapCount = Math.max(1, group.length - 1);
+    const gapPx = Math.max(0, (alignmentTargetHeight - groupHeight) / gapCount);
+
+    group.forEach((className, index) => {
+      cardMarginBottomByClass[className] = index < group.length - 1 ? gapPx : 0;
+    });
+  });
+
+  return {
+    tallestFilterBoxHeight,
+    tallestMeasuredFilterBoxHeight,
+    cardHeightOverrideByClass,
+    cardMarginBottomByClass,
+  };
 }
 
 function FiltersView() {
@@ -2213,6 +2057,9 @@ function FiltersView() {
   const [fontFamilyKey, setFontFamilyKey] = useState(getInitialFontFamilyKey);
   const [highContrast, setHighContrast] = useState(() => getInitialBooleanPref(HIGH_CONTRAST_STORAGE_KEY));
   const [reducedMotion, setReducedMotion] = useState(() => getInitialBooleanPref(REDUCED_MOTION_STORAGE_KEY));
+  const [globalFilterDisplayMode, setGlobalFilterDisplayMode] = useState(
+    getInitialGlobalFilterDisplayMode
+  );
   const activeTheme = useMemo(() => {
     let theme = getThemeByKey(themeKey);
     const selectedFontFamily = FONT_FAMILY_OPTIONS.find((option) => option.key === fontFamilyKey);
@@ -2311,6 +2158,20 @@ function FiltersView() {
       return nextValue;
     });
   }, []);
+  const handleGlobalFilterDisplayModeChange = useCallback((event) => {
+    const requestedMode = String(event?.target?.value || "")
+      .trim()
+      .toLowerCase();
+    const nextMode = GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.some((option) => option.key === requestedMode)
+      ? requestedMode
+      : GLOBAL_FILTER_DISPLAY_MODE.AUTO;
+    setGlobalFilterDisplayMode(nextMode);
+    try {
+      localStorage.setItem(GLOBAL_FILTER_DISPLAY_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
 
   const getOmopSummaryForFilters = useCallback(
     () => getOmopSummary({ includePatientIds: false }),
@@ -2327,6 +2188,8 @@ function FiltersView() {
   const [expandedParentsByClass, setExpandedParentsByClass] = useState({});
   const [omopSortModeByClass, setOmopSortModeByClass] = useState({});
   const [attributeSortModeByClass, setAttributeSortModeByClass] = useState({});
+  const [activeFilterModal, setActiveFilterModal] = useState(null);
+  const [activeFilterSearchQuery, setActiveFilterSearchQuery] = useState("");
   const ageAtDxSelectionMode = AGE_SELECTION_MODE.DECILE;
   const [countResult, setCountResult] = useState(null);
   const [includedCountByRowKey, setIncludedCountByRowKey] = useState({});
@@ -2344,8 +2207,10 @@ function FiltersView() {
     omop: null,
     attributes: null,
   });
+  const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
   const omopCardContentRefs = useRef({});
   const attributeCardContentRefs = useRef({});
+  const cardMeasureRefs = useRef({});
   const patientSummaryCacheRef = useRef(new Map());
 
   useEffect(() => {
@@ -2869,6 +2734,58 @@ function FiltersView() {
     }
     delete refs.current[key];
   };
+  const getCardMeasureKey = (type, className) => `${type}:${className}`;
+  const setCardMeasureRef = (type, className) => (node) => {
+    const key = getCardMeasureKey(type, className);
+    if (node) {
+      cardMeasureRefs.current[key] = node;
+      return;
+    }
+    delete cardMeasureRefs.current[key];
+  };
+
+  useLayoutEffect(() => {
+    const entries = Object.entries(cardMeasureRefs.current);
+    if (entries.length === 0) {
+      return undefined;
+    }
+
+    const nextHeights = {};
+    entries.forEach(([key, node]) => {
+      const rect = node?.getBoundingClientRect?.();
+      const height = Number(rect?.height);
+      if (Number.isFinite(height) && height > 0) {
+        nextHeights[key] = height;
+      }
+    });
+
+    setCardNaturalHeightByKey((previousHeights) => {
+      const previousEntries = Object.entries(previousHeights);
+      const nextEntries = Object.entries(nextHeights);
+      if (previousEntries.length === nextEntries.length) {
+        let hasDiff = false;
+        for (const [key, value] of nextEntries) {
+          const previousValue = Number(previousHeights[key]);
+          if (!Number.isFinite(previousValue) || Math.abs(previousValue - value) > 1) {
+            hasDiff = true;
+            break;
+          }
+        }
+        if (!hasDiff) {
+          return previousHeights;
+        }
+      }
+      return nextHeights;
+    });
+
+    return undefined;
+  }, [
+    ageAtDxDecileChartData,
+    attributeDisplayChartDataByClass,
+    attributeFilterSets,
+    chartDataByClass,
+    omopFilterSets,
+  ]);
 
   useLayoutEffect(() => {
     if (!isNormalizedHeightMode) {
@@ -3295,8 +3212,12 @@ function FiltersView() {
       };
     });
   };
-  const handleSortModeChange = (setter, className) => (nextSortMode) => {
+  const setFilterSortMode = useCallback((filterType, className, nextSortMode) => {
+    const normalizedType = String(filterType || "").toLowerCase();
     const normalizedSortMode = normalizeChartSortMode(nextSortMode);
+
+    const setter =
+      normalizedType === "attributes" ? setAttributeSortModeByClass : setOmopSortModeByClass;
 
     setter((previousModes) => {
       if (previousModes?.[className] === normalizedSortMode) {
@@ -3307,7 +3228,107 @@ function FiltersView() {
         [className]: normalizedSortMode,
       };
     });
-  };
+  }, []);
+  const handleOpenFilterModal = useCallback((filterType, className, classDisplayName) => {
+    setActiveFilterModal({
+      type: String(filterType || "omop").toLowerCase() === "attributes" ? "attributes" : "omop",
+      className,
+      classDisplayName: String(classDisplayName || className || "").trim() || String(className || ""),
+    });
+    setActiveFilterSearchQuery("");
+  }, []);
+  const handleCloseFilterModal = useCallback(() => {
+    setActiveFilterModal(null);
+    setActiveFilterSearchQuery("");
+  }, []);
+  const activeFilterDetail = useMemo(() => {
+    if (!activeFilterModal?.className) {
+      return null;
+    }
+
+    const { type, className, classDisplayName } = activeFilterModal;
+    const normalizedType = String(type || "").toLowerCase() === "attributes" ? "attributes" : "omop";
+    const chartData =
+      normalizedType === "attributes"
+        ? attributeChartDataWithIncludedByClass[className] ||
+          attributeDisplayChartDataByClass[className] ||
+          []
+        : omopChartDataWithIncludedByClass[className] || chartDataByClass[className] || [];
+    const selectedValues =
+      normalizedType === "attributes"
+        ? selectedAttributeValuesByClass[className] || []
+        : selectedOmopValuesByClass[className] || [];
+    const sortModeByClass =
+      normalizedType === "attributes" ? attributeSortModeByClass : omopSortModeByClass;
+    const classError =
+      normalizedType === "attributes"
+        ? attributeData.errorsByClass[className] || ""
+        : omopData.errorsByClass[className] || "";
+    const sortMode =
+      sortModeByClass[className] || getFilterDefaultSortMode(normalizedType, className);
+
+    return {
+      type: normalizedType,
+      className,
+      classDisplayName,
+      chartData: Array.isArray(chartData) ? chartData : [],
+      selectedValues,
+      classError,
+      sortMode,
+    };
+  }, [
+    activeFilterModal,
+    attributeChartDataWithIncludedByClass,
+    attributeData.errorsByClass,
+    attributeDisplayChartDataByClass,
+    attributeSortModeByClass,
+    chartDataByClass,
+    omopChartDataWithIncludedByClass,
+    omopData.errorsByClass,
+    omopSortModeByClass,
+    selectedAttributeValuesByClass,
+    selectedOmopValuesByClass,
+  ]);
+  const activeFilterSortDimension = useMemo(
+    () => getSortDimensionFromMode(activeFilterDetail?.sortMode),
+    [activeFilterDetail?.sortMode]
+  );
+  const activeFilterSortDirection = useMemo(
+    () => getSortDirectionFromMode(activeFilterDetail?.sortMode),
+    [activeFilterDetail?.sortMode]
+  );
+  const filteredModalChartData = useMemo(
+    () => filterRowsByQuery(activeFilterDetail?.chartData, activeFilterSearchQuery),
+    [activeFilterDetail?.chartData, activeFilterSearchQuery]
+  );
+  const handleModalSortDimensionChange = useCallback(
+    (event) => {
+      if (!activeFilterDetail) {
+        return;
+      }
+
+      const requestedDimension = String(event?.target?.value || "").trim().toLowerCase();
+      const nextDimension =
+        requestedDimension === FILTER_SORT_DIMENSION.LABEL
+          ? FILTER_SORT_DIMENSION.LABEL
+          : FILTER_SORT_DIMENSION.COUNT;
+      const nextSortMode = toSortMode(nextDimension, activeFilterSortDirection);
+      setFilterSortMode(activeFilterDetail.type, activeFilterDetail.className, nextSortMode);
+    },
+    [activeFilterDetail, activeFilterSortDirection, setFilterSortMode]
+  );
+  const handleModalSortDirectionToggle = useCallback(() => {
+    if (!activeFilterDetail) {
+      return;
+    }
+
+    const nextDirection =
+      activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC
+        ? FILTER_SORT_DIRECTION.DESC
+        : FILTER_SORT_DIRECTION.ASC;
+    const nextSortMode = toSortMode(activeFilterSortDimension, nextDirection);
+    setFilterSortMode(activeFilterDetail.type, activeFilterDetail.className, nextSortMode);
+  }, [activeFilterDetail, activeFilterSortDimension, activeFilterSortDirection, setFilterSortMode]);
   const toggleCardHeightMode = () => {
     setCardHeightMode((previousMode) =>
       previousMode === CARD_HEIGHT_MODE.NORMALIZE ? CARD_HEIGHT_MODE.FIT : CARD_HEIGHT_MODE.NORMALIZE
@@ -3316,15 +3337,15 @@ function FiltersView() {
   const cardHeightToggleTooltip = isNormalizedHeightMode
     ? "Switch to fit content heights"
     : "Switch to normalized row heights";
-  const getCardContentAreaSx = (sectionKey, isCompactCard = false) => {
+  const getCardContentAreaSx = (sectionKey, isCompactCard = false, stretch = false) => {
     const sectionHeight = normalizedCardHeights[sectionKey];
 
     return {
       display: "flex",
       flexDirection: "column",
-      gap: 1,
+      gap: 0,
       height:
-        isCompactCard
+        isCompactCard || stretch
           ? "auto"
           : isNormalizedHeightMode && Number.isFinite(sectionHeight)
             ? `${sectionHeight}px`
@@ -3333,40 +3354,38 @@ function FiltersView() {
       pr: 0,
     };
   };
-  const getNormalizedChartHeight = (sectionKey) => {
-    const sectionHeight = normalizedCardHeights[sectionKey];
-    if (!isNormalizedHeightMode || !Number.isFinite(sectionHeight)) {
-      return undefined;
-    }
-    return Math.max(
-      120,
-      Math.round(sectionHeight - NORMALIZED_CHART_HEIGHT_OFFSET)
-    );
+  const CARD_COLUMN_WIDTH = 300;
+  const CARD_COLUMN_COUNT = 3;
+  const CATEGORY_MAX_HEIGHT = 700;
+  const ROW_HEIGHT_ESTIMATE = 36;
+  const CARD_OVERHEAD_ESTIMATE = 120;
+  const NATURAL_STACK_GAP_PX = 24;
+  const CARD_BOTTOM_MARGIN = 24;
+  const estimateCardHeight = (rowCount = 0) => {
+    const safeRowCount = Number.isFinite(rowCount) ? Math.max(0, rowCount) : 0;
+    return CARD_OVERHEAD_ESTIMATE + safeRowCount * ROW_HEIGHT_ESTIMATE;
   };
-  const CARD_FIXED_WIDTH = 340;
-  const MAX_FACET_COLUMNS = 3;
-  const filterGridSx = {
+  const getFilterGridSx = (sectionHeight) => ({
     width: "100%",
-    columnCount: { xs: 1, md: 2, lg: MAX_FACET_COLUMNS },
+    columnWidth: `${CARD_COLUMN_WIDTH}px`,
     columnGap: 3,
-    columnWidth: `${CARD_FIXED_WIDTH}px`,
-    maxWidth: (theme) => {
-      const gapPx = Number.parseFloat(theme.spacing(3)) || 24;
-      return `${CARD_FIXED_WIDTH * MAX_FACET_COLUMNS + gapPx * (MAX_FACET_COLUMNS - 1)}px`;
+    columnFill: "auto",
+    height: {
+      xs: "auto",
+      md:
+        Number.isFinite(sectionHeight) && sectionHeight > 0
+          ? `${sectionHeight}px`
+          : "auto",
     },
-  };
+    overflow: "hidden",
+  });
   const getCardSx = (cardIndex = 0) => {
-    const shouldStartNewColumn =
-      Number.isFinite(cardIndex) && cardIndex > 0 && cardIndex < MAX_FACET_COLUMNS;
+    void cardIndex;
     const base = {
       width: "100%",
       display: "inline-block",
       verticalAlign: "top",
       breakInside: "avoid",
-      breakBefore: {
-        xs: "auto",
-        lg: shouldStartNewColumn ? "column" : "auto",
-      },
       mb: 3,
       p: custom.cardPadding || { xs: 2, md: 3 },
       position: "relative",
@@ -3388,26 +3407,6 @@ function FiltersView() {
     }
     return base;
   };
-  const getHeaderSx = () => ({
-    fontWeight: custom.headerFontWeight || 700,
-    letterSpacing: custom.headerLetterSpacing || "0.2px",
-    textTransform: custom.headerTransform || "none",
-    fontSize: custom.headerFontSize || undefined,
-    color: custom.headerColor || "text.primary",
-    ...(custom.cardBeforePseudo === "solstice-underline"
-      ? {
-          "&::after": {
-            content: '""',
-            display: "block",
-            width: 32,
-            height: 2,
-            background: "#C2410C",
-            mt: "6px",
-            borderRadius: "1px",
-          },
-        }
-      : {}),
-  });
   const fontScaleIndex = findClosestFontScaleIndex(fontScale);
   const canDecreaseFontScale = fontScaleIndex > 0;
   const canIncreaseFontScale = fontScaleIndex < FONT_SCALE_OPTIONS.length - 1;
@@ -3553,6 +3552,34 @@ function FiltersView() {
                     }}
                   >
                     <AccessibilityBadge label="Accessibility" />
+                    <FormControl
+                      size="small"
+                      sx={{
+                        minWidth: 150,
+                        fontSize: "0.75rem",
+                        height: 32,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <InputLabel id="global-display-mode-select-label">All filters</InputLabel>
+                      <Select
+                        labelId="global-display-mode-select-label"
+                        id="global-display-mode-select"
+                        value={globalFilterDisplayMode}
+                        onChange={handleGlobalFilterDisplayModeChange}
+                        label="All filters"
+                        sx={{
+                          height: 32,
+                          "& .MuiSelect-select": { py: 0.5 },
+                        }}
+                      >
+                        {GLOBAL_FILTER_DISPLAY_MODE_OPTIONS.map((option) => (
+                          <MenuItem key={option.key} value={option.key} sx={{ fontSize: "0.8rem" }}>
+                            {option.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
                       <TextFieldsIcon fontSize="small" sx={{ color: "text.secondary", flexShrink: 0 }} />
                       <FormControl
@@ -3853,6 +3880,75 @@ function FiltersView() {
                       omopChartDataWithIncludedByClass[className] || classData;
                     return Array.isArray(classChartData) && classChartData.length > 0;
                   });
+                  const classChartDataByClass = {};
+                  filterSet.filters.forEach((filter) => {
+                    const className = filter.key;
+                    const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
+                    const classData =
+                      isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
+                        ? ageAtDxDecileChartData
+                        : chartDataByClass[className] || [];
+                    classChartDataByClass[className] =
+                      omopChartDataWithIncludedByClass[className] || classData;
+                  });
+                  const measuredCardHeightByClass = {};
+                  const baseCardHeightByClass = Object.fromEntries(
+                    filterSet.filters.map((filter) => {
+                      const className = filter.key;
+                      const measuredHeight = Number(
+                        cardNaturalHeightByKey[getCardMeasureKey("omop", className)]
+                      );
+                      const normalizedMeasuredHeight =
+                        Number.isFinite(measuredHeight) && measuredHeight > 0
+                          ? measuredHeight
+                          : 0;
+                      measuredCardHeightByClass[className] = normalizedMeasuredHeight;
+                      const classChartData = classChartDataByClass[className] || [];
+                      const estimatedHeight = estimateCardHeight(
+                        Array.isArray(classChartData) ? classChartData.length : 0
+                      );
+                      return [
+                        className,
+                        normalizedMeasuredHeight > 0
+                          ? normalizedMeasuredHeight
+                          : estimatedHeight,
+                      ];
+                    })
+                  );
+                  const classNames = filterSet.filters.map((filter) => filter.key);
+                  const {
+                    tallestFilterBoxHeight,
+                    tallestMeasuredFilterBoxHeight,
+                    cardHeightOverrideByClass,
+                    cardMarginBottomByClass,
+                  } = buildTallestAlignedLayout(
+                    classNames,
+                    baseCardHeightByClass,
+                    measuredCardHeightByClass,
+                    NATURAL_STACK_GAP_PX,
+                    CARD_COLUMN_COUNT
+                  );
+                  const getResolvedCardHeight = (className) => {
+                    const baseHeight =
+                      baseCardHeightByClass[className] || estimateCardHeight(0);
+                    const overrideHeight = Number(cardHeightOverrideByClass[className]);
+                    if (Number.isFinite(overrideHeight) && overrideHeight > 0) {
+                      return Math.max(baseHeight, overrideHeight);
+                    }
+                    return baseHeight;
+                  };
+                  const cardEstimates = filterSet.filters.map((filter) =>
+                    getResolvedCardHeight(filter.key)
+                  );
+                  const tallestCard = Math.max(0, ...cardEstimates);
+                  const sectionTargetHeight =
+                    tallestMeasuredFilterBoxHeight > 0
+                      ? tallestMeasuredFilterBoxHeight
+                      : Math.max(tallestCard, tallestFilterBoxHeight);
+                  const sectionHeight = Math.min(
+                    CATEGORY_MAX_HEIGHT,
+                    sectionTargetHeight + CARD_BOTTOM_MARGIN
+                  );
 
                   return (
                     <Stack key={filterSet.id} spacing={1}>
@@ -3861,96 +3957,87 @@ function FiltersView() {
                       </Typography>
                       {cohortSize > 0 && sectionHasData ? (
                         <Typography variant="caption" color="text.secondary">
-                          Showing distributions for {cohortSize.toLocaleString()} matched patient
+                          Showing filter values for {cohortSize.toLocaleString()} matched patient
                           {cohortSize === 1 ? "" : "s"}
                         </Typography>
                       ) : null}
-                      <Box sx={filterGridSx}>
+                      <Box sx={getFilterGridSx(sectionHeight)}>
                         {filterSet.filters.map((filter, filterIndex) => {
                         const className = filter.key;
                         const classError = omopData.errorsByClass[className] || "";
-                        const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
-                        const classData =
-                          isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
-                            ? ageAtDxDecileChartData
-                            : chartDataByClass[className] || [];
-                        const classChartData = omopChartDataWithIncludedByClass[className] || classData;
+                        const classChartData = classChartDataByClass[className] || [];
                         const classDisplayName =
                           filter.displayName || getFilterDisplayName("omop", className);
                         const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
-                        const defaultSortMode = getFilterDefaultSortMode("omop", className);
-                        const customSortOrder = getFilterCustomSortOrder("omop", className);
-                        const sortMode = omopSortModeByClass[className] || defaultSortMode;
-                        const displayMode = resolveDisplayMode(filter, classChartData);
-                        const isCompactMode = displayMode === "compact";
                         const onSelectionChangeForClass = handleSelectionChange(
                           setSelectedOmopValuesByClass,
                           className
                         );
-
+                        const sortMode =
+                          omopSortModeByClass[className] || getFilterDefaultSortMode("omop", className);
+                        const customSortOrder = getFilterCustomSortOrder("omop", className);
+                        const selectedCount = selectedValuesForClass.length;
+                        const cardHeightOverride = cardHeightOverrideByClass[className];
+                        const cardMarginBottom = Math.max(
+                          0,
+                          Number(cardMarginBottomByClass[className]) || 0
+                        );
                         return (
                           <Paper
                             key={`${filterSet.id}:${className}`}
                             elevation={0}
-                            sx={getCardSx(filterIndex)}
+                            sx={{
+                              ...getCardSx(filterIndex),
+                              mb: { xs: 3, md: `${cardMarginBottom}px` },
+                            }}
                           >
                             <Box
-                              ref={
-                                isCompactMode
-                                  ? undefined
-                                  : setCardContentRef(omopCardContentRefs, `omop-${className}`)
-                              }
-                              sx={getCardContentAreaSx("omop", isCompactMode)}
+                              ref={setCardContentRef(omopCardContentRefs, `omop-${className}`)}
+                              sx={{
+                                ...getCardContentAreaSx("omop"),
+                                ...(Number.isFinite(cardHeightOverride)
+                                  ? { minHeight: `${Math.round(cardHeightOverride)}px` }
+                                  : {}),
+                              }}
                             >
-                              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
-                                <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
-                                  <Typography
-                                    component="h3"
-                                    variant="h6"
-                                    sx={getHeaderSx()}
-                                  >
-                                    {classDisplayName}
-                                  </Typography>
-                                </Box>
-                                {displayMode === "distribution" ? (
-                                  <DistributionStrip
-                                    data={classChartData}
-                                    sortMode={sortMode}
-                                    customSortOrder={customSortOrder}
-                                  />
-                                ) : null}
-                              </Box>
-                              {classError ? <Alert severity="error">{classError}</Alert> : null}
-                              {displayMode === "distribution" ? (
+                              <Box
+                                ref={setCardMeasureRef("omop", className)}
+                                sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                              >
+                                <Button
+                                  type="button"
+                                  variant={selectedCount > 0 ? "contained" : "outlined"}
+                                  onClick={() => handleOpenFilterModal("omop", className, classDisplayName)}
+                                  aria-label={`Open ${classDisplayName} filter`}
+                                  sx={{
+                                    justifyContent: "space-between",
+                                    textTransform: "none",
+                                    fontWeight: 700,
+                                    minHeight: 44,
+                                    px: 1.25,
+                                  }}
+                                >
+                                  <span>{classDisplayName}</span>
+                                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                                </Button>
+                                {classError ? <Alert severity="error">{classError}</Alert> : null}
                                 <HorizontalBarChart
+                                  key={`inline:omop:${className}:${sortMode}`}
                                   title={classDisplayName}
                                   showTitle={false}
                                   allowCollapse={false}
-                                  showSortDimensionToggle
+                                  showSortDimensionToggle={false}
                                   showSortCycleButton={false}
-                                  onSortModeChange={handleSortModeChange(
-                                    setOmopSortModeByClass,
-                                    className
-                                  )}
                                   data={classChartData}
                                   selectedValues={selectedValuesForClass}
                                   onSelectionChange={onSelectionChangeForClass}
                                   fontScale={fontScale}
-                                  height={getNormalizedChartHeight("omop")}
-                                  defaultSort={defaultSortMode}
+                                  defaultSort={sortMode}
                                   customSortOrder={customSortOrder}
                                   inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
                                   getPatientSummary={getPatientSummary}
                                 />
-                              ) : (
-                                <CompactFilterCard
-                                  data={classChartData}
-                                  selectedValues={selectedValuesForClass}
-                                  onSelectionChange={onSelectionChangeForClass}
-                                  sortMode={sortMode}
-                                  customSortOrder={customSortOrder}
-                                />
-                              )}
+                              </Box>
                             </Box>
                           </Paper>
                         );
@@ -3976,6 +4063,71 @@ function FiltersView() {
                       [];
                     return Array.isArray(classChartData) && classChartData.length > 0;
                   });
+                  const classChartDataByClass = {};
+                  filterSet.filters.forEach((filter) => {
+                    const className = filter.key;
+                    const classData = attributeDisplayChartDataByClass[className] || [];
+                    classChartDataByClass[className] =
+                      attributeChartDataWithIncludedByClass[className] || classData;
+                  });
+                  const measuredCardHeightByClass = {};
+                  const baseCardHeightByClass = Object.fromEntries(
+                    filterSet.filters.map((filter) => {
+                      const className = filter.key;
+                      const measuredHeight = Number(
+                        cardNaturalHeightByKey[getCardMeasureKey("attributes", className)]
+                      );
+                      const normalizedMeasuredHeight =
+                        Number.isFinite(measuredHeight) && measuredHeight > 0
+                          ? measuredHeight
+                          : 0;
+                      measuredCardHeightByClass[className] = normalizedMeasuredHeight;
+                      const classChartData = classChartDataByClass[className] || [];
+                      const estimatedHeight = estimateCardHeight(
+                        Array.isArray(classChartData) ? classChartData.length : 0
+                      );
+                      return [
+                        className,
+                        normalizedMeasuredHeight > 0
+                          ? normalizedMeasuredHeight
+                          : estimatedHeight,
+                      ];
+                    })
+                  );
+                  const classNames = filterSet.filters.map((filter) => filter.key);
+                  const {
+                    tallestFilterBoxHeight,
+                    tallestMeasuredFilterBoxHeight,
+                    cardHeightOverrideByClass,
+                    cardMarginBottomByClass,
+                  } = buildTallestAlignedLayout(
+                    classNames,
+                    baseCardHeightByClass,
+                    measuredCardHeightByClass,
+                    NATURAL_STACK_GAP_PX,
+                    CARD_COLUMN_COUNT
+                  );
+                  const getResolvedCardHeight = (className) => {
+                    const baseHeight =
+                      baseCardHeightByClass[className] || estimateCardHeight(0);
+                    const overrideHeight = Number(cardHeightOverrideByClass[className]);
+                    if (Number.isFinite(overrideHeight) && overrideHeight > 0) {
+                      return Math.max(baseHeight, overrideHeight);
+                    }
+                    return baseHeight;
+                  };
+                  const cardEstimates = filterSet.filters.map((filter) => {
+                    return getResolvedCardHeight(filter.key);
+                  });
+                  const tallestCard = Math.max(0, ...cardEstimates);
+                  const sectionTargetHeight =
+                    tallestMeasuredFilterBoxHeight > 0
+                      ? tallestMeasuredFilterBoxHeight
+                      : Math.max(tallestCard, tallestFilterBoxHeight);
+                  const sectionHeight = Math.min(
+                    CATEGORY_MAX_HEIGHT,
+                    sectionTargetHeight + CARD_BOTTOM_MARGIN
+                  );
 
                   return (
                     <Stack key={filterSet.id} spacing={1}>
@@ -3984,97 +4136,91 @@ function FiltersView() {
                       </Typography>
                       {cohortSize > 0 && sectionHasData ? (
                         <Typography variant="caption" color="text.secondary">
-                          Showing distributions for {cohortSize.toLocaleString()} matched patient
+                          Showing filter values for {cohortSize.toLocaleString()} matched patient
                           {cohortSize === 1 ? "" : "s"}
                         </Typography>
                       ) : null}
-                      <Box sx={filterGridSx}>
+                      <Box sx={getFilterGridSx(sectionHeight)}>
                         {filterSet.filters.map((filter, filterIndex) => {
                         const className = filter.key;
                         const classError = attributeData.errorsByClass[className] || "";
-                        const classData = attributeDisplayChartDataByClass[className] || [];
-                        const classChartData =
-                          attributeChartDataWithIncludedByClass[className] || classData;
+                        const classChartData = classChartDataByClass[className] || [];
                         const classDisplayName =
                           filter.displayName || getFilterDisplayName("attributes", className);
                         const selectedValuesForClass = selectedAttributeValuesByClass[className] || [];
-                        const defaultSortMode = getFilterDefaultSortMode("attributes", className);
-                        const customSortOrder = getFilterCustomSortOrder("attributes", className);
-                        const sortMode = attributeSortModeByClass[className] || defaultSortMode;
-                        const displayMode = resolveDisplayMode(filter, classChartData);
-                        const isCompactMode = displayMode === "compact";
                         const onSelectionChangeForClass = handleSelectionChange(
                           setSelectedAttributeValuesByClass,
                           className
                         );
-
+                        const sortMode =
+                          attributeSortModeByClass[className] ||
+                          getFilterDefaultSortMode("attributes", className);
+                        const customSortOrder = getFilterCustomSortOrder("attributes", className);
+                        const selectedCount = selectedValuesForClass.length;
+                        const cardHeightOverride = cardHeightOverrideByClass[className];
+                        const cardMarginBottom = Math.max(
+                          0,
+                          Number(cardMarginBottomByClass[className]) || 0
+                        );
                         return (
                           <Paper
                             key={`${filterSet.id}:${className}`}
                             elevation={0}
-                            sx={getCardSx(filterIndex)}
+                            sx={{
+                              ...getCardSx(filterIndex),
+                              mb: { xs: 3, md: `${cardMarginBottom}px` },
+                            }}
                           >
                             <Box
-                              ref={
-                                isCompactMode
-                                  ? undefined
-                                  : setCardContentRef(
-                                      attributeCardContentRefs,
-                                      `attribute-${className}`
-                                    )
-                              }
-                              sx={getCardContentAreaSx("attributes", isCompactMode)}
+                              ref={setCardContentRef(attributeCardContentRefs, `attribute-${className}`)}
+                              sx={{
+                                ...getCardContentAreaSx("attributes"),
+                                ...(Number.isFinite(cardHeightOverride)
+                                  ? { minHeight: `${Math.round(cardHeightOverride)}px` }
+                                  : {}),
+                              }}
                             >
-                              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, minWidth: 0 }}>
-                                <Box sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}>
-                                  <Typography
-                                    component="h3"
-                                    variant="h6"
-                                    sx={getHeaderSx()}
-                                  >
-                                    {classDisplayName}
-                                  </Typography>
-                                </Box>
-                                {displayMode === "distribution" ? (
-                                  <DistributionStrip
-                                    data={classChartData}
-                                    sortMode={sortMode}
-                                    customSortOrder={customSortOrder}
-                                  />
-                                ) : null}
-                              </Box>
-                              {classError ? <Alert severity="error">{classError}</Alert> : null}
-                              {displayMode === "distribution" ? (
+                              <Box
+                                ref={setCardMeasureRef("attributes", className)}
+                                sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                              >
+                                <Button
+                                  type="button"
+                                  variant={selectedCount > 0 ? "contained" : "outlined"}
+                                  onClick={() =>
+                                    handleOpenFilterModal("attributes", className, classDisplayName)
+                                  }
+                                  aria-label={`Open ${classDisplayName} filter`}
+                                  sx={{
+                                    justifyContent: "space-between",
+                                    textTransform: "none",
+                                    fontWeight: 700,
+                                    minHeight: 44,
+                                    px: 1.25,
+                                  }}
+                                >
+                                  <span>{classDisplayName}</span>
+                                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                                </Button>
+                                {classError ? <Alert severity="error">{classError}</Alert> : null}
                                 <HorizontalBarChart
+                                  key={`inline:attributes:${className}:${sortMode}`}
                                   title={classDisplayName}
                                   showTitle={false}
                                   allowCollapse={false}
-                                  showSortDimensionToggle
+                                  showSortDimensionToggle={false}
                                   showSortCycleButton={false}
-                                  onSortModeChange={handleSortModeChange(
-                                    setAttributeSortModeByClass,
-                                    className
-                                  )}
                                   data={classChartData}
                                   selectedValues={selectedValuesForClass}
                                   onSelectionChange={onSelectionChangeForClass}
                                   onRowToggleExpand={handleAttributeParentExpansionChange(className)}
                                   fontScale={fontScale}
-                                  height={getNormalizedChartHeight("attributes")}
-                                  defaultSort={defaultSortMode}
+                                  defaultSort={sortMode}
                                   customSortOrder={customSortOrder}
                                   inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
                                   getPatientSummary={getPatientSummary}
                                 />
-                              ) : (
-                                <CompactFilterCard
-                                  data={classChartData}
-                                  selectedValues={selectedValuesForClass}
-                                  onSelectionChange={onSelectionChangeForClass}
-                                  sortMode={sortMode}
-                                  customSortOrder={customSortOrder}
-                                />
-                              )}
+                              </Box>
                             </Box>
                           </Paper>
                         );
@@ -4091,6 +4237,120 @@ function FiltersView() {
             )}
           </Stack>
         ) : null}
+        <Dialog
+          open={Boolean(activeFilterDetail)}
+          onClose={handleCloseFilterModal}
+          fullWidth
+          maxWidth="md"
+          aria-labelledby="filter-modal-title"
+        >
+          <DialogTitle id="filter-modal-title">
+            {activeFilterDetail?.classDisplayName || "Filter details"}
+          </DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} alignItems="center">
+                <TextField
+                  label="Search values"
+                  placeholder="Type to filter labels"
+                  size="small"
+                  fullWidth
+                  value={activeFilterSearchQuery}
+                  onChange={(event) => setActiveFilterSearchQuery(event.target.value)}
+                  inputProps={{
+                    "aria-label": "Search filter values",
+                  }}
+                />
+                <FormControl size="small" sx={{ minWidth: 140 }}>
+                  <InputLabel id="filter-modal-sort-by-label">Sort by</InputLabel>
+                  <Select
+                    labelId="filter-modal-sort-by-label"
+                    value={activeFilterSortDimension}
+                    label="Sort by"
+                    onChange={handleModalSortDimensionChange}
+                  >
+                    <MenuItem value={FILTER_SORT_DIMENSION.COUNT}>Count</MenuItem>
+                    <MenuItem value={FILTER_SORT_DIMENSION.LABEL}>Label</MenuItem>
+                  </Select>
+                </FormControl>
+                <Tooltip
+                  title={
+                    activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC
+                      ? "Ascending"
+                      : "Descending"
+                  }
+                >
+                  <IconButton
+                    onClick={handleModalSortDirectionToggle}
+                    aria-label={
+                      activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC
+                        ? "Sort ascending"
+                        : "Sort descending"
+                    }
+                    sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}
+                  >
+                    {activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC ? (
+                      <ArrowUpwardIcon fontSize="small" />
+                    ) : (
+                      <ArrowDownwardIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              {activeFilterDetail?.classError ? (
+                <Alert severity="error">{activeFilterDetail.classError}</Alert>
+              ) : null}
+              {filteredModalChartData.length > 0 ? (
+                <HorizontalBarChart
+                  key={
+                    activeFilterDetail
+                      ? `modal:${activeFilterDetail.type}:${activeFilterDetail.className}:${activeFilterDetail.sortMode}`
+                      : "modal:chart"
+                  }
+                  title={activeFilterDetail?.classDisplayName || "Filter details"}
+                  showTitle={false}
+                  allowCollapse={false}
+                  showSortDimensionToggle={false}
+                  showSortCycleButton={false}
+                  data={filteredModalChartData}
+                  selectedValues={activeFilterDetail?.selectedValues || []}
+                  onSelectionChange={
+                    activeFilterDetail
+                      ? activeFilterDetail.type === "attributes"
+                        ? handleSelectionChange(
+                            setSelectedAttributeValuesByClass,
+                            activeFilterDetail.className
+                          )
+                        : handleSelectionChange(setSelectedOmopValuesByClass, activeFilterDetail.className)
+                      : undefined
+                  }
+                  onRowToggleExpand={
+                    activeFilterDetail?.type === "attributes"
+                      ? handleAttributeParentExpansionChange(activeFilterDetail.className)
+                      : undefined
+                  }
+                  fontScale={fontScale}
+                  fillContainer={false}
+                  defaultSort={activeFilterDetail?.sortMode || DEFAULT_CHART_SORT_MODE}
+                  customSortOrder={
+                    activeFilterDetail
+                      ? getFilterCustomSortOrder(activeFilterDetail.type, activeFilterDetail.className)
+                      : []
+                  }
+                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                  getPatientSummary={getPatientSummary}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No matching values.
+                </Typography>
+              )}
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseFilterModal}>Close</Button>
+          </DialogActions>
+        </Dialog>
           </Stack>
         </Box>
       </Box>

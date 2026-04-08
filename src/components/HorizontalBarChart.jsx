@@ -303,6 +303,7 @@ export default function HorizontalBarChart({
   onSortDimensionChange = NOOP,
   onSortModeChange,
   height,
+  fillContainer = false,
   fontScale = 1,
   defaultExpanded = true,
   defaultSort = DEFAULT_SORT_MODE,
@@ -547,8 +548,11 @@ export default function HorizontalBarChart({
     rowHeight + verticalPaddingTop + verticalPaddingBottom,
     sortedData.length * rowHeight + verticalPaddingTop + verticalPaddingBottom
   );
-  const viewportHeight =
-    typeof height === "number" && height > 0 ? height : Math.min(calculatedHeight, 420);
+  const viewportHeight = fillContainer
+    ? undefined
+    : typeof height === "number" && height > 0
+      ? height
+      : Math.min(calculatedHeight, 420);
 
   // Theme custom tokens
   const custom = theme.custom || {};
@@ -717,7 +721,19 @@ export default function HorizontalBarChart({
   };
 
   return (
-    <Box sx={{ width: "100%" }}>
+    <Box
+      sx={{
+        width: "100%",
+        ...(fillContainer
+          ? {
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+            }
+          : {}),
+      }}
+    >
       {shouldRenderHeaderRow ? (
         <Box
           sx={{
@@ -818,7 +834,14 @@ export default function HorizontalBarChart({
         sx={{
           width: "100%",
           mt: shouldRenderHeaderRow ? 1.25 : 0,
-          display: isChartExpanded ? "block" : "none",
+          display: isChartExpanded ? (fillContainer ? "flex" : "block") : "none",
+          ...(fillContainer
+            ? {
+                flex: 1,
+                minHeight: 0,
+                flexDirection: "column",
+              }
+            : {}),
         }}
       >
         {showColumnSortHeader ? (
@@ -959,11 +982,20 @@ export default function HorizontalBarChart({
             ref={chartContainerRef}
             sx={{
               width: "100%",
-              maxHeight: viewportHeight,
-              overflowY: "auto",
-              overflowX: "hidden",
               border: `1px solid ${theme.palette.divider}`,
               borderRadius: 1,
+              ...(fillContainer
+                ? {
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                  }
+                : {
+                    maxHeight: viewportHeight,
+                    overflowY: calculatedHeight > viewportHeight ? "auto" : "hidden",
+                    overflowX: "hidden",
+                  }),
             }}
           >
             <svg
@@ -1336,6 +1368,7 @@ HorizontalBarChart.propTypes = {
   onSortDimensionChange: PropTypes.func,
   onSortModeChange: PropTypes.func,
   height: PropTypes.number,
+  fillContainer: PropTypes.bool,
   fontScale: PropTypes.number,
   defaultExpanded: PropTypes.bool,
   defaultSort: PropTypes.oneOf(SORT_MODES),
