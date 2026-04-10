@@ -18,6 +18,7 @@
  * @typedef {Object} FilterSet
  * @property {string} id
  * @property {string} label
+ * @property {string} row
  * @property {FilterEntry[]} filters
  * @property {boolean} defaultExpanded
  * @property {boolean} display
@@ -63,6 +64,14 @@ function normalizeMaxHeightPx(value) {
   return Math.max(1, Math.round(numericValue));
 }
 
+function normalizeFilterSetRow(value, fallback) {
+  const normalized = String(value || "").trim();
+  if (normalized) {
+    return normalized;
+  }
+  return String(fallback || "").trim();
+}
+
 /**
  * @param {Partial<FilterEntry> & { key: string, type: FilterType }} filter
  * @returns {FilterEntry}
@@ -93,9 +102,11 @@ function normalizeFilterEntry(filter) {
  * @returns {FilterSet}
  */
 function normalizeFilterSet(filterSet) {
+  const normalizedId = String(filterSet.id || "").trim();
   return {
-    id: String(filterSet.id || "").trim(),
+    id: normalizedId,
     label: String(filterSet.label || "").trim(),
+    row: normalizeFilterSetRow(filterSet.row, normalizedId),
     defaultExpanded: filterSet.defaultExpanded !== false,
     display: filterSet.display !== false,
     filters: Array.isArray(filterSet.filters)
@@ -125,6 +136,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "demographics",
     label: "Demographics",
+    row: "cohort-overview",
     display: true,
     defaultExpanded: true,
     filters: [
@@ -142,6 +154,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "cancer-type",
     label: "Cancer Type",
+    row: "cohort-overview",
     display: true,
     defaultExpanded: true,
     filters: [{ key: "CANCER", type: "omop", displayName: "Cancer", displayMode: "compact" }],
@@ -442,6 +455,7 @@ export function resolveFilterSetsWithExtras(apiClasses, type) {
     resolvedSets.push({
       id: `uncategorized-${normalizedType}`,
       label: "Uncategorized",
+      row: `uncategorized-${normalizedType}`,
       display: true,
       defaultExpanded: true,
       filters: uncategorizedFilters,

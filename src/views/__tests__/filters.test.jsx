@@ -145,6 +145,11 @@ function findSectionContainerByHeading(container, headingText) {
   return sectionHeading?.parentElement || null;
 }
 
+function findFilterSetRowBySectionHeading(container, headingText) {
+  const sectionContainer = findSectionContainerByHeading(container, headingText);
+  return sectionContainer?.closest(".filter-set-row") || null;
+}
+
 function getRenderedFilterTitlesInSection(container, sectionHeadingText) {
   const sectionContainer = findSectionContainerByHeading(container, sectionHeadingText);
   if (!sectionContainer) {
@@ -175,6 +180,14 @@ function findPatientGridDrawer(container) {
 
 function findPatientGridDrawerToggle(container) {
   return container.querySelector('[data-testid="patient-grid-drawer-toggle"]');
+}
+
+function findFilterLayoutModeToggle(container) {
+  return container.querySelector('[data-testid="filter-layout-mode-toggle"]');
+}
+
+function findResetAllFiltersButton(container) {
+  return container.querySelector('[data-testid="reset-all-filters-button"]');
 }
 
 function getFilterTitleFromCardNode(cardNode) {
@@ -337,29 +350,35 @@ describe("FiltersView", () => {
     try {
       await waitFor(() => {
         expect(container.querySelectorAll(".filter-section-grid").length).toBeGreaterThan(1);
+        expect(findFilterLayoutModeToggle(container)).not.toBeNull();
       });
 
-      const sectionGrids = Array.from(container.querySelectorAll(".filter-section-grid"));
+      await clickAsync(findFilterLayoutModeToggle(container));
+
+      await waitFor(() => {
+        const sectionGrids = Array.from(container.querySelectorAll(".filter-section-grid"));
+        const filterSets = Array.from(container.querySelectorAll(".filter-set"));
+        expect(sectionGrids.every((node) => node.getAttribute("data-column-cap") === "3")).toBe(
+          true
+        );
+        expect(
+          sectionGrids.every((node) => node.getAttribute("data-section-height-cap") === "700")
+        ).toBe(true);
+        expect(filterSets.length).toBeGreaterThan(1);
+        expect(filterSets.length).toBe(sectionGrids.length);
+        expect(
+          filterSets.every((node) => node.getAttribute("data-section-height-cap") === "700")
+        ).toBe(true);
+        expect(
+          filterSets.every((filterSetNode) =>
+            Boolean(filterSetNode.querySelector(".filter-section-grid"))
+          )
+        ).toBe(true);
+        expect(
+          sectionGrids.every((sectionGridNode) => Boolean(sectionGridNode.closest(".filter-set")))
+        ).toBe(true);
+      });
       const filterSets = Array.from(container.querySelectorAll(".filter-set"));
-      expect(sectionGrids.every((node) => node.getAttribute("data-column-cap") === "3")).toBe(
-        true
-      );
-      expect(
-        sectionGrids.every((node) => node.getAttribute("data-section-height-cap") === "700")
-      ).toBe(true);
-      expect(filterSets.length).toBeGreaterThan(1);
-      expect(filterSets.length).toBe(sectionGrids.length);
-      expect(
-        filterSets.every((node) => node.getAttribute("data-section-height-cap") === "700")
-      ).toBe(true);
-      expect(
-        filterSets.every((filterSetNode) =>
-          Boolean(filterSetNode.querySelector(".filter-section-grid"))
-        )
-      ).toBe(true);
-      expect(
-        sectionGrids.every((sectionGridNode) => Boolean(sectionGridNode.closest(".filter-set")))
-      ).toBe(true);
       filterSets.forEach((filterSetNode) => {
         const sectionGrid = filterSetNode.querySelector(".filter-section-grid");
         expect(sectionGrid).not.toBeNull();
@@ -484,7 +503,7 @@ describe("FiltersView", () => {
     }
   });
 
-  it("keeps Age at Dx in the first Demographics column at cap 3", async () => {
+  it("keeps Age at Dx in the first Demographics column in one-card-per-column layout", async () => {
     const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -506,8 +525,8 @@ describe("FiltersView", () => {
       const columns = demographicsGrid.querySelectorAll(".filter-section-column");
       const firstColumn = columns[0];
 
-      expect(demographicsGrid.getAttribute("data-column-cap")).toBe("3");
-      expect(columns.length).toBe(3);
+      expect(demographicsGrid.getAttribute("data-column-cap")).toBe("4");
+      expect(columns.length).toBe(4);
       expect(firstColumn.querySelector('[aria-label="Open Age at Dx filter"]')).not.toBeNull();
     } finally {
       unmount();
@@ -516,6 +535,175 @@ describe("FiltersView", () => {
         writable: true,
         value: originalMatchMedia,
       });
+    }
+  });
+
+  it("renders demographics and cancer type in the same filter-set row", async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: createMinWidthMatchMedia(1920),
+    });
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findSectionContainerByHeading(container, "Demographics")).not.toBeNull();
+        expect(findSectionContainerByHeading(container, "Cancer Type")).not.toBeNull();
+      });
+
+      const demographicsRow = findFilterSetRowBySectionHeading(container, "Demographics");
+      const cancerTypeRow = findFilterSetRowBySectionHeading(container, "Cancer Type");
+
+      expect(demographicsRow).not.toBeNull();
+      expect(cancerTypeRow).toBe(demographicsRow);
+      expect(demographicsRow?.getAttribute("data-filter-set-row")).toBe("cohort-overview");
+    } finally {
+      unmount();
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
+  it("toggles between stacked layout and one-card-per-column layout", async () => {
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: createMinWidthMatchMedia(1280),
+    });
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        const demographicsSection = findSectionContainerByHeading(container, "Demographics");
+        expect(demographicsSection).not.toBeNull();
+        expect(demographicsSection.querySelector(".filter-section-grid")).not.toBeNull();
+        expect(findFilterLayoutModeToggle(container)).not.toBeNull();
+      });
+
+      const demographicsSection = findSectionContainerByHeading(container, "Demographics");
+      const demographicsGrid = demographicsSection.querySelector(".filter-section-grid");
+      const toggle = findFilterLayoutModeToggle(container);
+      const resetButton = findResetAllFiltersButton(container);
+      const pageHeading = container.querySelector('[data-testid="filters-page-heading"]');
+      expect(toggle?.closest('[data-testid="identified-patients-panel"]')).not.toBeNull();
+      expect(resetButton?.closest('[data-testid="identified-patients-panel"]')).not.toBeNull();
+      expect(pageHeading?.closest('[data-testid="identified-patients-panel"]')).not.toBeNull();
+      expect(pageHeading?.tagName).toBe("H1");
+
+      expect(demographicsGrid.getAttribute("data-column-cap")).toBe("4");
+      expect(demographicsGrid.querySelectorAll(".filter-section-column").length).toBe(4);
+      expect(toggle?.getAttribute("aria-label")).toBe("Switch to stacked layout");
+      expect(resetButton?.disabled).toBe(true);
+
+      await clickAsync(toggle);
+
+      await waitFor(() => {
+        expect(demographicsGrid.getAttribute("data-column-cap")).toBe("6");
+        expect(demographicsGrid.querySelectorAll(".filter-section-column").length).toBe(4);
+      });
+      expect(toggle?.getAttribute("aria-label")).toBe("Switch to one-card-per-column layout");
+    } finally {
+      unmount();
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
+  it("hides the accessibility button from the filter toolbar", async () => {
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
+      });
+
+      const accessibilityAction = Array.from(container.querySelectorAll("a, button")).find((node) => {
+        const label = String(node.getAttribute("aria-label") || "").toLowerCase();
+        const text = String(node.textContent || "").toLowerCase();
+        return label.includes("accessibility") || text.includes("accessibility");
+      });
+      expect(accessibilityAction).toBeUndefined();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("resets all filter state from the header options bar", async () => {
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await selectFilterValue("Gender", "Female");
+
+      await waitFor(() => {
+        const genderFilterButton = findOpenFilterButton("Gender");
+        const resetButton = findResetAllFiltersButton(container);
+        expect(genderFilterButton).not.toBeUndefined();
+        expect(String(genderFilterButton?.textContent || "")).toContain("1 selected");
+        expect(resetButton).not.toBeNull();
+        expect(resetButton?.disabled).toBe(false);
+      });
+
+      await clickAsync(findResetAllFiltersButton(container));
+
+      await waitFor(() => {
+        const genderFilterButton = findOpenFilterButton("Gender");
+        const identifiedPanel = findIdentifiedPatientsPanel(container);
+        const patientGridDrawer = findPatientGridDrawer(container);
+        const resetButton = findResetAllFiltersButton(container);
+
+        expect(String(genderFilterButton?.textContent || "")).toContain("Details");
+        expect(String(identifiedPanel?.textContent || "")).not.toContain("Gender (Female)");
+        expect(patientGridDrawer).toBeNull();
+        expect(resetButton?.disabled).toBe(true);
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("renders inline filter charts in fill-container mode and keeps modal charts fixed-height", async () => {
+    const { unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findOpenFilterButton("N Stage")).not.toBeUndefined();
+      });
+
+      await waitFor(() => {
+        const inlineChartCalls = mockHorizontalBarFilter.mock.calls
+          .map(([props]) => props)
+          .filter((props) =>
+            String(props?.className || "").split(/\s+/).includes("filter-card-chart")
+          );
+        expect(inlineChartCalls.length).toBeGreaterThan(0);
+        expect(inlineChartCalls.every((props) => props?.fillContainer === true)).toBe(true);
+      });
+
+      await clickAsync(findOpenFilterButton("N Stage"));
+
+      await waitFor(() => {
+        const modalCall = [...mockHorizontalBarFilter.mock.calls]
+          .reverse()
+          .map(([props]) => props)
+          .find((props) =>
+            String(props?.className || "").split(/\s+/).includes("filter-modal-chart")
+          );
+        expect(modalCall).toBeDefined();
+        expect(modalCall?.fillContainer).toBe(false);
+      });
+    } finally {
+      unmount();
     }
   });
 
@@ -728,11 +916,6 @@ describe("FiltersView", () => {
       await waitFor(() => {
         expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
       });
-      await waitFor(() => {
-        expect(container.querySelectorAll(".filter-card[data-card-height-override]").length).toBeGreaterThan(
-          0
-        );
-      });
 
       const expectedCardHeightCapByTitle = getConfiguredCardHeightCapByTitle(CATEGORY_MAX_HEIGHT);
       const cards = Array.from(container.querySelectorAll(".filter-card"));
@@ -853,11 +1036,6 @@ describe("FiltersView", () => {
         expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
         expect(findOpenFilterButton("Stage")).not.toBeUndefined();
       });
-      await waitFor(() => {
-        const ageCard = findFilterCardByTitle("Age at Dx");
-        expect(ageCard).not.toBeNull();
-        expect(Number(ageCard.getAttribute("data-card-height-override"))).toBeGreaterThan(0);
-      });
 
         const checkedSectionLabels = [];
         const skippedSectionLabels = [];
@@ -882,6 +1060,13 @@ describe("FiltersView", () => {
           soloColumnSectionLabels.push(sectionLabel);
           return;
         }
+        const hasStackedColumn = columns.some(
+          (columnNode) => columnNode.querySelectorAll(".filter-card").length > 1
+        );
+        if (!hasStackedColumn) {
+          skippedSectionLabels.push(sectionLabel);
+          return;
+        }
 
         const columnHeights = columns.map((columnNode) => {
           const cards = Array.from(columnNode.querySelectorAll(".filter-card"));
@@ -903,8 +1088,7 @@ describe("FiltersView", () => {
         }
       });
 
-      expect(checkedSectionLabels).toEqual(expect.arrayContaining(["Demographics"]));
-      expect(skippedSectionLabels).toEqual(expect.arrayContaining(["Staging"]));
+      expect(skippedSectionLabels).toEqual(expect.arrayContaining(["Demographics", "Staging"]));
       expect(soloColumnSectionLabels).toContain("Cancer Type");
     } finally {
       unmount();
@@ -1271,6 +1455,16 @@ describe("FiltersView", () => {
           'input[placeholder="Search patient details..."]'
         );
         expect(searchInput).not.toBeNull();
+        expect(searchInput?.getAttribute("aria-label")).toBe("Search patient details");
+
+        const patientGridHeading = patientGridDrawer.querySelector("h2");
+        expect(String(patientGridHeading?.textContent || "")).toContain("Selected Patients");
+
+        const headerCells = Array.from(patientGridDrawer.querySelectorAll("thead th"));
+        expect(headerCells.length).toBeGreaterThan(0);
+        expect(
+          headerCells.every((headerCell) => String(headerCell.textContent || "").trim().length > 0)
+        ).toBe(true);
 
         const panelText = String(identifiedPanel.textContent || "").replace(/\s+/g, " ");
         expect(panelText).not.toContain("Showing page 1 of 2");

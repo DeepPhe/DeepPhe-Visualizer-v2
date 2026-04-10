@@ -17,10 +17,10 @@ describe("filterSets", () => {
 
     expect(getOrderedClassesByType("attributes")).toEqual([
       "Stage",
+      "Lymph Involvement",
       "T Stage",
       "N Stage",
       "M Stage",
-      "Lymph Involvement",
       "Grade_Numeric",
       "Grade_Differentiated",
       "Grade_Tiered",
@@ -93,5 +93,14 @@ describe("filterSets", () => {
     expect(
       attributeSets.every((set) => set.filters.every((filter) => filter.type === "attributes"))
     ).toBe(true);
+  });
+
+  it("preserves configured row grouping metadata", () => {
+    const omopSets = getFilterSetsForType("omop");
+    const demographicsSet = omopSets.find((set) => set.id === "demographics");
+    const cancerTypeSet = omopSets.find((set) => set.id === "cancer-type");
+
+    expect(demographicsSet?.row).toBe("cohort-overview");
+    expect(cancerTypeSet?.row).toBe("cohort-overview");
   });
 });

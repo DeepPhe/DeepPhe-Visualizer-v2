@@ -40,6 +40,7 @@ import {
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
+import { visuallyHidden } from "@mui/utils";
 import PropTypes from "prop-types";
 
 const DETAIL_SECTION_DEFINITIONS = [
@@ -203,7 +204,11 @@ function createColumns({ onToggleRow }) {
   return [
     {
       id: "expand",
-      header: "",
+      header: () => (
+        <Box component="span" sx={visuallyHidden}>
+          Row details
+        </Box>
+      ),
       size: 40,
       meta: { exportable: false },
       enableSorting: false,
@@ -811,7 +816,7 @@ export default function PatientGrid({
         {showToolbarTitle || showToolbarSubtitle ? (
           <Stack spacing={0.25} sx={{ minWidth: 0, flex: "1 1 260px" }}>
             {showToolbarTitle ? (
-              <Typography variant={embedded ? "subtitle1" : "h6"} sx={{ fontWeight: 700 }}>
+              <Typography component="h2" variant={embedded ? "subtitle1" : "h6"} sx={{ fontWeight: 700 }}>
                 {title}
                 {!embedded ? (
                   <Typography component="span" variant="body2" sx={{ ml: 1, color: "text.secondary" }}>
@@ -842,6 +847,7 @@ export default function PatientGrid({
             placeholder="Search patient details..."
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
+            inputProps={{ "aria-label": "Search patient details" }}
             sx={{ width: { xs: "100%", sm: 290 } }}
             InputProps={{
               startAdornment: (

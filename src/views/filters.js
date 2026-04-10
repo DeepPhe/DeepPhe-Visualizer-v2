@@ -34,7 +34,7 @@ import AddIcon from "@mui/icons-material/Add";
 import ContrastIcon from "@mui/icons-material/Contrast";
 import MotionPhotosOffIcon from "@mui/icons-material/MotionPhotosOff";
 import RemoveIcon from "@mui/icons-material/Remove";
-import TuneIcon from "@mui/icons-material/Tune";
+import ViewColumnIcon from "@mui/icons-material/ViewColumn";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -50,7 +50,6 @@ import {
 } from "../clients/deepphe-data-api";
 import HorizontalBarFilter from "../components/HorizontalBarFilter";
 import PatientGrid from "../components/PatientGrid";
-import AccessibilityBadge from "../components/AccessibilityBadge";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
 import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
 import { getAgeDecileLabel } from "../utils/dataProcessing";
@@ -83,19 +82,17 @@ const OMOP_CLASS_DISPLAY_NAME_MAP = {
   RACE: "Race",
   CANCER: "Cancer",
 };
-const CARD_HEIGHT_MODE = {
-  NORMALIZE: "normalize",
-  FIT: "fit",
+const FILTER_LAYOUT_MODE = {
+  STACKED: "stacked",
+  PER_CARD_COLUMN: "per-card-column",
 };
 const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   xs: 1,
   sm: 2,
   md: 3,
-  lg: 3,
-  xl: 3,
+  lg: 6,
+  xl: 6,
 });
-const NORMALIZED_CARD_MIN_HEIGHT = 180;
-const NORMALIZED_CARD_MAX_HEIGHT = 320;
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
 const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
@@ -202,6 +199,26 @@ function resolveResponsiveColumnCap(
     return smCap;
   }
   return xsCap;
+}
+
+function groupFilterSetsByRow(filterSets = []) {
+  const normalizedSets = Array.isArray(filterSets) ? filterSets : [];
+  const rowGroups = [];
+  let activeRowGroup = null;
+
+  normalizedSets.forEach((filterSet, index) => {
+    const fallbackRow = String(filterSet?.id || `row-${index}`).trim() || `row-${index}`;
+    const rowId = String(filterSet?.row || "").trim() || fallbackRow;
+
+    if (!activeRowGroup || activeRowGroup.id !== rowId) {
+      activeRowGroup = { id: rowId, filterSets: [] };
+      rowGroups.push(activeRowGroup);
+    }
+
+    activeRowGroup.filterSets.push(filterSet);
+  });
+
+  return rowGroups;
 }
 
 function getColumnCapMaxWidthPx(columnCap, columnWidthPx, columnGapPx) {
@@ -2485,14 +2502,9 @@ function FiltersView() {
   const [patientGridPageError, setPatientGridPageError] = useState("");
   const [patientGridPageRetryToken, setPatientGridPageRetryToken] = useState(0);
   const [isPatientGridDockExpanded, setIsPatientGridDockExpanded] = useState(true);
-  const [cardHeightMode, setCardHeightMode] = useState(CARD_HEIGHT_MODE.FIT);
-  const [normalizedCardHeights, setNormalizedCardHeights] = useState({
-    omop: null,
-    attributes: null,
-  });
+  const [filterLayoutMode, setFilterLayoutMode] = useState(FILTER_LAYOUT_MODE.PER_CARD_COLUMN);
+  const isPerCardColumnLayout = filterLayoutMode === FILTER_LAYOUT_MODE.PER_CARD_COLUMN;
   const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
-  const omopCardContentRefs = useRef({});
-  const attributeCardContentRefs = useRef({});
   const cardMeasureRefs = useRef({});
   const patientSummaryCacheRef = useRef(new Map());
 
@@ -2561,6 +2573,11 @@ function FiltersView() {
         (filterSet) => filterSet.display !== false
       ),
     [attributeData.classes]
+  );
+  const omopFilterSetRows = useMemo(() => groupFilterSetsByRow(omopFilterSets), [omopFilterSets]);
+  const attributeFilterSetRows = useMemo(
+    () => groupFilterSetsByRow(attributeFilterSets),
+    [attributeFilterSets]
   );
   const orderedOmopClasses = useMemo(
     () => omopFilterSets.flatMap((filterSet) => filterSet.filters.map((filter) => filter.key)),
@@ -2717,7 +2734,6 @@ function FiltersView() {
   const isAttributeLoading = attributeData.isLoading;
   const rootError = omopData.errorMessage;
   const attributeRootError = attributeData.errorMessage;
-  const isNormalizedHeightMode = cardHeightMode === CARD_HEIGHT_MODE.NORMALIZE;
   const activeFilters = useMemo(
     () =>
       buildActiveFilters({
@@ -3010,13 +3026,6 @@ function FiltersView() {
     });
   }, [orderedAttributeFilterClasses]);
 
-  const setCardContentRef = (refs, key) => (node) => {
-    if (node) {
-      refs.current[key] = node;
-      return;
-    }
-    delete refs.current[key];
-  };
   const getCardMeasureKey = (type, className) => `${type}:${className}`;
   const setCardMeasureRef = (type, className) => (node) => {
     const key = getCardMeasureKey(type, className);
@@ -3035,6 +3044,51 @@ function FiltersView() {
 
     const nextHeights = {};
     entries.forEach(([key, node]) => {
+      if (isPerCardColumnLayout) {
+        const contentNode = node?.querySelector?.(".filter-card-content");
+        const contentScrollHeight = Number(contentNode?.scrollHeight);
+        const chartViewportNode = node?.querySelector?.(
+          ".horizontal-bar-filter-chart-viewport"
+        );
+        const chartViewportClientHeight = Number(chartViewportNode?.clientHeight);
+        const chartSvgNode = node?.querySelector?.(".horizontal-bar-filter-svg");
+        const chartSvgHeight = Number(chartSvgNode?.getAttribute?.("height"));
+        const computedStyles =
+          typeof window !== "undefined" ? window.getComputedStyle(node) : null;
+        const chartHeightCapValue = String(
+          computedStyles?.getPropertyValue?.("--filter-card-chart-height-cap") || ""
+        ).trim();
+        const chartHeightCapPx = Number.parseFloat(chartHeightCapValue);
+        const targetViewportHeight =
+          Number.isFinite(chartSvgHeight) && chartSvgHeight > 0
+            ? Number.isFinite(chartHeightCapPx) && chartHeightCapPx > 0
+              ? Math.min(chartSvgHeight, chartHeightCapPx)
+              : chartSvgHeight
+            : 0;
+        const chartHiddenOverflowHeight =
+          Number.isFinite(targetViewportHeight) &&
+          targetViewportHeight > 0 &&
+          Number.isFinite(chartViewportClientHeight) &&
+          chartViewportClientHeight > 0
+            ? Math.max(0, targetViewportHeight - chartViewportClientHeight)
+            : 0;
+        const adjustedContentHeight =
+          Number.isFinite(contentScrollHeight) && contentScrollHeight > 0
+            ? contentScrollHeight + chartHiddenOverflowHeight
+            : 0;
+        const cardHeightCap = Number(node?.getAttribute?.("data-card-height-cap"));
+        const boundedContentHeight =
+          Number.isFinite(adjustedContentHeight) && adjustedContentHeight > 0
+            ? Number.isFinite(cardHeightCap) && cardHeightCap > 0
+              ? Math.min(adjustedContentHeight, cardHeightCap)
+              : adjustedContentHeight
+            : 0;
+        if (boundedContentHeight > 0) {
+          nextHeights[key] = boundedContentHeight;
+          return;
+        }
+      }
+
       if (node?.hasAttribute?.("data-card-height-override")) {
         const previousHeight = Number(cardNaturalHeightByKey[key]);
         if (Number.isFinite(previousHeight) && previousHeight > 0) {
@@ -3076,111 +3130,8 @@ function FiltersView() {
     attributeFilterSets,
     cardNaturalHeightByKey,
     chartDataByClass,
+    isPerCardColumnLayout,
     omopFilterSets,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!isNormalizedHeightMode) {
-      setNormalizedCardHeights({ omop: null, attributes: null });
-      return undefined;
-    }
-
-    let frameId = 0;
-
-    const getAverageSectionHeight = (nodes) => {
-      const heights = nodes
-        .map((node) => Number(node.scrollHeight))
-        .filter((height) => Number.isFinite(height) && height > 0);
-
-      if (heights.length === 0) {
-        return null;
-      }
-
-      const averageHeight = Math.round(
-        heights.reduce((sum, height) => sum + height, 0) / heights.length
-      );
-      return Math.max(
-        NORMALIZED_CARD_MIN_HEIGHT,
-        Math.min(NORMALIZED_CARD_MAX_HEIGHT, averageHeight)
-      );
-    };
-
-    const runMeasure = () => {
-      const omopNodes = Object.values(omopCardContentRefs.current).filter(Boolean);
-      const attributeNodes = Object.values(attributeCardContentRefs.current).filter(Boolean);
-
-      const nextOmopHeight = getAverageSectionHeight(omopNodes);
-      const nextAttributeHeight = getAverageSectionHeight(attributeNodes);
-
-      setNormalizedCardHeights((previousHeights) => {
-        if (
-          previousHeights.omop === nextOmopHeight &&
-          previousHeights.attributes === nextAttributeHeight
-        ) {
-          return previousHeights;
-        }
-
-        return {
-          omop: nextOmopHeight,
-          attributes: nextAttributeHeight,
-        };
-      });
-    };
-
-    const scheduleMeasure = () => {
-      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-        if (frameId) {
-          window.cancelAnimationFrame(frameId);
-        }
-        frameId = window.requestAnimationFrame(runMeasure);
-        return;
-      }
-      runMeasure();
-    };
-
-    scheduleMeasure();
-
-    const observerNodes = [
-      ...Object.values(omopCardContentRefs.current),
-      ...Object.values(attributeCardContentRefs.current),
-    ].filter(Boolean);
-
-    if (typeof ResizeObserver !== "undefined") {
-      const resizeObserver = new ResizeObserver(() => {
-        scheduleMeasure();
-      });
-
-      observerNodes.forEach((node) => resizeObserver.observe(node));
-
-      return () => {
-        if (frameId && typeof window !== "undefined" && typeof window.cancelAnimationFrame === "function") {
-          window.cancelAnimationFrame(frameId);
-        }
-        resizeObserver.disconnect();
-      };
-    }
-
-    if (typeof window !== "undefined") {
-      window.addEventListener("resize", scheduleMeasure);
-      return () => {
-        if (frameId && typeof window.cancelAnimationFrame === "function") {
-          window.cancelAnimationFrame(frameId);
-        }
-        window.removeEventListener("resize", scheduleMeasure);
-      };
-    }
-
-    return undefined;
-  }, [
-    attributeDisplayChartDataByClass,
-    attributeRootError,
-    chartDataByClass,
-    isAttributeLoading,
-    isLoading,
-    isNormalizedHeightMode,
-    orderedAttributeFilterClasses,
-    orderedOmopClasses,
-    rootError,
   ]);
 
   useEffect(() => {
@@ -3752,18 +3703,75 @@ function FiltersView() {
     const nextSortMode = toSortMode(activeFilterSortDimension, nextDirection);
     setFilterSortMode(activeFilterDetail.type, activeFilterDetail.className, nextSortMode);
   }, [activeFilterDetail, activeFilterSortDimension, activeFilterSortDirection, setFilterSortMode]);
-  const toggleCardHeightMode = () => {
-    setCardHeightMode((previousMode) =>
-      previousMode === CARD_HEIGHT_MODE.NORMALIZE ? CARD_HEIGHT_MODE.FIT : CARD_HEIGHT_MODE.NORMALIZE
+  const handleResetAllFilters = useCallback(() => {
+    setSelectedOmopValuesByClass(syncSelectionByClass({}, orderedOmopClasses));
+    setSelectedAttributeValuesByClass(syncSelectionByClass({}, orderedAttributeFilterClasses));
+    setExpandedParentsByClass(
+      syncExpandedParentsByClass({}, orderedAttributeFilterClasses, rolledUpChartDataByClass)
+    );
+
+    const nextOmopSortModes = {};
+    orderedOmopClasses.forEach((className) => {
+      nextOmopSortModes[className] = getFilterDefaultSortMode("omop", className);
+    });
+    setOmopSortModeByClass(nextOmopSortModes);
+
+    const nextAttributeSortModes = {};
+    orderedAttributeFilterClasses.forEach((className) => {
+      nextAttributeSortModes[className] = getFilterDefaultSortMode("attributes", className);
+    });
+    setAttributeSortModeByClass(nextAttributeSortModes);
+
+    setActiveFilterModal(null);
+    setActiveFilterSearchQuery("");
+  }, [orderedAttributeFilterClasses, orderedOmopClasses, rolledUpChartDataByClass]);
+  const toggleFilterLayoutMode = () => {
+    setFilterLayoutMode((previousMode) =>
+      previousMode === FILTER_LAYOUT_MODE.PER_CARD_COLUMN
+        ? FILTER_LAYOUT_MODE.STACKED
+        : FILTER_LAYOUT_MODE.PER_CARD_COLUMN
     );
   };
-  const cardHeightToggleTooltip = isNormalizedHeightMode
-    ? "Switch to fit content heights"
-    : "Switch to normalized row heights";
+  const filterLayoutToggleTooltip = isPerCardColumnLayout
+    ? "Switch to stacked layout"
+    : "Switch to one-card-per-column layout";
+  const hasExpandedParentFilters = useMemo(
+    () =>
+      Object.values(expandedParentsByClass).some(
+        (parentValues) => Array.isArray(parentValues) && parentValues.length > 0
+      ),
+    [expandedParentsByClass]
+  );
+  const hasNonDefaultOmopSortMode = useMemo(
+    () =>
+      orderedOmopClasses.some(
+        (className) =>
+          normalizeChartSortMode(omopSortModeByClass[className]) !==
+          getFilterDefaultSortMode("omop", className)
+      ),
+    [omopSortModeByClass, orderedOmopClasses]
+  );
+  const hasNonDefaultAttributeSortMode = useMemo(
+    () =>
+      orderedAttributeFilterClasses.some(
+        (className) =>
+          normalizeChartSortMode(attributeSortModeByClass[className]) !==
+          getFilterDefaultSortMode("attributes", className)
+      ),
+    [attributeSortModeByClass, orderedAttributeFilterClasses]
+  );
+  const canResetAllFilters =
+    hasSelections ||
+    hasExpandedParentFilters ||
+    hasNonDefaultOmopSortMode ||
+    hasNonDefaultAttributeSortMode ||
+    Boolean(activeFilterModal) ||
+    Boolean(String(activeFilterSearchQuery || "").trim());
   const CARD_COLUMN_WIDTH = 350;
   const CARD_COLUMN_GAP_PX = 24;
   const FILTER_SECTION_HEIGHT_CAP_PX = 700;
   const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
+  const PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX = 340;
   const ROW_HEIGHT_ESTIMATE = 36;
   const CARD_OVERHEAD_ESTIMATE = 120;
   const NATURAL_STACK_GAP_PX = 24;
@@ -3777,7 +3785,13 @@ function FiltersView() {
   };
   const resolveCardChartHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-    return Math.max(220, resolvedSectionHeightCapPx - FILTER_CARD_CHART_HEIGHT_OFFSET_PX);
+    const naturalChartCapPx = Math.max(
+      220,
+      resolvedSectionHeightCapPx - FILTER_CARD_CHART_HEIGHT_OFFSET_PX
+    );
+    return isPerCardColumnLayout
+      ? Math.min(naturalChartCapPx, PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX)
+      : naturalChartCapPx;
   };
   const toSectionHeightPx = (
     sectionHeight,
@@ -3802,41 +3816,44 @@ function FiltersView() {
       },
     };
   };
-  const getCardContentAreaSx = (
-    sectionKey,
-    isCompactCard = false,
-    stretch = false,
-    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
-  ) => {
-    const sectionHeight = normalizedCardHeights[sectionKey];
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-    const normalizedHeightPx =
-      isNormalizedHeightMode && Number.isFinite(sectionHeight)
-        ? Math.min(Math.round(sectionHeight), resolvedSectionHeightCapPx)
-        : null;
-
     return {
       display: "flex",
       flexDirection: "column",
       gap: 0,
       minHeight: 0,
-      height:
-        isCompactCard || stretch
-          ? "auto"
-          : Number.isFinite(normalizedHeightPx)
-            ? `${normalizedHeightPx}px`
-            : "auto",
+      height: "100%",
       maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
       overflowY: "hidden",
       overflowX: "hidden",
       pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
       "& .filter-card-chart": {
         flex: 1,
         minHeight: 0,
         maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
           resolvedSectionHeightCapPx
         )}px)`,
-        overflowY: "auto",
+        overflowY: "hidden",
         overflowX: "hidden",
       },
       "& .filter-card-chart .horizontal-bar-filter-chart-region": {
@@ -3852,6 +3869,9 @@ function FiltersView() {
   const buildSectionLayout = (type, filters, classChartDataByClass) => {
     const sectionHeightCap = resolveSectionHeightCapPx();
     const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
     const measuredCardHeightByClass = Object.fromEntries(
       classNames.map((className) => [
         className,
@@ -3865,18 +3885,43 @@ function FiltersView() {
       })
     );
 
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
     return {
-      ...buildFilterSectionLayout({
-        classNames,
-        rowCountByClass,
-        measuredCardHeightByClass,
-        naturalGapPx: NATURAL_STACK_GAP_PX,
-        maxColumns: resolvedSectionColumnCap,
-        categoryMaxHeight: sectionHeightCap,
-        cardBottomMargin: CARD_BOTTOM_MARGIN,
-        rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
-        cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
-      }),
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
       sectionHeightCap,
     };
   };
@@ -3884,74 +3929,77 @@ function FiltersView() {
     sectionHeight,
     columnCapByBreakpoint,
     sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
-  ) => ({
-    "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
-    "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
-    "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
-    width: "100%",
-    maxWidth: {
-      xs: `${getColumnCapMaxWidthPx(
-        columnCapByBreakpoint?.xs,
-        CARD_COLUMN_WIDTH,
-        CARD_COLUMN_GAP_PX
-      )}px`,
-      sm: `${getColumnCapMaxWidthPx(
-        columnCapByBreakpoint?.sm,
-        CARD_COLUMN_WIDTH,
-        CARD_COLUMN_GAP_PX
-      )}px`,
-      md: `${getColumnCapMaxWidthPx(
-        columnCapByBreakpoint?.md,
-        CARD_COLUMN_WIDTH,
-        CARD_COLUMN_GAP_PX
-      )}px`,
-      lg: `${getColumnCapMaxWidthPx(
-        columnCapByBreakpoint?.lg,
-        CARD_COLUMN_WIDTH,
-        CARD_COLUMN_GAP_PX
-      )}px`,
-      xl: `${getColumnCapMaxWidthPx(
-        columnCapByBreakpoint?.xl,
-        CARD_COLUMN_WIDTH,
-        CARD_COLUMN_GAP_PX
-      )}px`,
-    },
-    display: "flex",
-    alignItems: "stretch",
-    gap: 3,
-    flexWrap: "wrap",
-    minHeight: {
-      xs: "auto",
-      md: "var(--filter-section-height)",
-    },
-    maxHeight: {
-      xs: "none",
-      md: "var(--filter-section-height-cap)",
-    },
-    overflowY: {
-      xs: "visible",
-      md: "auto",
-    },
-    overflowX: "hidden",
-    "& > .filter-section-column": {
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
       display: "flex",
-      flexDirection: "column",
-      alignSelf: "stretch",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
       minHeight: {
         xs: "auto",
-        md: "var(--filter-section-height)",
-      },
-      height: {
-        xs: "auto",
-        md: "var(--filter-section-height)",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
       },
       maxHeight: {
         xs: "none",
         md: "var(--filter-section-height-cap)",
       },
-      overflow: "hidden",
-    },
-  });
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
   const getFilterSectionColumnSx = () => ({
     flex: { xs: "1 1 100%", sm: `0 0 ${CARD_COLUMN_WIDTH}px` },
     maxWidth: { xs: "100%", sm: `${CARD_COLUMN_WIDTH}px` },
@@ -4023,14 +4071,6 @@ function FiltersView() {
       >
         <Box component="main" aria-labelledby="filters-page-title">
           <Stack spacing={2} sx={{ pb: patientGridDrawerBottomPadding }}>
-            <Typography
-              id="filters-page-title"
-              component="h1"
-              variant="h5"
-              sx={{ fontWeight: 800, color: "text.primary" }}
-            >
-              Patient Cohort Explorer
-            </Typography>
         <Box
           sx={{
             position: "sticky",
@@ -4066,7 +4106,7 @@ function FiltersView() {
                       display: "flex",
                       alignItems: "center",
                       gap: 1.25,
-                      flexWrap: "nowrap",
+                      flexWrap: "wrap",
                       minWidth: 0,
                       flex: "1 1 260px",
                     }}
@@ -4093,6 +4133,15 @@ function FiltersView() {
                         </Typography>
                       </MuiLink>
                     </Box>
+                    <Typography
+                      id="filters-page-title"
+                      component="h1"
+                      variant="subtitle1"
+                      data-testid="filters-page-heading"
+                      sx={{ fontWeight: 800, color: "text.primary", lineHeight: 1.2 }}
+                    >
+                      Patient Cohort Explorer
+                    </Typography>
                   </Box>
                   {countResult ? (
                     <Box
@@ -4116,7 +4165,6 @@ function FiltersView() {
                       maxWidth: "100%",
                     }}
                   >
-                    <AccessibilityBadge label="Accessibility" />
                     <Box
                       role="group"
                       aria-label="Font size"
@@ -4189,6 +4237,36 @@ function FiltersView() {
                         <MotionPhotosOffIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleResetAllFilters}
+                      data-testid="reset-all-filters-button"
+                      disabled={!canResetAllFilters}
+                      sx={{
+                        height: 32,
+                        textTransform: "none",
+                        whiteSpace: "nowrap",
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      Reset filters
+                    </Button>
+                    <Tooltip title={filterLayoutToggleTooltip}>
+                      <IconButton
+                        size="small"
+                        aria-label={filterLayoutToggleTooltip}
+                        data-testid="filter-layout-mode-toggle"
+                        onClick={toggleFilterLayoutMode}
+                        sx={{ border: 1, borderColor: "divider", bgcolor: "background.paper" }}
+                      >
+                        {isPerCardColumnLayout ? (
+                          <ViewColumnIcon fontSize="small" />
+                        ) : (
+                          <ViewStreamIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
                       <PaletteOutlinedIcon
                         fontSize="small"
@@ -4259,25 +4337,16 @@ function FiltersView() {
 
         {!isLoading && !isAttributeLoading && !rootError && !attributeRootError ? (
           <Stack spacing={2.5}>
-            <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-              <Tooltip title={cardHeightToggleTooltip}>
-                <IconButton
-                  size="small"
-                  aria-label={cardHeightToggleTooltip}
-                  onClick={toggleCardHeightMode}
-                  sx={{ border: 1, borderColor: "divider", bgcolor: "background.paper" }}
-                >
-                  {isNormalizedHeightMode ? (
-                    <TuneIcon fontSize="small" />
-                  ) : (
-                    <ViewStreamIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </Tooltip>
-            </Box>
             {omopFilterSets.length > 0 ? (
               <Stack spacing={2}>
-                {omopFilterSets.map((filterSet) => {
+                {omopFilterSetRows.map((rowGroup, rowIndex) => (
+                  <Box
+                    key={`omop-row:${rowGroup.id}:${rowIndex}`}
+                    className="filter-set-row"
+                    data-filter-set-row={rowGroup.id}
+                    sx={getFilterSetRowSx()}
+                  >
+                {rowGroup.filterSets.map((filterSet) => {
                   const sectionHasData = filterSet.filters.some((filter) => {
                     const className = filter.key;
                     const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
@@ -4339,7 +4408,9 @@ function FiltersView() {
                       ) : null}
                       <Box
                         className="filter-section-grid"
-                        data-column-cap={resolvedSectionColumnCap}
+                        data-column-cap={
+                          isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
+                        }
                         data-section-height-cap={sectionHeightCap}
                         sx={getFilterGridSx(
                           sectionHeight,
@@ -4421,12 +4492,11 @@ function FiltersView() {
                           >
                             <Box
                               className="filter-card-content"
-                              ref={setCardContentRef(omopCardContentRefs, `omop-${className}`)}
-                              sx={getCardContentAreaSx("omop", false, false, sectionHeightCap)}
+                              sx={getCardContentAreaSx(sectionHeightCap)}
                             >
                               <Box
                                 className="filter-card-body"
-                                sx={{ display: "flex", flexDirection: "column", gap: 0 }}
+                                sx={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0 }}
                               >
                                 <Button
                                   className="filter-card-open-button"
@@ -4454,6 +4524,7 @@ function FiltersView() {
                                   allowCollapse={false}
                                   showSortDimensionToggle={false}
                                   showSortCycleButton={false}
+                                  fillContainer
                                   data={classChartData}
                                   selectedValues={selectedValuesForClass}
                                   onSelectionChange={onSelectionChangeForClass}
@@ -4474,6 +4545,8 @@ function FiltersView() {
                     </Stack>
                   );
                 })}
+                  </Box>
+                ))}
               </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary">
@@ -4483,7 +4556,14 @@ function FiltersView() {
 
             {attributeFilterSets.length > 0 ? (
               <Stack spacing={2}>
-                {attributeFilterSets.map((filterSet) => {
+                {attributeFilterSetRows.map((rowGroup, rowIndex) => (
+                  <Box
+                    key={`attributes-row:${rowGroup.id}:${rowIndex}`}
+                    className="filter-set-row"
+                    data-filter-set-row={rowGroup.id}
+                    sx={getFilterSetRowSx()}
+                  >
+                {rowGroup.filterSets.map((filterSet) => {
                   const sectionHasData = filterSet.filters.some((filter) => {
                     const classChartData =
                       attributeChartDataWithIncludedByClass[filter.key] ||
@@ -4537,7 +4617,9 @@ function FiltersView() {
                       ) : null}
                       <Box
                         className="filter-section-grid"
-                        data-column-cap={resolvedSectionColumnCap}
+                        data-column-cap={
+                          isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
+                        }
                         data-section-height-cap={sectionHeightCap}
                         sx={getFilterGridSx(
                           sectionHeight,
@@ -4620,12 +4702,11 @@ function FiltersView() {
                           >
                             <Box
                               className="filter-card-content"
-                              ref={setCardContentRef(attributeCardContentRefs, `attribute-${className}`)}
-                              sx={getCardContentAreaSx("attributes", false, false, sectionHeightCap)}
+                              sx={getCardContentAreaSx(sectionHeightCap)}
                             >
                               <Box
                                 className="filter-card-body"
-                                sx={{ display: "flex", flexDirection: "column", gap: 0 }}
+                                sx={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0 }}
                               >
                                 <Button
                                   className="filter-card-open-button"
@@ -4655,6 +4736,7 @@ function FiltersView() {
                                   allowCollapse={false}
                                   showSortDimensionToggle={false}
                                   showSortCycleButton={false}
+                                  fillContainer
                                   data={classChartData}
                                   selectedValues={selectedValuesForClass}
                                   onSelectionChange={onSelectionChangeForClass}
@@ -4676,6 +4758,8 @@ function FiltersView() {
                     </Stack>
                   );
                 })}
+                  </Box>
+                ))}
               </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary">
