@@ -221,6 +221,34 @@ function groupFilterSetsByRow(filterSets = []) {
   return rowGroups;
 }
 
+function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
+  return `${includePatientIds ? "withPatientIds" : "withoutPatientIds"}|${JSON.stringify(
+    rowRequestFilters
+  )}`;
+}
+
+async function runTasksWithConcurrency(tasks = [], maxConcurrency = 1) {
+  const queuedTasks = Array.isArray(tasks) ? tasks.filter((task) => typeof task === "function") : [];
+  if (queuedTasks.length === 0) {
+    return;
+  }
+
+  const concurrency = Math.max(1, Math.floor(Number(maxConcurrency) || 1));
+  const workerCount = Math.min(concurrency, queuedTasks.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (queuedTasks.length > 0) {
+        const nextTask = queuedTasks.shift();
+        if (!nextTask) {
+          break;
+        }
+        await nextTask();
+      }
+    })
+  );
+}
+
 function getColumnCapMaxWidthPx(columnCap, columnWidthPx, columnGapPx) {
   const resolvedColumnCap = toResolvedColumnCap(columnCap, 1);
   const resolvedColumnWidth = Math.max(1, Number(columnWidthPx) || 1);
@@ -1220,6 +1248,14 @@ function buildIdentifiedSummary(filters, count) {
       conditionClauses.push(`${classLabel} ${joinWithConjunction(values, "or")}`);
     });
 
+  const subjectText = subjectDescriptors.length > 0 ? subjectDescriptors.join(" ") : "patients";
+  const conditionsText = joinCohortConditions(conditionClauses);
+
+  if (conditionsText) {
+    return `${safeCount.toLocaleString()} ${subjectText} with ${conditionsText}.`;
+  }
+
+  return `${safeCount.toLocaleString()} ${subjectText} matched the selected filters.`;
 }
 
 function toFilterItem(type, className, values) {
@@ -2504,9 +2540,10 @@ function FiltersView() {
   const [isPatientGridDockExpanded, setIsPatientGridDockExpanded] = useState(true);
   const [filterLayoutMode, setFilterLayoutMode] = useState(FILTER_LAYOUT_MODE.PER_CARD_COLUMN);
   const isPerCardColumnLayout = filterLayoutMode === FILTER_LAYOUT_MODE.PER_CARD_COLUMN;
-  const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
-  const cardMeasureRefs = useRef({});
-  const patientSummaryCacheRef = useRef(new Map());
+    const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
+    const cardMeasureRefs = useRef({});
+    const patientSummaryCacheRef = useRef(new Map());
+    const rowCountResultCacheRef = useRef(new Map());
 
   useEffect(() => {
     if (fontFamilyKey !== "open-dyslexic" || typeof document === "undefined") {
@@ -2872,6 +2909,10 @@ function FiltersView() {
       });
     });
 
+    const prioritizedCountRequests = countRequests
+      .slice(0, ROW_LEVEL_COUNT_MAX_REQUESTS);
+    const droppedCountRequests = 0;
+
     setIncludedCountByRowKey((previousCountsByRowKey) => {
       const nextCountsByRowKey = { ...staticCountsByRowKey };
 
@@ -2905,6 +2946,7 @@ function FiltersView() {
       // eslint-disable-next-line no-console
       console.log("[FiltersView] queued row-level count requests", {
         requestCount: countRequests.length,
+        droppedRequestCount: droppedCountRequests,
         hasSelections,
       });
     }
@@ -2922,11 +2964,24 @@ function FiltersView() {
       await Promise.all(
         countRequests.map(async ({ rowKey, rowRequestFilters, fallbackCount, includePatientIds }) => {
           try {
-            const countPayload = await fetchDeepPheFilterCount({
-              filters: rowRequestFilters,
-              includePatientIds,
-            });
-            const normalizedCountPayload = normalizeCountResponse(countPayload);
+            const cacheKey = toRowCountCacheKey(rowRequestFilters, includePatientIds);
+            const cachedResult = rowCountResultCacheRef.current.get(cacheKey);
+            const normalizedCountPayload =
+              cachedResult ||
+              normalizeCountResponse(
+                await fetchDeepPheFilterCount({
+                  filters: rowRequestFilters,
+                  includePatientIds,
+                })
+              );
+
+            if (!cachedResult) {
+              if (rowCountResultCacheRef.current.size >= 2000) {
+                rowCountResultCacheRef.current.clear();
+              }
+              rowCountResultCacheRef.current.set(cacheKey, normalizedCountPayload);
+            }
+
             const resolvedCount = normalizedCountPayload.count;
             nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
               ? Math.max(0, Math.round(resolvedCount))
@@ -2982,7 +3037,7 @@ function FiltersView() {
     chartClassRows,
     hasSelections,
     rollupInstanceMapByClass,
-  ]);
+    ]);
 
   useEffect(() => {
     setSelectedOmopValuesByClass((previousSelections) =>
@@ -4000,9 +4055,937 @@ function FiltersView() {
       },
     };
   };
-  const getFilterSectionColumnSx = () => ({
-    flex: { xs: "1 1 100%", sm: `0 0 ${CARD_COLUMN_WIDTH}px` },
-    maxWidth: { xs: "100%", sm: `${CARD_COLUMN_WIDTH}px` },
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return {
+      display: "flex",
+      flexDirection: "column",
+      gap: 0,
+      minHeight: 0,
+      height: "100%",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
+      overflowY: "hidden",
+      overflowX: "hidden",
+      pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "hidden",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+    };
+  };
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
+    return {
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
+      sectionHeightCap,
+    };
+  };
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
+      display: "flex",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
+      minHeight: {
+        xs: "auto",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return {
+      display: "flex",
+      flexDirection: "column",
+      gap: 0,
+      minHeight: 0,
+      height: "100%",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
+      overflowY: "hidden",
+      overflowX: "hidden",
+      pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "hidden",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+    };
+  };
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
+    return {
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
+      sectionHeightCap,
+    };
+  };
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
+      display: "flex",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
+      minHeight: {
+        xs: "auto",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return {
+      display: "flex",
+      flexDirection: "column",
+      gap: 0,
+      minHeight: 0,
+      height: "100%",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
+      overflowY: "hidden",
+      overflowX: "hidden",
+      pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "hidden",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+    };
+  };
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
+    return {
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
+      sectionHeightCap,
+    };
+  };
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
+      display: "flex",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
+      minHeight: {
+        xs: "auto",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return {
+      display: "flex",
+      flexDirection: "column",
+      gap: 0,
+      minHeight: 0,
+      height: "100%",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
+      overflowY: "hidden",
+      overflowX: "hidden",
+      pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "hidden",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+    };
+  };
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
+    return {
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
+      sectionHeightCap,
+    };
+  };
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
+      display: "flex",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
+      minHeight: {
+        xs: "auto",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
+  });
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+    const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+    return {
+      display: "flex",
+      flexDirection: "column",
+      gap: 0,
+      minHeight: 0,
+      height: "100%",
+      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
+      overflowY: "hidden",
+      overflowX: "hidden",
+      pr: 0,
+      "& .filter-card-body": {
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        flex: 1,
+        minHeight: 0,
+      },
+      "& .filter-card-chart": {
+        flex: 1,
+        minHeight: 0,
+        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
+          resolvedSectionHeightCapPx
+        )}px)`,
+        overflowY: "hidden",
+        overflowX: "hidden",
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-region": {
+        minHeight: 0,
+      },
+      "& .filter-card-chart .horizontal-bar-filter-chart-viewport": {
+        maxHeight: "100%",
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+    };
+  };
+  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+    const sectionHeightCap = resolveSectionHeightCapPx();
+    const classNames = filters.map((filter) => filter.key);
+    const resolvedSectionMaxColumns = isPerCardColumnLayout
+      ? Math.max(1, classNames.length)
+      : resolvedSectionColumnCap;
+    const measuredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+      ])
+    );
+    const rowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+
+    const sectionLayout = buildFilterSectionLayout({
+      classNames,
+      rowCountByClass,
+      measuredCardHeightByClass,
+      naturalGapPx: NATURAL_STACK_GAP_PX,
+      maxColumns: resolvedSectionMaxColumns,
+      categoryMaxHeight: sectionHeightCap,
+      cardBottomMargin: CARD_BOTTOM_MARGIN,
+      rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
+      cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+    });
+
+    if (!isPerCardColumnLayout) {
+      return {
+        ...sectionLayout,
+        sectionHeightCap,
+      };
+    }
+
+    const perCardColumnGroups = classNames.map((className) => [className]);
+    const perCardMarginBottomByClass = Object.fromEntries(
+      classNames.map((className) => [className, 0])
+    );
+    const maxPerCardHeight = classNames.reduce((maxHeight, className) => {
+      const resolvedCardHeight = Number(sectionLayout.resolvedCardHeightByClass?.[className]) || 0;
+      return Math.max(maxHeight, resolvedCardHeight);
+    }, 0);
+    const perCardSectionHeight = classNames.length
+      ? Math.min(sectionHeightCap, maxPerCardHeight + CARD_BOTTOM_MARGIN)
+      : 0;
+
+    return {
+      ...sectionLayout,
+      columnGroups: perCardColumnGroups,
+      cardHeightOverrideByClass: {},
+      cardMarginBottomByClass: perCardMarginBottomByClass,
+      sectionHeight: perCardSectionHeight,
+      sectionHeightCap,
+    };
+  };
+  const getFilterGridSx = (
+    sectionHeight,
+    columnCapByBreakpoint,
+    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
+  ) => {
+    const shouldStretchColumns = !isPerCardColumnLayout;
+    return {
+      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+      width: "100%",
+      maxWidth: {
+        xs: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xs,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        sm: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.sm,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        md: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.md,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        lg: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.lg,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+        xl: `${getColumnCapMaxWidthPx(
+          columnCapByBreakpoint?.xl,
+          CARD_COLUMN_WIDTH,
+          CARD_COLUMN_GAP_PX
+        )}px`,
+      },
+      display: "flex",
+      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
+      gap: 3,
+      flexWrap: "wrap",
+      minHeight: {
+        xs: "auto",
+        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+      },
+      maxHeight: {
+        xs: "none",
+        md: "var(--filter-section-height-cap)",
+      },
+      overflowY: {
+        xs: "visible",
+        md: "auto",
+      },
+      overflowX: "hidden",
+      "& > .filter-section-column": {
+        display: "flex",
+        flexDirection: "column",
+        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
+        minHeight: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        height: {
+          xs: "auto",
+          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
+        },
+        maxHeight: {
+          xs: "none",
+          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
+        },
+        overflow: shouldStretchColumns ? "hidden" : "visible",
+      },
+    };
+  };
+  const getFilterSetRowSx = () => ({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+    alignItems: "flex-start",
+    width: "100%",
+    "& > .filter-set": {
+      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      minWidth: 0,
+      alignSelf: "flex-start",
+    },
   });
   const getCardSx = (cardIndex = 0) => {
     void cardIndex;
