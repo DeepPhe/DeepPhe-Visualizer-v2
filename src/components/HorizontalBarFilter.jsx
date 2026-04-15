@@ -147,6 +147,22 @@ function toDotPatientIds(row) {
   return explicitIds;
 }
 
+function createFallbackPatientSummary(patientId) {
+  const normalizedPatientId = String(patientId || "").trim();
+  return {
+    patientId: normalizedPatientId,
+    docCount: 0,
+    activeDx: [],
+    negatedDx: [],
+    staging: [],
+    biomarkers: [],
+    procedures: [],
+    treatments: [],
+    activeFindings: [],
+    negatedFindings: [],
+  };
+}
+
 function getSortDimension(mode) {
   return String(mode).startsWith("alpha") ? "instance" : "count";
 }
@@ -518,6 +534,7 @@ export default function HorizontalBarFilter({
   const rowHeight = Math.min(34, Math.max(28, Math.round(30 * safeFontScale)));
   const barHeight = Math.min(22, Math.max(16, Math.round(18 * safeFontScale)));
   const dotRadius = Math.max(2, Math.round(PATIENT_DOT_RADIUS * safeFontScale));
+  const dotHitRadius = Math.max(8, dotRadius + 4);
   const countColumnWidth = Math.max(
     COUNT_COLUMN_MIN_WIDTH,
     Math.ceil(maxCountLabelLength * textFontSize * 0.62) + 12
@@ -661,21 +678,31 @@ export default function HorizontalBarFilter({
     if (typeof getPatientSummary !== "function") {
       return;
     }
+    const normalizedPatientId = String(patientId || "").trim();
+    if (!normalizedPatientId) {
+      return;
+    }
 
     clearHoverTimer();
     const requestId = hoverRequestIdRef.current + 1;
     hoverRequestIdRef.current = requestId;
 
     const run = async () => {
+      setSummaryTooltipState({
+        open: true,
+        anchorEl: anchorNode,
+        summaryData: createFallbackPatientSummary(normalizedPatientId),
+        pinned,
+      });
       try {
-        const summary = await getPatientSummary(patientId);
+        const summary = await getPatientSummary(normalizedPatientId);
         if (hoverRequestIdRef.current !== requestId) {
           return;
         }
         setSummaryTooltipState({
           open: true,
           anchorEl: anchorNode,
-          summaryData: summary || null,
+          summaryData: summary || createFallbackPatientSummary(normalizedPatientId),
           pinned,
         });
       } catch {
@@ -683,10 +710,10 @@ export default function HorizontalBarFilter({
           return;
         }
         setSummaryTooltipState({
-          open: false,
-          anchorEl: null,
-          summaryData: null,
-          pinned: false,
+          open: true,
+          anchorEl: anchorNode,
+          summaryData: createFallbackPatientSummary(normalizedPatientId),
+          pinned,
         });
       }
     };
@@ -1273,7 +1300,7 @@ export default function HorizontalBarFilter({
                           : undefined
                       }
                     >
-                      <title>{tooltipText}</title>
+                      {!showPatientDots ? <title>{tooltipText}</title> : null}
                     </rect>
                     {showPatientDots
                       ? dotPatientIds.map((patientId, dotIndex) => {
@@ -1284,37 +1311,44 @@ export default function HorizontalBarFilter({
                           const patientDotLabel = `Patient ${patientId}. Hover or click to view summary.`;
 
                           return (
-                            <circle
-                              className="horizontal-bar-filter-patient-dot"
-                              key={`${row.label}-${patientId}-${dotIndex}`}
-                              cx={dotCenterX}
-                              cy={rowCenterY}
-                              r={dotRadius}
-                              fill={rowFillColor}
-                              fillOpacity={rowFillOpacity}
-                              data-patient-dot="true"
-                              data-patient-id={patientId}
-                              role="button"
-                              tabIndex={0}
-                              aria-label={patientDotLabel}
-                              style={{ cursor: "pointer" }}
-                              onMouseEnter={(event) => handlePatientDotMouseEnter(event, patientId)}
-                              onMouseLeave={handlePatientDotMouseLeave}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handlePatientDotClick(event, patientId);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
+                            <g key={`${row.label}-${patientId}-${dotIndex}`}>
+                              <circle
+                                className="horizontal-bar-filter-patient-dot"
+                                cx={dotCenterX}
+                                cy={rowCenterY}
+                                r={dotRadius}
+                                fill={rowFillColor}
+                                fillOpacity={rowFillOpacity}
+                                data-patient-dot="true"
+                                data-patient-id={patientId}
+                                pointerEvents="none"
+                              />
+                              <circle
+                                className="horizontal-bar-filter-patient-dot-hitbox"
+                                cx={dotCenterX}
+                                cy={rowCenterY}
+                                r={dotHitRadius}
+                                fill="transparent"
+                                role="button"
+                                tabIndex={0}
+                                aria-label={patientDotLabel}
+                                style={{ cursor: "pointer" }}
+                                onMouseEnter={(event) => handlePatientDotMouseEnter(event, patientId)}
+                                onMouseLeave={handlePatientDotMouseLeave}
+                                onClick={(event) => {
                                   event.stopPropagation();
                                   handlePatientDotClick(event, patientId);
-                                }
-                              }}
-                              onBlur={handlePatientDotMouseLeave}
-                            >
-                              <title>{patientDotLabel}</title>
-                            </circle>
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handlePatientDotClick(event, patientId);
+                                  }
+                                }}
+                                onBlur={handlePatientDotMouseLeave}
+                              />
+                            </g>
                           );
                         })
                       : null}

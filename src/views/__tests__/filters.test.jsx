@@ -1458,7 +1458,7 @@ describe("FiltersView", () => {
         expect(searchInput?.getAttribute("aria-label")).toBe("Search patient details");
 
         const patientGridHeading = patientGridDrawer.querySelector("h2");
-        expect(String(patientGridHeading?.textContent || "")).toContain("Selected Patients");
+        expect(String(patientGridHeading?.textContent || "")).toContain("Selected Patients (12)");
 
         const headerCells = Array.from(patientGridDrawer.querySelectorAll("thead th"));
         expect(headerCells.length).toBeGreaterThan(0);
