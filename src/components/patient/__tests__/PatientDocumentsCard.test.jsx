@@ -138,6 +138,9 @@ describe("PatientDocumentsCard", () => {
 
     expect(container.textContent).toContain("All documents currently resolve to the same timestamp");
     expect(container.textContent).toContain("2025/03/16");
+    expect(container.querySelector('svg[aria-label="Patient document timeline chart"]')).toBeNull();
+    expect(container.querySelectorAll("select")).toHaveLength(1);
+    expect(container.textContent).toContain("Timeline chart is hidden because all documents share one timestamp");
 
     unmount();
   });

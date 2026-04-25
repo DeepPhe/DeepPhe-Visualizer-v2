@@ -127,6 +127,7 @@ export default function PatientDocumentsCard({
       }),
     [chartModel.points, hiddenEpisodes]
   );
+  const isCollapsedTimestampMode = Boolean(chartModel.dateDiagnostics?.hasDateCollapse);
 
   const selectedPoint = useMemo(() => {
     const normalizedSelectedId = String(selectedDocumentId || "").trim();
@@ -221,162 +222,173 @@ export default function PatientDocumentsCard({
               ))}
             </Stack>
 
-            <Box
-              sx={{
-                border: 1,
-                borderColor: "divider",
-                borderRadius: 1,
-                overflowX: "auto",
-                bgcolor: "background.paper",
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              <svg
-                role="img"
-                aria-label="Patient document timeline chart"
-                viewBox={`0 0 ${chartModel.dimensions.svgWidth} ${chartModel.dimensions.svgHeight}`}
-                preserveAspectRatio="xMidYMid meet"
-                style={{
-                  width: "100%",
-                  maxWidth: 1700,
-                  minWidth: 900,
-                  height: "auto",
-                  display: "block",
-                }}
-              >
-                <desc>
-                  Timeline chart showing one row per report type with clickable document points positioned by
-                  report date.
-                </desc>
+            {!isCollapsedTimestampMode ? (
+              <>
+                <Box
+                  sx={{
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    overflowX: "auto",
+                    bgcolor: "background.paper",
+                    display: "flex",
+                    justifyContent: "center",
+                  }}
+                >
+                  <svg
+                    role="img"
+                    aria-label="Patient document timeline chart"
+                    viewBox={`0 0 ${chartModel.dimensions.svgWidth} ${chartModel.dimensions.svgHeight}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{
+                      width: "100%",
+                      maxWidth: 1700,
+                      minWidth: 900,
+                      height: "auto",
+                      display: "block",
+                    }}
+                  >
+                    <desc>
+                      Timeline chart showing one row per report type with clickable document points
+                      positioned by report date.
+                    </desc>
 
-                {chartModel.rows.map((row) => (
-                  <g key={`row:${row.type}`}>
+                    {chartModel.rows.map((row) => (
+                      <g key={`row:${row.type}`}>
+                        <line
+                          x1={chartModel.dimensions.plotLeft}
+                          y1={row.y}
+                          x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
+                          y2={row.y}
+                          stroke={alpha(AXIS_STROKE, 0.6)}
+                          strokeWidth={1}
+                        />
+                        <text
+                          x={chartModel.dimensions.plotLeft - 10}
+                          y={row.y + 4}
+                          textAnchor="end"
+                          fill="#2f2f2f"
+                          fontSize="13"
+                          fontWeight="500"
+                        >
+                          {`${row.type} (${row.count}):`}
+                        </text>
+                      </g>
+                    ))}
+
                     <line
                       x1={chartModel.dimensions.plotLeft}
-                      y1={row.y}
+                      y1={chartModel.dimensions.baselineY + 8}
                       x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
-                      y2={row.y}
-                      stroke={alpha(AXIS_STROKE, 0.6)}
-                      strokeWidth={1}
+                      y2={chartModel.dimensions.baselineY + 8}
+                      stroke={alpha(AXIS_STROKE, 0.75)}
+                      strokeWidth={1.2}
                     />
+
+                    {chartModel.ticks.map((tick, tickIndex) => {
+                      const isFirstTick = tickIndex === 0;
+                      const isLastTick = tickIndex === chartModel.ticks.length - 1;
+                      const tickLabelX = isFirstTick ? tick.x + 6 : isLastTick ? tick.x - 6 : tick.x;
+                      const tickTextAnchor = isFirstTick ? "start" : isLastTick ? "end" : "middle";
+
+                      return (
+                        <g key={`tick:${tick.date.toISOString()}`}>
+                          <line
+                            x1={tick.x}
+                            y1={chartModel.dimensions.baselineY + 8}
+                            x2={tick.x}
+                            y2={chartModel.dimensions.baselineY + 14}
+                            stroke={alpha(AXIS_STROKE, 0.8)}
+                            strokeWidth={1}
+                          />
+                          <text
+                            x={tickLabelX}
+                            y={chartModel.dimensions.baselineY + 28}
+                            textAnchor={tickTextAnchor}
+                            fill="#3e3e3e"
+                            fontSize="11.5"
+                          >
+                            {tick.label}
+                          </text>
+                        </g>
+                      );
+                    })}
+
                     <text
-                      x={chartModel.dimensions.plotLeft - 10}
-                      y={row.y + 4}
+                      x={chartModel.dimensions.plotLeft - 38}
+                      y={chartModel.dimensions.baselineY + 30}
                       textAnchor="end"
                       fill="#2f2f2f"
-                      fontSize="13"
-                      fontWeight="500"
+                      fontSize="12"
+                      fontWeight="600"
                     >
-                      {`${row.type} (${row.count}):`}
+                      Date
                     </text>
-                  </g>
-                ))}
 
-                <line
-                  x1={chartModel.dimensions.plotLeft}
-                  y1={chartModel.dimensions.baselineY + 8}
-                  x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
-                  y2={chartModel.dimensions.baselineY + 8}
-                  stroke={alpha(AXIS_STROKE, 0.75)}
-                  strokeWidth={1.2}
-                />
+                    {visiblePoints.map((point) => {
+                      const isSelected = point.id === selectedDocumentId;
+                      const isRelated = relatedIdSet.has(point.id);
 
-                {chartModel.ticks.map((tick, tickIndex) => {
-                  const isFirstTick = tickIndex === 0;
-                  const isLastTick = tickIndex === chartModel.ticks.length - 1;
-                  const tickLabelX = isFirstTick ? tick.x + 6 : isLastTick ? tick.x - 6 : tick.x;
-                  const tickTextAnchor = isFirstTick ? "start" : isLastTick ? "end" : "middle";
+                      return (
+                        <g key={`point:${point.id}`}>
+                          {isRelated && !isSelected ? (
+                            <circle
+                              cx={point.x}
+                              cy={point.y}
+                              r={7}
+                              fill="none"
+                              stroke={RELATED_STROKE}
+                              strokeWidth={1.4}
+                              strokeDasharray="2 2"
+                              pointerEvents="none"
+                            />
+                          ) : null}
 
-                  return (
-                    <g key={`tick:${tick.date.toISOString()}`}>
-                      <line
-                        x1={tick.x}
-                        y1={chartModel.dimensions.baselineY + 8}
-                        x2={tick.x}
-                        y2={chartModel.dimensions.baselineY + 14}
-                        stroke={alpha(AXIS_STROKE, 0.8)}
-                        strokeWidth={1}
-                      />
-                      <text
-                        x={tickLabelX}
-                        y={chartModel.dimensions.baselineY + 28}
-                        textAnchor={tickTextAnchor}
-                        fill="#3e3e3e"
-                        fontSize="11.5"
-                      >
-                        {tick.label}
-                      </text>
-                    </g>
-                  );
-                })}
+                          <circle
+                            className="patient-timeline-point"
+                            data-document-id={point.id}
+                            data-episode={point.episodeLabel}
+                            data-related={isRelated ? "true" : "false"}
+                            data-selected={isSelected ? "true" : "false"}
+                            cx={point.x}
+                            cy={point.y}
+                            r={isSelected ? 5.5 : 4.5}
+                            fill={point.episodeColor}
+                            fillOpacity={isSelected ? 0.95 : 0.72}
+                            stroke={
+                              isSelected ? "#101010" : isRelated ? RELATED_STROKE : alpha("#111", 0.55)
+                            }
+                            strokeWidth={isSelected ? 2 : isRelated ? 1.4 : 1}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={getPointAriaLabel(point)}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => onSelectDocument?.(point.id)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                onSelectDocument?.(point.id);
+                              }
+                            }}
+                          >
+                            <title>{getPointAriaLabel(point)}</title>
+                          </circle>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </Box>
 
-                <text
-                  x={chartModel.dimensions.plotLeft - 38}
-                  y={chartModel.dimensions.baselineY + 30}
-                  textAnchor="end"
-                  fill="#2f2f2f"
-                  fontSize="12"
-                  fontWeight="600"
-                >
-                  Date
-                </text>
-
-                {visiblePoints.map((point) => {
-                  const isSelected = point.id === selectedDocumentId;
-                  const isRelated = relatedIdSet.has(point.id);
-
-                  return (
-                    <g key={`point:${point.id}`}>
-                      {isRelated && !isSelected ? (
-                        <circle
-                          cx={point.x}
-                          cy={point.y}
-                          r={7}
-                          fill="none"
-                          stroke={RELATED_STROKE}
-                          strokeWidth={1.4}
-                          strokeDasharray="2 2"
-                          pointerEvents="none"
-                        />
-                      ) : null}
-
-                      <circle
-                        className="patient-timeline-point"
-                        data-document-id={point.id}
-                        data-episode={point.episodeLabel}
-                        data-related={isRelated ? "true" : "false"}
-                        data-selected={isSelected ? "true" : "false"}
-                        cx={point.x}
-                        cy={point.y}
-                        r={isSelected ? 5.5 : 4.5}
-                        fill={point.episodeColor}
-                        fillOpacity={isSelected ? 0.95 : 0.72}
-                        stroke={isSelected ? "#101010" : isRelated ? RELATED_STROKE : alpha("#111", 0.55)}
-                        strokeWidth={isSelected ? 2 : isRelated ? 1.4 : 1}
-                        tabIndex={0}
-                        role="button"
-                        aria-label={getPointAriaLabel(point)}
-                        style={{ cursor: "pointer" }}
-                        onClick={() => onSelectDocument?.(point.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            onSelectDocument?.(point.id);
-                          }
-                        }}
-                      >
-                        <title>{getPointAriaLabel(point)}</title>
-                      </circle>
-                    </g>
-                  );
-                })}
-              </svg>
-            </Box>
-
-            <Typography variant="caption" color="text.secondary">
-              Click a point to load that document. Use Tab + Enter/Space for keyboard selection.
-            </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Click a point to load that document. Use Tab + Enter/Space for keyboard selection.
+                </Typography>
+              </>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                Timeline chart is hidden because all documents share one timestamp. Use the episode
+                dropdowns to select documents.
+              </Typography>
+            )}
 
             {selectedPoint ? (
               <Typography variant="body2">
