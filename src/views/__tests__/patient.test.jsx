@@ -203,7 +203,7 @@ describe("PatientView", () => {
   });
 
   test("fills patient input with a random patient ID", async () => {
-    loadRandomPatientId.mockResolvedValueOnce("9552530714");
+    loadRandomPatientId.mockResolvedValueOnce("test_patient_random_1");
 
     const rendered = renderComponent(<PatientView />);
 
@@ -216,7 +216,7 @@ describe("PatientView", () => {
 
       const input = rendered.container.querySelector('input[name="patient-id"]');
       expect(input).not.toBeNull();
-      expect(input?.value).toBe("9552530714");
+      expect(input?.value).toBe("test_patient_random_1");
     } finally {
       rendered.unmount();
     }
