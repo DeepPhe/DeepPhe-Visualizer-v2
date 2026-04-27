@@ -491,11 +491,11 @@ describe("FiltersView", () => {
         .map((cardNode) => getFilterTitleFromCardNode(cardNode))
         .filter(Boolean);
       expect(globalRenderedOrder).toEqual([
+        "Cancer",
         "Age at Dx",
         "Race",
         "Gender",
         "Ethnicity",
-        "Cancer",
         ...getConfiguredFilterTitlesForSection("staging"),
       ]);
     } finally {

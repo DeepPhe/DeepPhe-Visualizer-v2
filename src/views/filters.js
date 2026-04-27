@@ -54,6 +54,7 @@ import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
 import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
 import { getAgeDecileLabel } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
+import { endSpan, startSpan } from "../utils/perfTracker";
 import {
   FILTER_ENTRY_BY_TYPE_CLASS,
   resolveFilterSetsWithExtras,
@@ -2340,6 +2341,12 @@ function FiltersView() {
       ? performance.now()
       : Date.now()
   );
+  const pageLoadSpanRef = useRef(null);
+  if (!pageLoadSpanRef.current) {
+    pageLoadSpanRef.current = startSpan("page_load:FiltersView", "page_load", {
+      route: "/filters",
+    });
+  }
   const hasLoggedInitialLoadRef = useRef(false);
 
   const handleThemeChange = useCallback((event) => {
@@ -2577,6 +2584,14 @@ function FiltersView() {
       typeof performance !== "undefined" && typeof performance.now === "function"
         ? performance.now()
         : Date.now();
+    if (pageLoadSpanRef.current) {
+      endSpan(pageLoadSpanRef.current, "ok", {
+        totalMs: Math.round(loadEndTime - initialLoadStartRef.current),
+        omopClasses: omopData.classes.length,
+        attributeClasses: attributeData.classes.length,
+      });
+      pageLoadSpanRef.current = null;
+    }
 
     if (SHOULD_LOG_FILTERS_PERF) {
       // eslint-disable-next-line no-console
@@ -3209,6 +3224,11 @@ function FiltersView() {
     setIsPatientGridPageLoading(false);
 
     const loadCount = async () => {
+      const filterSpan = startSpan("filter_query", "filter_query", {
+        filterCount: requestFilters?.length ?? 0,
+        includePatientIds: false,
+      });
+
       try {
         let nextResult = normalizeCountResponse(
           await fetchDeepPheFilterCount({
@@ -3230,14 +3250,26 @@ function FiltersView() {
           );
         }
 
+        const successMeta = {
+          resultCount: nextResult.count,
+          queryMs: nextResult.timing?.queryMs,
+          bitmapMs: nextResult.timing?.bitmapMs,
+          resolveMs: nextResult.timing?.resolveMs,
+          totalMs: nextResult.timing?.totalMs,
+        };
+
         if (!isActive) {
+          endSpan(filterSpan, "cancelled", successMeta);
           return;
         }
+        endSpan(filterSpan, "ok", successMeta);
         setCountResult(nextResult);
       } catch (error) {
         if (!isActive) {
+          endSpan(filterSpan, "cancelled", { errorMessage: error?.message || "" });
           return;
         }
+        endSpan(filterSpan, "error", { errorMessage: error?.message || "" });
         setCountResult(null);
         setCountError(error?.message || "Failed to fetch filter count.");
       } finally {

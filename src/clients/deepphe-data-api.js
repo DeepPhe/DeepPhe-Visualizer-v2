@@ -1,4 +1,5 @@
 import { DEEPPHE_API_LOCATION } from "../config";
+import { endSpan, startSpan } from "../utils/perfTracker";
 
 const OPENAPI_JSON_PATH = "/openapi.json";
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"];
@@ -44,6 +45,13 @@ export const DEEPPHE_OPENAPI_JSON_URL = joinUrl(
 
 const normalizeMethod = (method) => String(method || "GET").trim().toUpperCase();
 const normalizeClassName = (value) => String(value || "").trim().toUpperCase();
+
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
 
 const ensureMethodIsSupported = (method) => {
   const normalizedMethod = normalizeMethod(method);
@@ -236,23 +244,47 @@ const createRequestInit = (method, body, headers = {}) => {
 
 const requestFromOpenApi = async (openApiSpec, path, method, options = {}) => {
   const { pathParams = {}, query = {}, body, headers = {} } = options;
+  const normalizedMethod = normalizeMethod(method);
   const serverBaseUrl = getPreferredServerUrl(openApiSpec);
   const url = buildEndpointUrl(serverBaseUrl, path, pathParams, query);
-  const response = await fetch(url, createRequestInit(method, body, headers));
-  const payload = await parseResponsePayload(response);
+  const span = startSpan(`api:${normalizedMethod} ${path}`, "api_call", {
+    url,
+    method: normalizedMethod,
+  });
+
+  let response;
+  try {
+    response = await fetch(url, createRequestInit(method, body, headers));
+  } catch (networkError) {
+    endSpan(span, "error", { errorMessage: networkError?.message || "network error" });
+    throw networkError;
+  }
+
+  let payload;
+  try {
+    payload = await parseResponsePayload(response);
+  } catch (payloadError) {
+    endSpan(span, "error", {
+      httpStatus: response?.status,
+      errorMessage: payloadError?.message || "Failed to parse API response payload",
+    });
+    throw payloadError;
+  }
 
   if (!response.ok) {
     const payloadMessage =
       typeof payload === "string"
         ? payload
         : payload?.message || payload?.detail || payload?.error || "";
+    endSpan(span, "error", { httpStatus: response.status, errorMessage: payloadMessage });
     throw new Error(
-      `DeepPhe API request failed: ${normalizeMethod(method)} ${url} -> ${
+      `DeepPhe API request failed: ${normalizedMethod} ${url} -> ${
         payloadMessage || `${response.status} ${response.statusText}`
       }`
     );
   }
 
+  endSpan(span, "ok", { httpStatus: response.status });
   return payload;
 };
 
@@ -266,17 +298,43 @@ export async function fetchDeepPheOpenApiJson() {
   }
 
   openApiSpecPromise = (async () => {
-    const response = await fetch(DEEPPHE_OPENAPI_JSON_URL, {
-      headers: { Accept: "application/json" },
+    const span = startSpan("api:GET /openapi.json", "api_call", {
+      url: DEEPPHE_OPENAPI_JSON_URL,
+      method: "GET",
     });
+    let response;
+
+    try {
+      response = await fetch(DEEPPHE_OPENAPI_JSON_URL, {
+        headers: { Accept: "application/json" },
+      });
+    } catch (networkError) {
+      endSpan(span, "error", { errorMessage: networkError?.message || "network error" });
+      throw networkError;
+    }
 
     if (!response.ok) {
+      endSpan(span, "error", {
+        httpStatus: response.status,
+        errorMessage: `${response.status} ${response.statusText}`,
+      });
       throw new Error(
         `Failed to fetch DeepPhe OpenAPI JSON (${response.status} ${response.statusText})`
       );
     }
 
-    const spec = await response.json();
+    let spec;
+    try {
+      spec = await response.json();
+    } catch (parseError) {
+      endSpan(span, "error", {
+        httpStatus: response.status,
+        errorMessage: parseError?.message || "Failed to parse OpenAPI JSON payload",
+      });
+      throw parseError;
+    }
+
+    endSpan(span, "ok", { httpStatus: response.status });
     openApiSpecCache = spec;
     return spec;
   })().catch((error) => {
@@ -615,15 +673,15 @@ const resolvePatientIdsForFilter = async (filterItem) => {
 };
 
 const computeFilterCountFallback = async ({ filters, includePatientIds }) => {
-  const totalStartTime = Date.now();
-  const queryStartTime = Date.now();
+  const totalStartTime = nowMs();
+  const queryStartTime = nowMs();
   const patientIdSets = await Promise.all(filters.map(resolvePatientIdsForFilter));
-  const queryEndTime = Date.now();
+  const queryEndTime = nowMs();
   const itemCounts = patientIdSets.map((set) => set.size);
 
-  const bitmapStartTime = Date.now();
+  const bitmapStartTime = nowMs();
   if (patientIdSets.length === 0) {
-    const totalEndTime = Date.now();
+    const totalEndTime = nowMs();
     return {
       count: 0,
       patient_ids: [],
@@ -646,16 +704,16 @@ const computeFilterCountFallback = async ({ filters, includePatientIds }) => {
       }
     });
   });
-  const bitmapEndTime = Date.now();
+  const bitmapEndTime = nowMs();
 
-  const resolveStartTime = Date.now();
+  const resolveStartTime = nowMs();
   const patientIds = includePatientIds
     ? [...intersection].sort((leftId, rightId) =>
         leftId.localeCompare(rightId, undefined, { numeric: true, sensitivity: "base" })
       )
     : [];
-  const resolveEndTime = Date.now();
-  const totalEndTime = Date.now();
+  const resolveEndTime = nowMs();
+  const totalEndTime = nowMs();
 
   return {
     count: intersection.size,
@@ -947,5 +1005,42 @@ export const fetchPatientDocuments = async (
       documentIds: toCsvIfArray(documentIds),
       excludeProperties: toCsvIfArray(excludeProperties),
     },
+  });
+};
+
+export const fetchPatientDocumentEpisodes = async (
+  patientId,
+  { documentIds, excludeProperties } = {}
+) => {
+  if (!patientId) {
+    throw new Error("patientId is required");
+  }
+
+  return requestDeepPheEndpoint("/deepphe/patient/{patientId}/documents/episodes", "GET", {
+    pathParams: { patientId },
+    query: {
+      documentIds: toCsvIfArray(documentIds),
+      excludeProperties: toCsvIfArray(excludeProperties),
+    },
+  });
+};
+
+export const fetchPatientCancers = async (patientId) => {
+  if (!patientId) {
+    throw new Error("patientId is required");
+  }
+
+  return requestDeepPheEndpoint("/deepphe/patient/{patientId}/cancers", "GET", {
+    pathParams: { patientId },
+  });
+};
+
+export const fetchPatientConcepts = async (patientId) => {
+  if (!patientId) {
+    throw new Error("patientId is required");
+  }
+
+  return requestDeepPheEndpoint("/deepphe/patient/{patientId}/concepts", "GET", {
+    pathParams: { patientId },
   });
 };

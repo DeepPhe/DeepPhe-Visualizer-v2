@@ -5,10 +5,18 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d8eba3e8-c32b-4e6b-abb9-fe2370053215" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/Viz3.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Viz3.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/HorizontalBarFilter.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/HorizontalBarFilter.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/App.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/App.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/clients/deepphe-data-api.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/clients/deepphe-data-api.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientSearchForm.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientSearchForm.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/hooks/useBatchDataLoader.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useBatchDataLoader.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/views/__tests__/filterSets.test.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/__tests__/filterSets.test.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/views/__tests__/filters.test.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/__tests__/filters.test.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/views/filterSets.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/filterSets.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/views/filters.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/filters.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/views/patient.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/patient.jsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -22,16 +30,16 @@
     </persistenceIdMap>
   </component>
   <component name="CopilotUserSelectedChatMode">
-    <option name="chatModeId" value="file:///snapshot/copilot-intellij/dist/assets/agents/Plan.agent.md" />
+    <option name="chatModeId" value="Agent" />
   </component>
   <component name="CopilotUserSelectedModel">
     <selectedModels>
-      <entry key="chat-panel" value="Claude Sonnet 4.6" />
-      <entry key="agent-panel" value="Claude Sonnet 4.6" />
+      <entry key="chat-panel" value="Auto" />
+      <entry key="agent-panel" value="Auto" />
     </selectedModels>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="17694" />
+    <option name="cachedIndexableFilesCount" value="18256" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="FileTemplateManagerImpl">
@@ -46,7 +54,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/../Viz2" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -69,43 +77,48 @@
   &quot;fromUser&quot;: false
 }</component>
   <component name="ProjectId" id="3C2EYIXJeTDrRkzGKU2JQ6rJR3L" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Node.js.zip-for-review.mjs.executor": "Run",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "main",
-    "javascript.preferred.runtime.type.id": "node",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/Volumes/Samsung-Ext/dev/Viz3",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "npm.start api.executor": "Run",
-    "npm.start gui.executor": "Run",
-    "npm.start.executor": "Run",
-    "to.speed.mode.migration.done": "true",
-    "ts.external.directory.path": "/Users/johnlevander/Applications/WebStorm.app/Contents/plugins/javascript-plugin/jsLanguageServicesImpl/external",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Node.js.zip-for-review.mjs.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Volumes/Samsung-Ext/dev/Viz3&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;npm.start api.executor&quot;: &quot;Run&quot;,
+    &quot;npm.start gui.executor&quot;: &quot;Run&quot;,
+    &quot;npm.start.executor&quot;: &quot;Run&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/Users/johnlevander/Applications/WebStorm.app/Contents/plugins/javascript-plugin/jsLanguageServicesImpl/external&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="ReactDesignerToolWindowState">
     <option name="myId2Visible">
       <map>
         <entry key="com.intellij.reactbuddy.reactComponents" value="false" />
         <entry key="com.intellij.reactbuddy.reactInspector" value="false" />
+        <entry key="com.intellij.reactbuddy.storybook" value="false" />
       </map>
     </option>
   </component>
@@ -153,7 +166,11 @@
       <option name="presentableId" value="Default" />
       <updated>1775575314825</updated>
       <workItem from="1775575315857" duration="30547000" />
-      <workItem from="1776277475985" duration="2968000" />
+      <workItem from="1776277475985" duration="8304000" />
+      <workItem from="1776380400893" duration="173000" />
+      <workItem from="1776799447640" duration="4913000" />
+      <workItem from="1776871259136" duration="8147000" />
+      <workItem from="1777318799835" duration="189000" />
     </task>
     <servers />
   </component>
@@ -165,7 +182,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="javascript">
           <url>file://$PROJECT_DIR$/src/views/filters.js</url>
-          <line>159</line>
+          <line>160</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>

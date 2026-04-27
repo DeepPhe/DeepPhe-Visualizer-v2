@@ -5,6 +5,8 @@ import DebugView from "./views/debug";
 import FiltersView from "./views/filters";
 import AccessibilityStatement from "./views/AccessibilityStatement";
 import FilterSetsConfigView from "./views/filter-sets-config";
+import PatientView from "./views/patient";
+import PerfPanel from "./components/PerfPanel";
 
 function HomeView() {
   return (
@@ -25,6 +27,9 @@ function HomeView() {
       <p>
         <Link to="/filter-sets-config">Open Filter Sets Config</Link>
       </p>
+      <p>
+        <Link to="/patient">Open Patient View</Link>
+      </p>
     </main>
   );
 }
@@ -43,8 +48,10 @@ function App() {
         <Route path="/filters" element={<FiltersView />} />
         <Route path="/accessibility" element={<AccessibilityStatement />} />
         <Route path="/filter-sets-config" element={<FilterSetsConfigView />} />
+        <Route path="/patient" element={<PatientView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <PerfPanel />
     </BrowserRouter>
   );
 }

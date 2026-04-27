@@ -6,12 +6,14 @@ import {
   fetchPatient,
   fetchPatientCancers,
   fetchPatientConcepts,
+  fetchPatientDocumentEpisodes,
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
 import { VIZ2_DOCS_BASE_URL } from "../config";
 import {
   hasDocumentText,
   normalizePatientPayload,
+  resolveDocumentsFromPayload,
 } from "../utils/patientView/normalizePatientPayload";
 
 const FALLBACK_VIZ2_PATIENT_OPTIONS = [
@@ -248,6 +250,108 @@ function pickRandomValue(values = []) {
   return String(values[index] || "").trim();
 }
 
+function normalizeEpisodeCountKey(episodeValue) {
+  const rawEpisode = String(episodeValue || "").trim();
+  const normalizedEpisode = rawEpisode.toLowerCase();
+
+  if (!normalizedEpisode) {
+    return "unknown";
+  }
+
+  if (normalizedEpisode.includes("medical") && normalizedEpisode.includes("decision")) {
+    return "medical decision-making";
+  }
+
+  if (normalizedEpisode.includes("pre") && normalizedEpisode.includes("diagnostic")) {
+    return "pre-diagnostic";
+  }
+
+  if (normalizedEpisode === "unknown") {
+    return "unknown";
+  }
+
+  if (normalizedEpisode.includes("diagnostic")) {
+    return "diagnostic";
+  }
+
+  if (normalizedEpisode.includes("treat")) {
+    return "treatment";
+  }
+
+  if (normalizedEpisode.includes("follow")) {
+    return "follow-up";
+  }
+
+  return normalizedEpisode;
+}
+
+function buildEpisodeCountsFromDocuments(documents = []) {
+  return (Array.isArray(documents) ? documents : []).reduce((accumulator, document) => {
+    const episodeKey = normalizeEpisodeCountKey(document?.episode);
+    accumulator[episodeKey] = Number(accumulator[episodeKey] || 0) + 1;
+    return accumulator;
+  }, {});
+}
+
+function normalizeEpisodeCountResponse(payload) {
+  if (!payload) {
+    return {};
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.reduce((accumulator, row) => {
+      if (!row || typeof row !== "object") {
+        return accumulator;
+      }
+
+      const episodeKey = normalizeEpisodeCountKey(
+        row?.episode ?? row?.episodeType ?? row?.type ?? row?.label ?? row?.name ?? row?.key
+      );
+      const countValue = Number(row?.count ?? row?.total ?? row?.value);
+      if (!Number.isFinite(countValue)) {
+        return accumulator;
+      }
+
+      accumulator[episodeKey] = Number(accumulator[episodeKey] || 0) + countValue;
+      return accumulator;
+    }, {});
+  }
+
+  if (typeof payload !== "object") {
+    return {};
+  }
+
+  if (Array.isArray(payload.episodes)) {
+    return normalizeEpisodeCountResponse(payload.episodes);
+  }
+
+  if (Array.isArray(payload.rows)) {
+    return normalizeEpisodeCountResponse(payload.rows);
+  }
+
+  if (Array.isArray(payload.data)) {
+    return normalizeEpisodeCountResponse(payload.data);
+  }
+
+  const singleEpisode = payload?.episode ?? payload?.episodeType ?? payload?.type;
+  const singleCount = Number(payload?.count ?? payload?.total ?? payload?.value);
+  if (singleEpisode !== undefined && Number.isFinite(singleCount)) {
+    return {
+      [normalizeEpisodeCountKey(singleEpisode)]: singleCount,
+    };
+  }
+
+  const numericEntries = Object.entries(payload).filter(([, value]) =>
+    Number.isFinite(Number(value))
+  );
+
+  return numericEntries.reduce((accumulator, [episodeName, countValue]) => {
+    const episodeKey = normalizeEpisodeCountKey(episodeName);
+    accumulator[episodeKey] = Number(accumulator[episodeKey] || 0) + Number(countValue);
+    return accumulator;
+  }, {});
+}
+
 export async function loadRandomPatientId() {
   const summaryRequests = [
     fetchAttributesSummary({ includePatientIds: true }),
@@ -321,6 +425,36 @@ export async function loadViz2PatientProfile(patientId) {
     cancersPayload: patientPayload,
     conceptsPayload: patientPayload,
   });
+}
+
+export async function loadPatientDocumentEpisodeCounts(
+  patientId,
+  { documentIds, excludeProperties } = {}
+) {
+  const normalizedPatientId = String(patientId || "").trim();
+  if (!normalizedPatientId) {
+    throw new Error("patientId is required");
+  }
+
+  try {
+    const episodesPayload = await fetchPatientDocumentEpisodes(normalizedPatientId, {
+      documentIds,
+      excludeProperties,
+    });
+    const normalizedCounts = normalizeEpisodeCountResponse(episodesPayload);
+    if (Object.keys(normalizedCounts).length > 0) {
+      return normalizedCounts;
+    }
+  } catch {
+    // Fallback below computes counts from raw patient documents.
+  }
+
+  const documentsPayload = await fetchPatientDocuments(normalizedPatientId, {
+    documentIds,
+    excludeProperties,
+  });
+  const documents = resolveDocumentsFromPayload(documentsPayload);
+  return buildEpisodeCountsFromDocuments(documents);
 }
 
 export async function loadPatientProfile(

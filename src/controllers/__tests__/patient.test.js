@@ -1,4 +1,5 @@
 import {
+  loadPatientDocumentEpisodeCounts,
   loadPatientProfile,
   loadRandomPatientId,
   loadViz2PatientOptions,
@@ -12,6 +13,7 @@ import {
   fetchPatient,
   fetchPatientCancers,
   fetchPatientConcepts,
+  fetchPatientDocumentEpisodes,
   fetchPatientDocuments,
 } from "../../clients/deepphe-data-api";
 
@@ -23,6 +25,7 @@ jest.mock("../../clients/deepphe-data-api", () => ({
   fetchPatient: jest.fn(),
   fetchPatientCancers: jest.fn(),
   fetchPatientConcepts: jest.fn(),
+  fetchPatientDocumentEpisodes: jest.fn(),
   fetchPatientDocuments: jest.fn(),
 }));
 
@@ -130,6 +133,68 @@ describe("loadPatientProfile", () => {
     expect(profile.cancers[0].tumors).toHaveLength(1);
     expect(profile.concepts).toHaveLength(1);
     expect(profile.conceptRelations).toHaveLength(1);
+  });
+});
+
+describe("loadPatientDocumentEpisodeCounts", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("uses the episodes endpoint when it returns keyed counts", async () => {
+    fetchPatientDocumentEpisodes.mockResolvedValueOnce({
+      unknown: 12,
+      treatment: 6,
+    });
+
+    const counts = await loadPatientDocumentEpisodeCounts("patient-1");
+
+    expect(fetchPatientDocumentEpisodes).toHaveBeenCalledWith("patient-1", {
+      documentIds: undefined,
+      excludeProperties: undefined,
+    });
+    expect(fetchPatientDocuments).not.toHaveBeenCalled();
+    expect(counts).toEqual({
+      unknown: 12,
+      treatment: 6,
+    });
+  });
+
+  test("normalizes array payloads from the episodes endpoint", async () => {
+    fetchPatientDocumentEpisodes.mockResolvedValueOnce([
+      { episode: "Unknown", count: 2 },
+      { episode: "Treatment Plan", count: "3" },
+      { episodeType: "Follow Up", total: 1 },
+    ]);
+
+    const counts = await loadPatientDocumentEpisodeCounts("patient-1");
+
+    expect(counts).toEqual({
+      unknown: 2,
+      treatment: 3,
+      "follow-up": 1,
+    });
+  });
+
+  test("falls back to grouping raw documents when episodes endpoint fails", async () => {
+    fetchPatientDocumentEpisodes.mockRejectedValueOnce(new Error("Cannot GET"));
+    fetchPatientDocuments.mockResolvedValueOnce([
+      { id: "doc-1", episode: "Unknown" },
+      { id: "doc-2", episode: "Treatment" },
+      { id: "doc-3", episode: "treatment plan" },
+      { id: "doc-4", episode: "" },
+    ]);
+
+    const counts = await loadPatientDocumentEpisodeCounts("patient-1");
+
+    expect(fetchPatientDocuments).toHaveBeenCalledWith("patient-1", {
+      documentIds: undefined,
+      excludeProperties: undefined,
+    });
+    expect(counts).toEqual({
+      unknown: 2,
+      treatment: 2,
+    });
   });
 });
 

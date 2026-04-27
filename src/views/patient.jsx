@@ -222,11 +222,11 @@ export default function PatientView() {
         sx={{
           minHeight: "100vh",
           bgcolor: "background.default",
-          p: { xs: 2, md: 4 },
+          p: { xs: 1, md: 2 },
         }}
       >
-        <Stack spacing={2.5}>
-          <Paper elevation={0} sx={{ border: 1, borderColor: "divider", p: 1.5 }}>
+        <Stack spacing={1.5}>
+          <Paper elevation={0} sx={{ border: 1, borderColor: "divider", p: 1 }}>
             <Stack direction="row" spacing={1.25} alignItems="center" justifyContent="space-between">
               <Stack direction="row" spacing={1} alignItems="center" minWidth={0}>
                 <MuiLink
@@ -277,7 +277,7 @@ export default function PatientView() {
           {activeErrorMessage ? <Alert severity="error">{activeErrorMessage}</Alert> : null}
 
           {loadedPatientId && patientData ? (
-            <Stack spacing={2}>
+            <Stack spacing={1.5}>
               <Typography variant="body2" color="text.secondary">
                 Loaded patient: <strong>{loadedPatientId}</strong>
               </Typography>

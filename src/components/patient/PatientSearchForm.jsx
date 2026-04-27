@@ -41,9 +41,9 @@ export default function PatientSearchForm({
   };
 
   return (
-    <Paper elevation={0} sx={{ border: 1, borderColor: "divider", p: 2 }}>
-      <Stack component="form" spacing={2} onSubmit={handleSubmit}>
-        <Typography component="h2" variant="h6" sx={{ fontWeight: 700 }}>
+    <Paper elevation={0} sx={{ border: 1, borderColor: "divider", p: 1.5 }}>
+      <Stack component="form" spacing={1.25} onSubmit={handleSubmit}>
+        <Typography component="h2" variant="subtitle1" sx={{ fontWeight: 700 }}>
           Patient Lookup
         </Typography>
         <ToggleButtonGroup
@@ -60,7 +60,7 @@ export default function PatientSearchForm({
             Viz2 Source Docs
           </ToggleButton>
         </ToggleButtonGroup>
-        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", alignItems: "flex-end" }}>
           {isViz2Mode ? (
             <TextField
               select
@@ -69,7 +69,7 @@ export default function PatientSearchForm({
               size="small"
               value={viz2PatientId}
               onChange={(event) => onViz2PatientIdChange?.(event.target.value)}
-              sx={{ minWidth: { xs: "100%", sm: 320 } }}
+              sx={{ minWidth: { xs: "100%", sm: 300 } }}
               inputProps={{ "aria-label": "Viz2 patient selection" }}
               SelectProps={{ native: true }}
               disabled={isViz2OptionsLoading}
@@ -92,7 +92,7 @@ export default function PatientSearchForm({
               value={patientIdValue}
               onChange={(event) => onPatientIdChange?.(event.target.value)}
               placeholder="fake_patient1"
-              sx={{ minWidth: { xs: "100%", sm: 320 } }}
+              sx={{ minWidth: { xs: "100%", sm: 300 } }}
               inputProps={{ "aria-label": "Patient ID" }}
               required
             />

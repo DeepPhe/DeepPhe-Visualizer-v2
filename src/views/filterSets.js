@@ -134,6 +134,14 @@ function cloneFilterSet(filterSet) {
 /** @type {FilterSet[]} */
 const FILTER_SET_CONFIG = [
   {
+    id: "cancer-type",
+    label: "Cancer Type",
+    row: "cohort-overview",
+    display: true,
+    defaultExpanded: true,
+    filters: [{ key: "CANCER", type: "omop", displayName: "Cancer", displayMode: "compact" }],
+  },
+  {
     id: "demographics",
     label: "Demographics",
     row: "cohort-overview",
@@ -150,14 +158,6 @@ const FILTER_SET_CONFIG = [
       { key: "GENDER", type: "omop", displayName: "Gender", displayMode: "distribution" },
       { key: "ETHNICITY", type: "omop", displayName: "Ethnicity", displayMode: "distribution" },
     ],
-  },
-  {
-    id: "cancer-type",
-    label: "Cancer Type",
-    row: "cohort-overview",
-    display: true,
-    defaultExpanded: true,
-    filters: [{ key: "CANCER", type: "omop", displayName: "Cancer", displayMode: "compact" }],
   },
   {
     id: "staging",

@@ -4,6 +4,7 @@ import {
   getValueFromRow,
   summarizeInstances,
 } from "../utils/dataProcessing";
+import { endSpan, startSpan } from "../utils/perfTracker";
 
 const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
 
@@ -119,6 +120,7 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
 
     const loadData = async () => {
       const loadStartTime = nowMs();
+      const span = startSpan(`batch:${errorContext}`, "api_call", { context: errorContext });
       setIsLoading(true);
       setErrorMessage("");
 
@@ -130,6 +132,9 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
         if (!isActive) {
           logPerf(errorContext, "stale summary response ignored", {
             requestMs: Math.round(requestEndTime - requestStartTime),
+          });
+          endSpan(span, "cancelled", {
+            errorMessage: "stale summary response ignored",
           });
           return;
         }
@@ -169,6 +174,13 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
             totalMs: Math.round(summarizeEndTime - loadStartTime),
             serverTimingMs: Number(summaryResult?.timing?.totalMs) || null,
           });
+          endSpan(span, "ok", {
+            classes: classList.length,
+            rows: totalRowsProcessed,
+            requestMs: Math.round(requestEndTime - requestStartTime),
+            summarizeMs: Math.round(summarizeEndTime - summarizeStartTime),
+            serverTimingMs: Number(summaryResult?.timing?.totalMs) || null,
+          });
         }
       } catch (error) {
         if (isActive) {
@@ -179,7 +191,11 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
             totalMs: Math.round(nowMs() - loadStartTime),
             message: error?.message || "",
           });
+          endSpan(span, "error", { errorMessage: error?.message || "" });
+          return;
         }
+
+        endSpan(span, "cancelled", { errorMessage: error?.message || "" });
       }
     };
 

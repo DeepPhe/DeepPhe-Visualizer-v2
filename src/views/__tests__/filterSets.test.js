@@ -8,11 +8,11 @@ import {
 describe("filterSets", () => {
   it("returns configured ordered classes by type", () => {
     expect(getOrderedClassesByType("omop")).toEqual([
+      "CANCER",
       "AGE_AT_DX",
       "RACE",
       "GENDER",
       "ETHNICITY",
-      "CANCER",
     ]);
 
     expect(getOrderedClassesByType("attributes")).toEqual([
