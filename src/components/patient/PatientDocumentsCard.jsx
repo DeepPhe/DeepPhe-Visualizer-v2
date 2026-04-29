@@ -11,6 +11,7 @@ import {
   InputLabel,
   Select,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -95,6 +96,7 @@ export default function PatientDocumentsCard({
   selectedDocumentId = "",
   relatedDocumentIds = [],
   onSelectDocument = undefined,
+  embedded = false,
 }) {
   const [hiddenEpisodes, setHiddenEpisodes] = useState(() => new Set());
   const [episodeSelections, setEpisodeSelections] = useState({});
@@ -185,14 +187,62 @@ export default function PatientDocumentsCard({
   };
 
   return (
-    <Card elevation={0} sx={{ border: 1, borderColor: "divider" }}>
+    <Card
+      elevation={0}
+      sx={{
+        border: embedded ? 0 : 1,
+        borderColor: "divider",
+        borderRadius: embedded ? 0 : 1,
+        ...(embedded
+          ? {
+              display: "flex",
+              flexDirection: "column",
+              maxHeight: { xs: "none", lg: "none" },
+              overflow: "hidden",
+            }
+          : {}),
+      }}
+    >
       <CardHeader
         title="Patient Document Timeline"
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
         sx={{ py: 1, px: 1.5 }}
+        action={
+          chartModel.totalReports > 0 ? (
+            <Typography
+              variant="caption"
+              sx={{
+                display: "inline-block",
+                mt: 0.9,
+                mr: 0.75,
+                px: 1,
+                py: 0.25,
+                borderRadius: 999,
+                fontWeight: 600,
+                bgcolor: "info.main",
+                color: "#fff",
+              }}
+            >
+              {chartModel.totalReports} doc{chartModel.totalReports !== 1 ? "s" : ""}
+            </Typography>
+          ) : null
+        }
       />
       <Divider />
-      <CardContent sx={{ px: 1.5, py: 1.25, "&:last-child": { pb: 1.25 } }}>
+      <CardContent
+        sx={{
+          px: 1.5,
+          py: 1.25,
+          "&:last-child": { pb: 1.25 },
+          ...(embedded
+            ? {
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+              }
+            : {}),
+        }}
+      >
         {chartModel.totalReports === 0 ? (
           <Typography variant="body2" color="text.secondary">
             No documents were returned for this patient.
@@ -207,20 +257,22 @@ export default function PatientDocumentsCard({
               </Alert>
             ) : null}
 
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ rowGap: 1 }}>
-              <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                Document Episode Type:
-              </Typography>
-              {chartModel.episodes.map((episode) => (
-                <EpisodeFilterDropdown
-                  key={episode.key}
-                  episode={episode}
-                  points={pointsByEpisode.get(episode.label) || []}
-                  value={episodeSelections[episode.label] || EPISODE_SELECT_ALL}
-                  onChange={handleEpisodeSelection}
-                />
-              ))}
-            </Stack>
+            {isCollapsedTimestampMode ? (
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ rowGap: 1 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                  Document Episode Type:
+                </Typography>
+                {chartModel.episodes.map((episode) => (
+                  <EpisodeFilterDropdown
+                    key={episode.key}
+                    episode={episode}
+                    points={pointsByEpisode.get(episode.label) || []}
+                    value={episodeSelections[episode.label] || EPISODE_SELECT_ALL}
+                    onChange={handleEpisodeSelection}
+                  />
+                ))}
+              </Stack>
+            ) : null}
 
             {!isCollapsedTimestampMode ? (
               <>
@@ -391,10 +443,12 @@ export default function PatientDocumentsCard({
             )}
 
             {selectedPoint ? (
-              <Typography variant="body2">
-                <strong>Selected:</strong> {selectedPoint.name} ({selectedPoint.id}) • {selectedPoint.type} •{" "}
-                {selectedPoint.dateLabel}
-              </Typography>
+              <Tooltip title={selectedPoint.id} placement="top-start">
+                <Typography variant="body2" sx={{ cursor: "default" }}>
+                  <strong>Selected:</strong> {selectedPoint.name} • {selectedPoint.type} •{" "}
+                  {selectedPoint.dateLabel}
+                </Typography>
+              </Tooltip>
             ) : null}
 
             {hiddenEpisodes.size > 0 ? (
@@ -427,4 +481,5 @@ PatientDocumentsCard.propTypes = {
   selectedDocumentId: PropTypes.string,
   relatedDocumentIds: PropTypes.arrayOf(PropTypes.string),
   onSelectDocument: PropTypes.func,
+  embedded: PropTypes.bool,
 };

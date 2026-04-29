@@ -535,6 +535,7 @@ export default function PatientDocumentViewerCard({
         title="Document Viewer"
         subheader={document?.name || document?.id}
         titleTypographyProps={{ variant: "h6", sx: { fontWeight: 700 } }}
+        subheaderTypographyProps={{ variant: "body2", color: "text.secondary" }}
       />
       <Divider />
       <CardContent>
@@ -758,9 +759,9 @@ export default function PatientDocumentViewerCard({
                 variant="body2"
                 sx={{
                   whiteSpace: "pre-wrap",
-                  lineHeight: 1.7,
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  lineHeight: 1.8,
                   wordBreak: "break-word",
+                  fontSize: "0.875rem",
                 }}
               >
                 {highlightModel.segments.map((segment, index) => {

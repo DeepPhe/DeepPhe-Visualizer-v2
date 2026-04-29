@@ -282,22 +282,71 @@ export default function PatientView() {
                 Loaded patient: <strong>{loadedPatientId}</strong>
               </Typography>
 
-              <PatientDemographicsCard patientData={patientData} timelineData={timelineData} />
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: {
+                    xs: "minmax(0, 1fr)",
+                    lg: "200px minmax(0, 1fr) 36%",
+                  },
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  overflow: "hidden",
+                }}
+              >
+                <Box
+                  sx={{
+                    minWidth: { lg: 160 },
+                    maxWidth: { lg: 200 },
+                    borderRight: { lg: 1 },
+                    borderColor: "divider",
+                    minHeight: 0,
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <PatientDemographicsCard
+                    patientData={patientData}
+                  />
+                </Box>
 
-              <CancerTumorSummaryCard
-                cancers={cancerSummary}
-                factSelection={factSelection}
-                selectedDocumentId={selectedDocumentId}
-                onFactSelect={handleFactSelect}
-                onSelectDocument={setSelectedDocumentId}
-              />
+                <Box
+                  sx={{
+                    minWidth: 0,
+                    minHeight: 0,
+                    borderTop: { xs: 1, lg: 0 },
+                    borderColor: "divider",
+                  }}
+                >
+                  <CancerTumorSummaryCard
+                    cancers={cancerSummary}
+                    factSelection={factSelection}
+                    selectedDocumentId={selectedDocumentId}
+                    onFactSelect={handleFactSelect}
+                    onSelectDocument={setSelectedDocumentId}
+                  />
+                </Box>
 
-              <PatientDocumentsCard
-                timelineData={timelineData}
-                selectedDocumentId={selectedDocumentId}
-                relatedDocumentIds={factSelection?.documentIds || []}
-                onSelectDocument={setSelectedDocumentId}
-              />
+                <Box
+                  sx={{
+                    minWidth: 0,
+                    minHeight: 0,
+                    borderTop: { xs: 1, lg: 0 },
+                    borderLeft: { lg: 1 },
+                    borderColor: "divider",
+                  }}
+                >
+                  <PatientDocumentsCard
+                    embedded
+                    timelineData={timelineData}
+                    selectedDocumentId={selectedDocumentId}
+                    relatedDocumentIds={factSelection?.documentIds || []}
+                    onSelectDocument={setSelectedDocumentId}
+                  />
+                </Box>
+              </Box>
 
               <PatientDocumentViewerCard
                 document={selectedDocument}

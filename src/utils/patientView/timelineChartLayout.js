@@ -22,10 +22,10 @@ const DEFAULT_DIMENSIONS = {
   svgWidth: 1320,
   plotLeft: 236,
   plotRight: 20,
-  plotTop: 52,
-  rowHeight: 36,
+  plotTop: 64,
+  rowHeight: 72,
   stackSpacing: 8,
-  footerHeight: 44,
+  footerHeight: 56,
   datePaddingDays: 21,
 };
 

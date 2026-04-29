@@ -87,6 +87,7 @@ describe("PatientDocumentsCard", () => {
     const svg = container.querySelector('svg[aria-label="Patient document timeline chart"]');
     expect(svg).not.toBeNull();
     expect(container.querySelectorAll("circle[data-document-id]")).toHaveLength(3);
+    expect(container.querySelectorAll("select")).toHaveLength(0);
 
     unmount();
   });
@@ -108,25 +109,20 @@ describe("PatientDocumentsCard", () => {
     unmount();
   });
 
-  it("hides an episode when its dropdown is set to hidden", () => {
+  it("hides an episode when its dropdown is set to hidden in collapsed-date mode", () => {
     const { container, unmount } = renderComponent(
-      <PatientDocumentsCard timelineData={buildTimelineData()} />
+      <PatientDocumentsCard timelineData={buildCollapsedTimelineData()} />
     );
 
-    const diagnosticFilter = Array.from(container.querySelectorAll("select")).find((select) =>
-      String(select.id || "").includes("episode-filter-diagnostic")
-    );
-
-    expect(diagnosticFilter).toBeDefined();
+    const collapsedModeFilter = container.querySelector("select");
+    expect(collapsedModeFilter).not.toBeNull();
 
     act(() => {
-      diagnosticFilter.value = "__hidden__";
-      diagnosticFilter.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+      collapsedModeFilter.value = "__hidden__";
+      collapsedModeFilter.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
     });
 
-    const visiblePoints = container.querySelectorAll("circle[data-document-id]");
-    expect(visiblePoints).toHaveLength(1);
-    expect(visiblePoints[0].getAttribute("data-document-id")).toBe("doc-3");
+    expect(container.textContent).toContain("Hidden by episode filter: 2 document(s).");
 
     unmount();
   });
@@ -145,24 +141,24 @@ describe("PatientDocumentsCard", () => {
     unmount();
   });
 
-  it("selects a document when chosen from an episode dropdown", () => {
+  it("selects a document when chosen from an episode dropdown in collapsed-date mode", () => {
     const onSelectDocument = jest.fn();
     const { container, unmount } = renderComponent(
-      <PatientDocumentsCard timelineData={buildTimelineData()} onSelectDocument={onSelectDocument} />
+      <PatientDocumentsCard
+        timelineData={buildCollapsedTimelineData()}
+        onSelectDocument={onSelectDocument}
+      />
     );
 
-    const diagnosticFilter = Array.from(container.querySelectorAll("select")).find((select) =>
-      String(select.id || "").includes("episode-filter-diagnostic")
-    );
-
-    expect(diagnosticFilter).toBeDefined();
+    const collapsedModeFilter = container.querySelector("select");
+    expect(collapsedModeFilter).not.toBeNull();
 
     act(() => {
-      diagnosticFilter.value = "doc-2";
-      diagnosticFilter.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+      collapsedModeFilter.value = "patient-collapsed_16032025025912_D_2";
+      collapsedModeFilter.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
     });
 
-    expect(onSelectDocument).toHaveBeenCalledWith("doc-2");
+    expect(onSelectDocument).toHaveBeenCalledWith("patient-collapsed_16032025025912_D_2");
     unmount();
   });
 });

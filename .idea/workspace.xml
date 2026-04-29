@@ -5,18 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="d8eba3e8-c32b-4e6b-abb9-fe2370053215" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/Viz3.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Viz3.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/App.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/App.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/clients/deepphe-data-api.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/clients/deepphe-data-api.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientSearchForm.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientSearchForm.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/hooks/useBatchDataLoader.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useBatchDataLoader.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/views/__tests__/filterSets.test.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/__tests__/filterSets.test.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/views/__tests__/filters.test.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/__tests__/filters.test.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/views/filterSets.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/filterSets.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/views/filters.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/filters.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/patient/CancerTumorSummaryCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/CancerTumorSummaryCard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientDemographicsCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientDemographicsCard.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/views/patient.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/patient.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../dphe-data-api/src/controllers/patient-document-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/src/controllers/patient-document-controller.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../dphe-data-api/src/routes/patient-document-routes.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/src/routes/patient-document-routes.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../dphe-data-api/test/unit/controllers/patient-document-controller.test.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/test/unit/controllers/patient-document-controller.test.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,7 +34,7 @@
     </selectedModels>
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="18256" />
+    <option name="cachedIndexableFilesCount" value="18258" />
     <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
   </component>
   <component name="FileTemplateManagerImpl">
@@ -154,7 +149,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-3bd3a6803838-JavaScript-WS-261.22158.274" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-WS-261.23567.141" />
       </set>
     </attachedChunks>
   </component>
@@ -171,6 +166,7 @@
       <workItem from="1776799447640" duration="4913000" />
       <workItem from="1776871259136" duration="8147000" />
       <workItem from="1777318799835" duration="189000" />
+      <workItem from="1777404620370" duration="1832000" />
     </task>
     <servers />
   </component>

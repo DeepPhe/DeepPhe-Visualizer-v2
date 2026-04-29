@@ -7,8 +7,8 @@ import {
   CardContent,
   CardHeader,
   Divider,
-  Grid,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import { toDisplayName } from "../../utils/displayNames";
@@ -32,36 +32,21 @@ function getFactLabel(fact = {}) {
   return toDisplayName(rawLabel) || rawLabel;
 }
 
-function InlineFactButton({ fact, onSelect = undefined, isActive = false }) {
+function FactBadge({ fact, onSelect = undefined, isActive = false }) {
   return (
     <Button
       size="small"
-      variant="text"
-      color={isActive ? "primary" : "inherit"}
+      variant={isActive ? "contained" : "outlined"}
       onClick={() => onSelect?.(fact.id)}
       sx={{
         minWidth: 0,
-        px: 0,
-        py: 0,
-        lineHeight: 1.2,
+        px: 0.8,
+        py: 0.05,
+        lineHeight: 1.1,
         textTransform: "none",
-        fontSize: "0.92rem",
-        fontWeight: isActive ? 700 : 500,
-        textDecorationLine: "underline",
-        textDecorationColor: isActive ? "primary.main" : "rgba(25, 118, 210, 0.45)",
-        textDecorationThickness: "1px",
-        textUnderlineOffset: "2px",
-        borderRadius: 0,
-        "&:hover": {
-          bgcolor: "transparent",
-          textDecorationColor: "primary.main",
-          textDecorationThickness: "2px",
-        },
-        "&:focus-visible": {
-          outline: "2px solid",
-          outlineColor: "primary.main",
-          outlineOffset: 1,
-        },
+        fontSize: "0.73rem",
+        fontWeight: 600,
+        borderRadius: 999,
       }}
     >
       {getFactLabel(fact)}
@@ -69,7 +54,7 @@ function InlineFactButton({ fact, onSelect = undefined, isActive = false }) {
   );
 }
 
-InlineFactButton.propTypes = {
+FactBadge.propTypes = {
   fact: PropTypes.shape({
     id: PropTypes.string,
     value: PropTypes.string,
@@ -80,43 +65,44 @@ InlineFactButton.propTypes = {
   isActive: PropTypes.bool,
 };
 
-function InlineFactGroup({ label, facts = [], activeFactId = "", onFactSelect = undefined }) {
+function FactBadgeGroup({ label, facts = [], activeFactId = "", onFactSelect = undefined }) {
   const rows = Array.isArray(facts) ? facts.filter((fact) => String(fact?.id || "").trim()) : [];
-  if (rows.length === 0) {
-    return null;
-  }
 
   return (
-    <Box component="span" sx={{ display: "inline-flex", alignItems: "baseline", flexWrap: "wrap", gap: 0.45 }}>
-      <Typography component="span" variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-        {label}:
+    <Box
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        columnGap: 0.55,
+        rowGap: 0.35,
+      }}
+    >
+      <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+        {label}
       </Typography>
-      {rows.map((fact, index) => {
-        const factId = String(fact.id || "").trim();
-        return (
-          <Box
-            key={factId}
-            component="span"
-            sx={{ display: "inline-flex", alignItems: "baseline", gap: 0.35 }}
-          >
-            <InlineFactButton
+      {rows.length > 0 ? (
+        rows.map((fact) => {
+          const factId = String(fact.id || "").trim();
+          return (
+            <FactBadge
+              key={factId}
               fact={fact}
               onSelect={onFactSelect}
               isActive={activeFactId === factId}
             />
-            {index < rows.length - 1 ? (
-              <Typography component="span" variant="body2" color="text.secondary">
-                ,
-              </Typography>
-            ) : null}
-          </Box>
-        );
-      })}
+          );
+        })
+      ) : (
+        <Typography component="span" variant="caption" color="text.disabled">
+          Unknown
+        </Typography>
+      )}
     </Box>
   );
 }
 
-InlineFactGroup.propTypes = {
+FactBadgeGroup.propTypes = {
   label: PropTypes.string.isRequired,
   facts: PropTypes.arrayOf(PropTypes.object),
   activeFactId: PropTypes.string,
@@ -146,6 +132,36 @@ function getCancerFactGroups(cancer = {}) {
       sensitivity: "base",
     });
   });
+}
+
+function getFactsByCategoryNames(cancerFactGroups = [], categoryNames = []) {
+  const normalizedNames = new Set(
+    (Array.isArray(categoryNames) ? categoryNames : [])
+      .map((categoryName) => String(categoryName || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const seenFactIds = new Set();
+  const groupedFacts = [];
+
+  (Array.isArray(cancerFactGroups) ? cancerFactGroups : []).forEach((group) => {
+    const groupName = String(group?.categoryName || group?.category || "").trim().toLowerCase();
+    if (!groupName || !normalizedNames.has(groupName)) {
+      return;
+    }
+
+    (Array.isArray(group?.facts) ? group.facts : []).forEach((fact) => {
+      const factId = String(fact?.id || "").trim();
+      if (!factId || seenFactIds.has(factId)) {
+        return;
+      }
+
+      seenFactIds.add(factId);
+      groupedFacts.push(fact);
+    });
+  });
+
+  return groupedFacts;
 }
 
 function getTnmGroups(cancer = {}) {
@@ -184,6 +200,11 @@ function getTumorSummaryGroups(tumor = {}) {
       label: String(category?.category || "Category").trim(),
       facts: Array.isArray(category?.facts) ? category.facts : [],
     }));
+}
+
+function isMachineId(value) {
+  if (!value || typeof value !== "string") return true;
+  return /^[a-z0-9_]{10,}$/i.test(value.trim());
 }
 
 function RelatedDocumentList({
@@ -238,176 +259,239 @@ export default function CancerTumorSummaryCard({
   onSelectDocument = undefined,
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
+  const normalizedCancers = Array.isArray(cancers) ? cancers : [];
 
   return (
-    <Card elevation={0} sx={{ border: 1, borderColor: "divider" }}>
+    <Card
+      elevation={0}
+      sx={{
+        border: 0,
+        borderRadius: 0,
+        display: "flex",
+        flexDirection: "column",
+        maxHeight: "none",
+        overflow: "hidden",
+      }}
+    >
       <CardHeader
         title="Cancer and Tumor Detail"
         sx={{ py: 1, px: 1.5 }}
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
-      />
-      <Divider />
-      <CardContent sx={{ px: 1.5, py: 1, "&:last-child": { pb: 1 } }}>
-        <Grid container spacing={1.5}>
-          <Grid item xs={12} lg={9}>
-            {(Array.isArray(cancers) ? cancers : []).length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No cancer summary data available for this patient.
-              </Typography>
-            ) : (
-              <Stack divider={<Divider flexItem />} spacing={0}>
-                {(Array.isArray(cancers) ? cancers : []).map((cancer) => {
-                  const cancerFactGroups = getCancerFactGroups(cancer);
-                  const tnmGroups = getTnmGroups(cancer);
-                  const tumors = Array.isArray(cancer?.tumors?.listViewData)
-                    ? cancer.tumors.listViewData
-                    : [];
-
-                  return (
-                    <Box key={cancer.cancerId} sx={{ py: 1.1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                        Cancer ID: {cancer.title}
-                      </Typography>
-
-                      <Box
-                        sx={{
-                          mt: 0.45,
-                          display: "flex",
-                          flexWrap: "wrap",
-                          columnGap: 1.6,
-                          rowGap: 0.4,
-                        }}
-                      >
-                        {cancerFactGroups.map((group) => (
-                          <InlineFactGroup
-                            key={`${cancer.cancerId}-${group.category}`}
-                            label={group.categoryName || group.category || "Category"}
-                            facts={group.facts}
-                            activeFactId={activeFactId}
-                            onFactSelect={onFactSelect}
-                          />
-                        ))}
-                      </Box>
-
-                      {tnmGroups.some((group) => group.facts.length > 0) ? (
-                        <Box
-                          sx={{
-                            mt: 0.45,
-                            display: "flex",
-                            flexWrap: "wrap",
-                            columnGap: 1.6,
-                            rowGap: 0.4,
-                          }}
-                        >
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            TNM:
-                          </Typography>
-                          {tnmGroups.map((group) => (
-                            <InlineFactGroup
-                              key={`${cancer.cancerId}-tnm-${group.key}`}
-                              label={group.key}
-                              facts={group.facts}
-                              activeFactId={activeFactId}
-                              onFactSelect={onFactSelect}
-                            />
-                          ))}
-                        </Box>
-                      ) : null}
-
-                      {tumors.length > 0 ? (
-                        <Box sx={{ mt: 0.45 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.25 }}>
-                            Tumor Summary
-                          </Typography>
-                          <Stack spacing={0.35}>
-                            {tumors.map((tumor) => (
-                              <Box key={`${cancer.cancerId}-${tumor.id}`}>
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  {tumor.type || tumor.id || "Tumor"}
-                                </Typography>
-                                <Box
-                                  sx={{
-                                    mt: 0.1,
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    columnGap: 1.4,
-                                    rowGap: 0.35,
-                                    pl: 0.5,
-                                  }}
-                                >
-                                  {getTumorSummaryGroups(tumor).map((group) => (
-                                    <InlineFactGroup
-                                      key={`${tumor.id}-${group.label}`}
-                                      label={group.label}
-                                      facts={group.facts}
-                                      activeFactId={activeFactId}
-                                      onFactSelect={onFactSelect}
-                                    />
-                                  ))}
-                                </Box>
-                              </Box>
-                            ))}
-                          </Stack>
-                        </Box>
-                      ) : null}
-                    </Box>
-                  );
-                })}
-              </Stack>
-            )}
-          </Grid>
-
-          <Grid item xs={12} lg={3}>
-            <Box
+        action={
+          normalizedCancers.length > 0 ? (
+            <Typography
+              variant="caption"
               sx={{
-                border: 1,
-                borderColor: "divider",
-                px: 1.2,
-                py: 1,
-                bgcolor: "background.default",
-                position: { lg: "sticky" },
-                top: { lg: 12 },
+                display: "inline-block",
+                mt: 0.9,
+                mr: 0.75,
+                px: 1,
+                py: 0.25,
+                borderRadius: 999,
+                fontWeight: 600,
+                bgcolor: "error.main",
+                color: "#fff",
               }}
             >
-              <Stack spacing={0.6}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                  Details
-                </Typography>
-                {factSelection ? (
-                  <>
-                    <Typography variant="body2">
-                      <strong>Category:</strong> {factSelection.categoryName || "Unknown"}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>Name:</strong> {factSelection.prettyName || "Unknown"}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>Negated:</strong> {String(Boolean(factSelection?.valueObj?.negated))}
-                    </Typography>
-                    <Typography variant="body2">
-                      <strong>Confidence:</strong> {Number(factSelection?.valueObj?.confidence) || 0}%
-                    </Typography>
+              {normalizedCancers.length} cancer{normalizedCancers.length !== 1 ? "s" : ""}
+            </Typography>
+          ) : null
+        }
+      />
+      <Divider />
+      <CardContent
+        sx={{
+          px: 1.5,
+          py: 1,
+          "&:last-child": { pb: 1 },
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+        }}
+      >
+        {normalizedCancers.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No cancer summary data available for this patient.
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            {normalizedCancers.map((cancer, cancerIndex) => {
+              const cancerId = String(cancer?.cancerId || cancer?.title || "").trim();
+              const cancerFactGroups = getCancerFactGroups(cancer);
+              const locationFacts = getFactsByCategoryNames(cancerFactGroups, ["Location"]);
+              const gradeFacts = getFactsByCategoryNames(cancerFactGroups, ["Grade"]);
+              const geneFacts = getFactsByCategoryNames(cancerFactGroups, ["Genes", "Gene"]);
+              const tnmGroups = getTnmGroups(cancer);
+              const tumors = Array.isArray(cancer?.tumors?.listViewData)
+                ? cancer.tumors.listViewData
+                : [];
+              const hasTumorSummary = tumors.some((tumor) => getTumorSummaryGroups(tumor).length > 0);
 
-                    <Box sx={{ pt: 0.4 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        Related documents
+              return (
+                <Box
+                  key={cancerId}
+                  sx={{
+                    border: 1,
+                    borderColor: "divider",
+                    borderRadius: 1,
+                    px: 1,
+                    py: 0.6,
+                    bgcolor: "background.paper",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 0.5,
+                  }}
+                >
+                  {/* Cancer-level facts — one wrappable row */}
+                  <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.7 }}>
+                    <Tooltip title={`Full ID: ${cancer.title}`} placement="top-start">
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 700, cursor: "default", flexShrink: 0 }}
+                      >
+                        Cancer {cancerIndex + 1}
                       </Typography>
-                      <RelatedDocumentList
-                        factSelection={factSelection}
-                        selectedDocumentId={selectedDocumentId}
-                        onSelectDocument={onSelectDocument}
-                      />
+                    </Tooltip>
+
+                    <FactBadgeGroup
+                      label="Location"
+                      facts={locationFacts}
+                      activeFactId={activeFactId}
+                      onFactSelect={onFactSelect}
+                    />
+                    <FactBadgeGroup
+                      label="Grade"
+                      facts={gradeFacts}
+                      activeFactId={activeFactId}
+                      onFactSelect={onFactSelect}
+                    />
+                    <FactBadgeGroup
+                      label="Gene(s)"
+                      facts={geneFacts}
+                      activeFactId={activeFactId}
+                      onFactSelect={onFactSelect}
+                    />
+
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        gap: 0.7,
+                        pl: 0.75,
+                        borderLeft: 1,
+                        borderColor: "divider",
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                        TNM
+                      </Typography>
+                      {tnmGroups.map((group) => (
+                        <FactBadgeGroup
+                          key={`${cancerId}-tnm-${group.key}`}
+                          label={group.key}
+                          facts={group.facts}
+                          activeFactId={activeFactId}
+                          onFactSelect={onFactSelect}
+                        />
+                      ))}
                     </Box>
-                  </>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    Click a fact to see details here.
+                  </Box>
+
+                  {/* Tumor rows — each tumor always starts on its own line */}
+                  {hasTumorSummary
+                    ? tumors.map((tumor, tumorIndex) => {
+                        const tumorGroups = getTumorSummaryGroups(tumor);
+                        if (tumorGroups.length === 0) return null;
+
+                        const tumorLabel = !isMachineId(tumor.type)
+                          ? tumor.type
+                          : `Tumor ${tumorIndex + 1}`;
+                        const tooltipTitle = [tumor.type, tumor.id]
+                          .filter(Boolean)
+                          .join(" · ");
+
+                        return (
+                          <Box
+                            key={`${cancerId}-${tumor.id}`}
+                            sx={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              alignItems: "center",
+                              gap: 0.7,
+                              pl: 0.75,
+                              borderLeft: 1,
+                              borderColor: "divider",
+                            }}
+                          >
+                            <Tooltip title={tooltipTitle} placement="top-start">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ fontWeight: 700, cursor: "default", flexShrink: 0 }}
+                              >
+                                {tumorLabel}
+                              </Typography>
+                            </Tooltip>
+                            {tumorGroups.map((group) => (
+                              <FactBadgeGroup
+                                key={`${tumor.id}-${group.label}`}
+                                label={group.label}
+                                facts={group.facts}
+                                activeFactId={activeFactId}
+                                onFactSelect={onFactSelect}
+                              />
+                            ))}
+                          </Box>
+                        );
+                      })
+                    : null}
+                </Box>
+              );
+            })}
+
+            {factSelection ? (
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  p: 1,
+                  bgcolor: "background.default",
+                }}
+              >
+                <Stack spacing={0.6}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Details
                   </Typography>
-                )}
-              </Stack>
-            </Box>
-          </Grid>
-        </Grid>
+                  <Typography variant="body2">
+                    <strong>Category:</strong> {factSelection?.categoryName || "Unknown"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Name:</strong> {factSelection?.prettyName || "Unknown"}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Negated:</strong> {String(Boolean(factSelection?.valueObj?.negated))}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Confidence:</strong> {Number(factSelection?.valueObj?.confidence) || 0}%
+                  </Typography>
+
+                  <Box sx={{ pt: 0.2 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      Related documents
+                    </Typography>
+                    <RelatedDocumentList
+                      factSelection={factSelection}
+                      selectedDocumentId={selectedDocumentId}
+                      onSelectDocument={onSelectDocument}
+                    />
+                  </Box>
+                </Stack>
+              </Box>
+            ) : null}
+          </Stack>
+        )}
       </CardContent>
     </Card>
   );
