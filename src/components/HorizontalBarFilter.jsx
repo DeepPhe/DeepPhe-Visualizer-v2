@@ -28,9 +28,12 @@ const MIN_CHART_WIDTH = 280;
 const LEFT_PADDING = 10;
 const RIGHT_PADDING = 10;
 const COUNT_COLUMN_MIN_WIDTH = 52;
+const LABEL_COLUMN_MAX_SHARE = 0.42;
+const LABEL_COLUMN_SHARE_MULTIPLIER = 1.25;
 const HIERARCHY_ICON_HIT_WIDTH = 14;
 const HIERARCHY_CHILD_INDENT = 14;
 const PATIENT_DOT_RADIUS = 3;
+const MIN_BAR_REGION_SCALE = 0.2;
 
 const visuallyHiddenStyles = {
   position: "absolute",
@@ -57,6 +60,14 @@ function clampFontScale(value) {
     return 1;
   }
   return Math.max(0.5, Math.min(2, numericValue));
+}
+
+function clampBarRegionScale(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 1;
+  }
+  return Math.max(MIN_BAR_REGION_SCALE, Math.min(1, numericValue));
 }
 
 function getNextSortMode(currentMode, modes) {
@@ -338,8 +349,11 @@ export default function HorizontalBarFilter({
   customSortOrder = [],
   inlinePatientIdsThreshold = 0,
   getPatientSummary,
+  barRegionScale = 1,
+  density = "standard",
   className = "",
 }) {
+  const isCompactDensity = density === "compact";
   const theme = useTheme();
   const generatedId = useId();
   const chartRegionId = `${generatedId}-chart-region`;
@@ -349,6 +363,7 @@ export default function HorizontalBarFilter({
     [sortValuesOnly]
   );
   const safeFontScale = clampFontScale(fontScale);
+  const safeBarRegionScale = clampBarRegionScale(barRegionScale);
   const [isExpanded, setIsExpanded] = useState(Boolean(defaultExpanded));
   const [sortMode, setSortMode] = useState(
     availableSortModes.includes(defaultSort) ? defaultSort : availableSortModes[0]
@@ -530,9 +545,17 @@ export default function HorizontalBarFilter({
     [sortedData]
   );
 
-  const textFontSize = Math.max(10, Math.round(12 * safeFontScale));
-  const rowHeight = Math.min(34, Math.max(28, Math.round(30 * safeFontScale)));
-  const barHeight = Math.min(22, Math.max(16, Math.round(18 * safeFontScale)));
+  // Compact density tightens row/bar metrics so each card fits more values
+  // without scrolling. Standard density preserves the larger comfortable size.
+  const textFontSize = isCompactDensity
+    ? Math.max(9, Math.round(10.5 * safeFontScale))
+    : Math.max(10, Math.round(12 * safeFontScale));
+  const rowHeight = isCompactDensity
+    ? Math.min(24, Math.max(18, Math.round(20 * safeFontScale)))
+    : Math.min(34, Math.max(28, Math.round(30 * safeFontScale)));
+  const barHeight = isCompactDensity
+    ? Math.min(14, Math.max(10, Math.round(12 * safeFontScale)))
+    : Math.min(22, Math.max(16, Math.round(18 * safeFontScale)));
   const dotRadius = Math.max(2, Math.round(PATIENT_DOT_RADIUS * safeFontScale));
   const dotHitRadius = Math.max(8, dotRadius + 4);
   const countColumnWidth = Math.max(
@@ -549,17 +572,22 @@ export default function HorizontalBarFilter({
     : 0;
   const estimatedLabelWidth = Math.ceil(maxLabelLength * textFontSize * 0.58) + 16 + hierarchyInsetWidth;
   const minLabelWidth = Math.ceil(78 + safeFontScale * 14);
-  const maxLabelWidth = Math.max(82, Math.round(availableWidth * 0.42));
+  const maxLabelWidth = Math.max(
+    82,
+    Math.round(availableWidth * LABEL_COLUMN_MAX_SHARE * LABEL_COLUMN_SHARE_MULTIPLIER)
+  );
   const labelColumnWidth = Math.min(
     maxLabelWidth,
     Math.max(minLabelWidth, estimatedLabelWidth)
   );
   const columnGap = Math.max(6, Math.round(8 * safeFontScale));
   const barStartX = LEFT_PADDING + labelColumnWidth + columnGap;
-  const barMaxWidth = Math.max(
+  const fullBarMaxWidth = Math.max(
     24,
     chartWidth - RIGHT_PADDING - countColumnWidth - columnGap - barStartX
   );
+  const barMaxWidth = Math.max(24, Math.round(fullBarMaxWidth * safeBarRegionScale));
+  const countColumnStartX = barStartX + barMaxWidth + columnGap;
   const maxLabelCharacters = Math.max(
     8,
     Math.floor((labelColumnWidth - 12 - hierarchyInsetWidth) / Math.max(1, textFontSize * 0.58))
@@ -963,7 +991,13 @@ export default function HorizontalBarFilter({
                 </Box>
               ) : null}
             </Box>
-            <Box sx={{ flex: 1, minWidth: 0 }} />
+            <Box
+              sx={{
+                width: `${barMaxWidth}px`,
+                minWidth: `${barMaxWidth}px`,
+                maxWidth: `${barMaxWidth}px`,
+              }}
+            />
             <Box
               className="horizontal-bar-filter-sort-count-button"
               component="button"
@@ -1229,7 +1263,7 @@ export default function HorizontalBarFilter({
 
                     <text
                       className="horizontal-bar-filter-row-count"
-                      x={chartWidth - RIGHT_PADDING}
+                      x={countColumnStartX + countColumnWidth}
                       y={rowCenterY}
                       dominantBaseline="middle"
                       textAnchor="end"
@@ -1462,5 +1496,7 @@ HorizontalBarFilter.propTypes = {
   customSortOrder: PropTypes.arrayOf(PropTypes.string),
   inlinePatientIdsThreshold: PropTypes.number,
   getPatientSummary: PropTypes.func,
+  barRegionScale: PropTypes.number,
+  density: PropTypes.oneOf(["standard", "compact"]),
   className: PropTypes.string,
 };

@@ -17,6 +17,8 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -40,6 +42,8 @@ import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import OpenInFullIcon from "@mui/icons-material/OpenInFull";
+import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import { Link as RouterLink } from "react-router-dom";
 import { getSummary as getOmopSummary } from "../controllers/omap";
 import { getSummary as getAttributesSummary } from "../controllers/attributes";
@@ -49,6 +53,7 @@ import {
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
 import HorizontalBarFilter from "../components/HorizontalBarFilter";
+import EmbeddedPatientView from "../components/EmbeddedPatientView";
 import PatientGrid from "../components/PatientGrid";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
 import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
@@ -70,8 +75,10 @@ import {
 } from "./rollup";
 
 const SLOW_QUERY_THRESHOLD_MS = 100;
-const PATIENT_GRID_PAGE_SIZE = 10;
+const PATIENT_GRID_DEFAULT_PAGE_SIZE = 10;
+const PATIENT_GRID_MAXIMIZED_PAGE_SIZE = 40;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
+const INLINE_FILTER_BAR_REGION_SCALE = 0.2;
 const AGE_AT_DX_CLASS = "AGE_AT_DX";
 const AGE_SELECTION_MODE = {
   DECILE: "decile",
@@ -87,6 +94,10 @@ const FILTER_LAYOUT_MODE = {
   STACKED: "stacked",
   PER_CARD_COLUMN: "per-card-column",
 };
+const FILTER_PANEL_DENSITY_MODE = {
+  STANDARD: "standard",
+  COMPACT: "compact",
+};
 const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   xs: 1,
   sm: 2,
@@ -94,6 +105,20 @@ const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   lg: 6,
   xl: 6,
 });
+const PACKED_GRID_COLUMN_COUNT_BY_BREAKPOINT = Object.freeze({
+  xs: 1,
+  sm: 4,
+  md: 6,
+  lg: 12,
+  xl: 12,
+});
+const RECEPTOR_PANEL_CLASS_NAMES = [
+  "HER2/Neu Status",
+  "Estrogen Receptor Status",
+  "Progesterone Receptor Status",
+  "Microsatellite Stable",
+];
+const RECEPTOR_PANEL_SYNTHETIC_CLASS = "__RECEPTOR_PANEL__";
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
 const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
@@ -111,6 +136,7 @@ const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
 const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
 const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
+const COMPACT_MODE_STORAGE_KEY = "filterPageCompactMode";
 const THEME_COLOR_OVERRIDES_STORAGE_KEY = "filterPageThemeColorOverrides";
 const THEME_EDITOR_MENU_VALUE = "__theme-builder__";
 const THEME_COLOR_VALUE_PATTERN =
@@ -164,6 +190,30 @@ const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
   "sections",
 ];
 
+function resolvePackedGridSpan({
+  displayName = "",
+  rowCount = 0,
+  isReceptorPanel = false,
+} = {}) {
+  if (isReceptorPanel) {
+    return { xs: 1, sm: 4, md: 4, lg: 5, xl: 5 };
+  }
+
+  const safeRowCount = Math.max(0, Number(rowCount) || 0);
+  const safeNameLength = String(displayName || "").trim().length;
+
+  if (safeRowCount <= 2 && safeNameLength <= 14) {
+    return { xs: 1, sm: 1, md: 1, lg: 2, xl: 2 };
+  }
+  if (safeRowCount >= 12 || safeNameLength >= 28) {
+    return { xs: 1, sm: 2, md: 3, lg: 4, xl: 4 };
+  }
+  if (safeRowCount >= 8 || safeNameLength >= 22) {
+    return { xs: 1, sm: 2, md: 2, lg: 3, xl: 3 };
+  }
+  return { xs: 1, sm: 2, md: 2, lg: 3, xl: 3 };
+}
+
 function toResolvedColumnCap(value, fallback = 1) {
   const numericValue = Number(value);
   const safeFallback = Math.max(1, Number(fallback) || 1);
@@ -205,18 +255,42 @@ function resolveResponsiveColumnCap(
 function groupFilterSetsByRow(filterSets = []) {
   const normalizedSets = Array.isArray(filterSets) ? filterSets : [];
   const rowGroups = [];
+  const DENSE_ROW_WEIGHT_CAP = 6;
   let activeRowGroup = null;
+  let activePackedWeight = 0;
+  let packedRowIndex = 0;
 
   normalizedSets.forEach((filterSet, index) => {
     const fallbackRow = String(filterSet?.id || `row-${index}`).trim() || `row-${index}`;
     const rowId = String(filterSet?.row || "").trim() || fallbackRow;
+    const isPinnedRow = rowId === "cohort-overview";
 
-    if (!activeRowGroup || activeRowGroup.id !== rowId) {
-      activeRowGroup = { id: rowId, filterSets: [] };
+    if (isPinnedRow) {
+      activePackedWeight = 0;
+      if (!activeRowGroup || activeRowGroup.id !== rowId) {
+        activeRowGroup = { id: rowId, filterSets: [] };
+        rowGroups.push(activeRowGroup);
+      }
+      activeRowGroup.filterSets.push(filterSet);
+      return;
+    }
+
+    const filterCount = Array.isArray(filterSet?.filters) ? filterSet.filters.length : 0;
+    const estimatedWeight = Math.max(1, Math.ceil(filterCount / 2));
+    const canAppendToPackedRow =
+      Boolean(activeRowGroup) &&
+      String(activeRowGroup.id || "").startsWith("dense-") &&
+      activePackedWeight + estimatedWeight <= DENSE_ROW_WEIGHT_CAP;
+
+    if (!canAppendToPackedRow) {
+      activeRowGroup = { id: `dense-${packedRowIndex}`, filterSets: [] };
       rowGroups.push(activeRowGroup);
+      packedRowIndex += 1;
+      activePackedWeight = 0;
     }
 
     activeRowGroup.filterSets.push(filterSet);
+    activePackedWeight += estimatedWeight;
   });
 
   return rowGroups;
@@ -307,6 +381,23 @@ function getInitialBooleanPref(storageKey) {
     // localStorage unavailable
   }
   return false;
+}
+
+function getInitialFilterPanelDensityMode() {
+  try {
+    const stored = localStorage.getItem(COMPACT_MODE_STORAGE_KEY);
+    if (stored === "true") {
+      return FILTER_PANEL_DENSITY_MODE.COMPACT;
+    }
+    if (stored === "false") {
+      return FILTER_PANEL_DENSITY_MODE.STANDARD;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+
+  // Default to compact for higher information density on first load.
+  return FILTER_PANEL_DENSITY_MODE.COMPACT;
 }
 
 function normalizeThemeColorOverridesByTheme(rawValue) {
@@ -799,6 +890,65 @@ function getFilterDefaultSortMode(type, className) {
 function getFilterCustomSortOrder(type, className) {
   const configuredOrder = getFilterEntry(type, className)?.customSortOrder;
   return Array.isArray(configuredOrder) ? configuredOrder : [];
+}
+
+function getFilterCompactLabelStripPrefix(type, className) {
+  const prefix = getFilterEntry(type, className)?.compactLabelStripPrefix;
+  return typeof prefix === "string" && prefix.length > 0 ? prefix : null;
+}
+
+function stripCompactLabelPrefix(rawLabel, prefix) {
+  const label = String(rawLabel || "").trim();
+  const normalizedPrefix = String(prefix || "").trim();
+  if (!label || !normalizedPrefix) {
+    return label;
+  }
+
+  const escapedPrefix = normalizedPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const compactLabel = label.replace(new RegExp(`^${escapedPrefix}\\s*`, "i"), "").trim();
+  return compactLabel || label;
+}
+
+function withCompactFilterLabels(rows, type, className, isCompact) {
+  if (!isCompact || !Array.isArray(rows) || rows.length === 0) {
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  const prefix = getFilterCompactLabelStripPrefix(type, className);
+  if (!prefix) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    const fallbackLabel = String(row?.displayLabel || row?.label || "").trim();
+    if (!fallbackLabel) {
+      return row;
+    }
+
+    const compactDisplayLabel = stripCompactLabelPrefix(fallbackLabel, prefix);
+    if (!compactDisplayLabel || compactDisplayLabel === fallbackLabel) {
+      return row;
+    }
+
+    return {
+      ...row,
+      displayLabel: compactDisplayLabel,
+    };
+  });
+}
+
+function withCompactCustomSortOrder(sortOrder, type, className, isCompact) {
+  const normalizedSortOrder = Array.isArray(sortOrder) ? sortOrder : [];
+  if (!isCompact || normalizedSortOrder.length === 0) {
+    return normalizedSortOrder;
+  }
+
+  const prefix = getFilterCompactLabelStripPrefix(type, className);
+  if (!prefix) {
+    return normalizedSortOrder;
+  }
+
+  return normalizedSortOrder.map((value) => stripCompactLabelPrefix(value, prefix));
 }
 
 function getFilterMaxHeightPx(type, className) {
@@ -2276,6 +2426,10 @@ function FiltersView() {
   const [fontFamilyKey] = useState(getInitialFontFamilyKey);
   const [highContrast, setHighContrast] = useState(() => getInitialBooleanPref(HIGH_CONTRAST_STORAGE_KEY));
   const [reducedMotion, setReducedMotion] = useState(() => getInitialBooleanPref(REDUCED_MOTION_STORAGE_KEY));
+  const [filterPanelDensityMode, setFilterPanelDensityMode] = useState(
+    getInitialFilterPanelDensityMode
+  );
+  const isCompactDensity = filterPanelDensityMode === FILTER_PANEL_DENSITY_MODE.COMPACT;
   const [isThemeBuilderOpen, setIsThemeBuilderOpen] = useState(false);
   const [themeBuilderThemeKey, setThemeBuilderThemeKey] = useState(getInitialThemeKey);
   const [themeBuilderSearchQuery, setThemeBuilderSearchQuery] = useState("");
@@ -2515,6 +2669,22 @@ function FiltersView() {
       return nextValue;
     });
   }, []);
+  const handleFilterPanelDensityModeChange = useCallback((event) => {
+    const requestedMode = String(event?.target?.value || "").trim().toLowerCase();
+    const nextMode =
+      requestedMode === FILTER_PANEL_DENSITY_MODE.STANDARD
+        ? FILTER_PANEL_DENSITY_MODE.STANDARD
+        : FILTER_PANEL_DENSITY_MODE.COMPACT;
+    setFilterPanelDensityMode(nextMode);
+    try {
+      localStorage.setItem(
+        COMPACT_MODE_STORAGE_KEY,
+        String(nextMode === FILTER_PANEL_DENSITY_MODE.COMPACT)
+      );
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
   const getOmopSummaryForFilters = useCallback(
     () => getOmopSummary({ includePatientIds: false }),
     []
@@ -2540,11 +2710,14 @@ function FiltersView() {
   const [countError, setCountError] = useState("");
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [currentPatientGridPage, setCurrentPatientGridPage] = useState(0);
+  const [openPatientIds, setOpenPatientIds] = useState([]);
+  const [activeDrawerTab, setActiveDrawerTab] = useState(0);
   const [patientGridPageCache, setPatientGridPageCache] = useState(() => new Map());
   const [isPatientGridPageLoading, setIsPatientGridPageLoading] = useState(false);
   const [patientGridPageError, setPatientGridPageError] = useState("");
   const [patientGridPageRetryToken, setPatientGridPageRetryToken] = useState(0);
   const [isPatientGridDockExpanded, setIsPatientGridDockExpanded] = useState(true);
+  const [isPatientGridDockMaximized, setIsPatientGridDockMaximized] = useState(false);
   const [filterLayoutMode, setFilterLayoutMode] = useState(FILTER_LAYOUT_MODE.PER_CARD_COLUMN);
   const isPerCardColumnLayout = filterLayoutMode === FILTER_LAYOUT_MODE.PER_CARD_COLUMN;
     const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
@@ -2569,6 +2742,42 @@ function FiltersView() {
   useEffect(() => {
     includedPatientIdsByRowKeyRef.current = includedPatientIdsByRowKey;
   }, [includedPatientIdsByRowKey]);
+
+  useEffect(() => {
+    if (!isPatientGridDockMaximized || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const panelId = `drawer-tabpanel-${activeDrawerTab}`;
+    let frameId = null;
+
+    const scrollPanelToTop = () => {
+      const panelElement = document.getElementById(panelId);
+      if (!panelElement) {
+        return;
+      }
+      panelElement.scrollTop = 0;
+    };
+
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      frameId = window.requestAnimationFrame(scrollPanelToTop);
+    } else {
+      scrollPanelToTop();
+    }
+
+    return () => {
+      if (
+        frameId !== null &&
+        typeof window !== "undefined" &&
+        typeof window.cancelAnimationFrame === "function"
+      ) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [activeDrawerTab, isPatientGridDockMaximized]);
 
   useEffect(() => {
     if (hasLoggedInitialLoadRef.current) {
@@ -2630,6 +2839,16 @@ function FiltersView() {
   const attributeFilterSetRows = useMemo(
     () => groupFilterSetsByRow(attributeFilterSets),
     [attributeFilterSets]
+  );
+  const cohortOverviewInlineAttributeFilterSets = useMemo(() => {
+    const cohortOverviewRow = attributeFilterSetRows.find(
+      (rowGroup) => rowGroup.id === "cohort-overview"
+    );
+    return Array.isArray(cohortOverviewRow?.filterSets) ? cohortOverviewRow.filterSets : [];
+  }, [attributeFilterSetRows]);
+  const attributeFilterSetRowsExcludingCohortOverview = useMemo(
+    () => attributeFilterSetRows.filter((rowGroup) => rowGroup.id !== "cohort-overview"),
+    [attributeFilterSetRows]
   );
   const orderedOmopClasses = useMemo(
     () => omopFilterSets.flatMap((filterSet) => filterSet.filters.map((filter) => filter.key)),
@@ -3294,6 +3513,9 @@ function FiltersView() {
     [activeFilters, countResult?.count]
   );
   const cohortSize = Number(countResult?.count || 0);
+  const patientGridPageSize = isPatientGridDockMaximized
+    ? PATIENT_GRID_MAXIMIZED_PAGE_SIZE
+    : PATIENT_GRID_DEFAULT_PAGE_SIZE;
   const patientIdsForResult = useMemo(
     () => normalizePatientIds(countResult?.patientIds),
     [countResult?.patientIds]
@@ -3303,22 +3525,22 @@ function FiltersView() {
     [patientIdsForResult]
   );
   const totalPatientGridPages = useMemo(
-    () => Math.ceil(patientIdsForResult.length / PATIENT_GRID_PAGE_SIZE),
-    [patientIdsForResult.length]
+    () => Math.ceil(patientIdsForResult.length / patientGridPageSize),
+    [patientGridPageSize, patientIdsForResult.length]
   );
   const currentPatientGridPageIds = useMemo(() => {
     if (cohortSize <= 0) {
       return [];
     }
 
-    const startIndex = currentPatientGridPage * PATIENT_GRID_PAGE_SIZE;
+    const startIndex = currentPatientGridPage * patientGridPageSize;
     const endIndex = Math.min(
-      startIndex + PATIENT_GRID_PAGE_SIZE,
+      startIndex + patientGridPageSize,
       patientIdsForResult.length
     );
 
     return patientIdsForResult.slice(startIndex, endIndex);
-  }, [cohortSize, currentPatientGridPage, patientIdsForResult]);
+  }, [cohortSize, currentPatientGridPage, patientGridPageSize, patientIdsForResult]);
   const patientGridRows = useMemo(
     () => patientGridPageCache.get(currentPatientGridPage) || [],
     [currentPatientGridPage, patientGridPageCache]
@@ -3336,6 +3558,23 @@ function FiltersView() {
           totalPatientGridPages
         ).toLocaleString()} · ${cohortSize.toLocaleString()} matched patient${cohortSize === 1 ? "" : "s"}.`
       : "No matched patients.";
+  const patientGridDrawerFilterSummaryText = useMemo(() => {
+    if (activeFilters.length === 0) {
+      return "";
+    }
+
+    return activeFilters
+      .map((filter) => {
+        const classLabel = getFilterDisplayName(filter.type, filter.class);
+        const selectedValues = formatSelectionText(
+          filter.instances.map((value) =>
+            toDisplayInstanceValue(filter.type, filter.class, value)
+          )
+        );
+        return `${classLabel} (${selectedValues})`;
+      })
+      .join(", ");
+  }, [activeFilters]);
   const patientGridCollapsedHeaderSummary = useMemo(() => {
     const hasFilterSummaries = activeFilters.length > 0;
     const hasPerfSummary = SHOULD_LOG_FILTERS_PERF && Boolean(countResult);
@@ -3450,8 +3689,16 @@ function FiltersView() {
   ]);
   const patientGridDrawerBottomPadding = isPatientGridDockVisible
     ? {
-        xs: isPatientGridDockExpanded ? "56vh" : "104px",
-        md: isPatientGridDockExpanded ? "min(64vh, 640px)" : "116px",
+        xs: isPatientGridDockMaximized
+          ? "calc(100vh - 96px)"
+          : isPatientGridDockExpanded
+          ? "68vh"
+          : "104px",
+        md: isPatientGridDockMaximized
+          ? "calc(100vh - 124px)"
+          : isPatientGridDockExpanded
+          ? "min(78vh, 820px)"
+          : "116px",
       }
     : 0;
   const patientGridDrawerTableLoading = isCountLoading || isPatientGridPageLoading;
@@ -3461,7 +3708,7 @@ function FiltersView() {
     setPatientGridPageCache(new Map());
     setPatientGridPageError("");
     setIsPatientGridPageLoading(false);
-  }, [patientIdsForResultKey, shouldShowPatientDetailGrid]);
+  }, [patientGridPageSize, patientIdsForResultKey, shouldShowPatientDetailGrid]);
 
   useEffect(() => {
     if (totalPatientGridPages <= 0) {
@@ -3569,6 +3816,51 @@ function FiltersView() {
     setPatientGridPageRetryToken((previous) => previous + 1);
   }, [currentPatientGridPage]);
 
+  const MAX_OPEN_PATIENT_TABS = 5;
+
+  const handleOpenPatientTab = useCallback((patientId) => {
+    const normalizedId = String(patientId || "").trim();
+    if (!normalizedId) return;
+
+    setOpenPatientIds((previous) => {
+      const existingIndex = previous.indexOf(normalizedId);
+      if (existingIndex !== -1) {
+        setActiveDrawerTab(existingIndex + 1);
+        return previous;
+      }
+
+      const next = [...previous, normalizedId].slice(-MAX_OPEN_PATIENT_TABS);
+      setActiveDrawerTab(next.length);
+      return next;
+    });
+
+    setIsPatientGridDockExpanded(true);
+  }, [MAX_OPEN_PATIENT_TABS]);
+
+  const handleClosePatientTab = useCallback((patientId, event) => {
+    event.stopPropagation();
+    setOpenPatientIds((previous) => {
+      const index = previous.indexOf(patientId);
+      if (index === -1) {
+        return previous;
+      }
+      const next = previous.filter((id) => id !== patientId);
+
+      setActiveDrawerTab((previousTab) => {
+        const closingTabIndex = index + 1;
+        if (previousTab === closingTabIndex) {
+          return Math.max(0, closingTabIndex - 1);
+        }
+        if (previousTab > closingTabIndex) {
+          return previousTab - 1;
+        }
+        return previousTab;
+      });
+
+      return next;
+    });
+  }, []);
+
   const omopChartDataWithIncludedByClass = useMemo(() => {
     const next = {};
 
@@ -3634,6 +3926,21 @@ function FiltersView() {
     includedPatientIdsByRowKey,
     orderedAttributeFilterClasses,
   ]);
+  const getChartDataForDensity = useCallback(
+    (rows, filterType, className) =>
+      withCompactFilterLabels(rows, filterType, className, isCompactDensity),
+    [isCompactDensity]
+  );
+  const getCustomSortOrderForDensity = useCallback(
+    (filterType, className) =>
+      withCompactCustomSortOrder(
+        getFilterCustomSortOrder(filterType, className),
+        filterType,
+        className,
+        isCompactDensity
+      ),
+    [isCompactDensity]
+  );
   const handleSelectionChange = (setter, className) => (nextValues) => {
     const normalizedValues = Array.isArray(nextValues)
       ? [...new Set(nextValues.map((value) => String(value || "").trim()).filter(Boolean))]
@@ -3727,7 +4034,11 @@ function FiltersView() {
       type: normalizedType,
       className,
       classDisplayName,
-      chartData: Array.isArray(chartData) ? chartData : [],
+      chartData: getChartDataForDensity(
+        Array.isArray(chartData) ? chartData : [],
+        normalizedType,
+        className
+      ),
       selectedValues,
       classError,
       sortMode,
@@ -3739,6 +4050,7 @@ function FiltersView() {
     attributeDisplayChartDataByClass,
     attributeSortModeByClass,
     chartDataByClass,
+    getChartDataForDensity,
     omopChartDataWithIncludedByClass,
     omopData.errorsByClass,
     omopSortModeByClass,
@@ -3849,15 +4161,25 @@ function FiltersView() {
     hasNonDefaultAttributeSortMode ||
     Boolean(activeFilterModal) ||
     Boolean(String(activeFilterSearchQuery || "").trim());
-  const CARD_COLUMN_WIDTH = 350;
-  const CARD_COLUMN_GAP_PX = 24;
+  const FILTER_PANEL_SPACING_PX = isCompactDensity ? 12 : 16;
+  const FILTER_PANEL_SPACING_UNITS = FILTER_PANEL_SPACING_PX / 8;
+  // Hard cap every filter card at 200px. Anything taller scrolls inside the
+  // chart viewport (overflowY: auto on .horizontal-bar-filter-chart-viewport)
+  // so the page stays scannable even for cards with hundreds of values.
+  const FILTER_CARD_MAX_HEIGHT_PX = 200;
   const FILTER_SECTION_HEIGHT_CAP_PX = 700;
   const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
   const PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX = 340;
-  const ROW_HEIGHT_ESTIMATE = 36;
-  const CARD_OVERHEAD_ESTIMATE = 120;
-  const NATURAL_STACK_GAP_PX = 24;
-  const CARD_BOTTOM_MARGIN = 24;
+  const ROW_HEIGHT_ESTIMATE = isCompactDensity ? 22 : 36;
+  const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 76 : 120;
+  const NATURAL_STACK_GAP_PX = isCompactDensity ? 12 : 24;
+  const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
+  // Keep card column width and max-cols stable across densities so the row
+  // layout doesn't reshape (and wrap) when toggling. Density savings come
+  // from shorter row heights and tighter card padding instead.
+  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = 280;
+  const FILTER_SECTION_MAX_COLUMNS = 6;
+  const COHORT_OVERVIEW_MAX_COLUMNS = 3;
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const numericHeightCap = Number(sectionHeightCap);
     if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
@@ -3893,21 +4215,35 @@ function FiltersView() {
       "--filter-section-height": toSectionHeightPx(sectionHeight, resolvedSectionHeightCapPx),
       "--filter-section-height-cap": `${resolvedSectionHeightCapPx}px`,
       "--filter-card-chart-height-cap": `${resolvedCardChartHeightCapPx}px`,
-      "& > .filter-section-grid": {
-        maxHeight: { xs: "none", md: "var(--filter-section-height-cap)" },
-      },
+      "& > .filter-section-grid": { maxHeight: "none" },
     };
   };
   const getFilterSetRowSx = () => ({
     display: "flex",
     flexWrap: "wrap",
-    gap: 2,
+    gap: FILTER_PANEL_SPACING_UNITS,
     alignItems: "flex-start",
-    width: "100%",
+    width: "fit-content",
+    maxWidth: "100%",
     "& > .filter-set": {
-      flex: { xs: "1 1 100%", lg: "0 1 auto" },
+      flex: "0 0 auto",
       minWidth: 0,
       alignSelf: "flex-start",
+    },
+  });
+  const getFilterSetMasonrySx = () => ({
+    // Each row of filter-sets occupies the full width; sections inside size
+    // themselves to their card count via inline style. A grid with
+    // auto-fill/minmax here would slice rows into ~320px cells and crush
+    // multi-section rows down to the cell width, which is the bug we are
+    // explicitly avoiding.
+    display: "flex",
+    flexDirection: "column",
+    gap: FILTER_PANEL_SPACING_UNITS,
+    width: "100%",
+    "& > .filter-set-masonry-item": {
+      minWidth: 0,
+      width: "100%",
     },
   });
   const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
@@ -3918,8 +4254,8 @@ function FiltersView() {
       gap: 0,
       minHeight: 0,
       height: "100%",
-      maxHeight: `var(--filter-section-height-cap, ${resolvedSectionHeightCapPx}px)`,
-      overflowY: "hidden",
+      maxHeight: "none",
+      overflowY: "visible",
       overflowX: "hidden",
       pr: 0,
       "& .filter-card-body": {
@@ -3932,9 +4268,7 @@ function FiltersView() {
       "& .filter-card-chart": {
         flex: 1,
         minHeight: 0,
-        maxHeight: `var(--filter-card-chart-height-cap, ${resolveCardChartHeightCapPx(
-          resolvedSectionHeightCapPx
-        )}px)`,
+        maxHeight: `min(44vh, ${resolveCardChartHeightCapPx(resolvedSectionHeightCapPx)}px)`,
         overflowY: "hidden",
         overflowX: "hidden",
       },
@@ -4012,80 +4346,43 @@ function FiltersView() {
     columnCapByBreakpoint,
     sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
   ) => {
-    const shouldStretchColumns = !isPerCardColumnLayout;
+    void sectionHeight;
+    void columnCapByBreakpoint;
     return {
-      "--filter-section-height": toSectionHeightPx(sectionHeight, sectionHeightCap),
+      "--filter-section-height": toSectionHeightPx(0, sectionHeightCap),
       "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
       "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
       width: "100%",
-      maxWidth: {
-        xs: `${getColumnCapMaxWidthPx(
-          columnCapByBreakpoint?.xs,
-          CARD_COLUMN_WIDTH,
-          CARD_COLUMN_GAP_PX
-        )}px`,
-        sm: `${getColumnCapMaxWidthPx(
-          columnCapByBreakpoint?.sm,
-          CARD_COLUMN_WIDTH,
-          CARD_COLUMN_GAP_PX
-        )}px`,
-        md: `${getColumnCapMaxWidthPx(
-          columnCapByBreakpoint?.md,
-          CARD_COLUMN_WIDTH,
-          CARD_COLUMN_GAP_PX
-        )}px`,
-        lg: `${getColumnCapMaxWidthPx(
-          columnCapByBreakpoint?.lg,
-          CARD_COLUMN_WIDTH,
-          CARD_COLUMN_GAP_PX
-        )}px`,
-        xl: `${getColumnCapMaxWidthPx(
-          columnCapByBreakpoint?.xl,
-          CARD_COLUMN_WIDTH,
-          CARD_COLUMN_GAP_PX
-        )}px`,
-      },
-      display: "flex",
-      alignItems: shouldStretchColumns ? "stretch" : "flex-start",
-      gap: 3,
-      flexWrap: "wrap",
-      minHeight: {
-        xs: "auto",
-        md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
-      },
-      maxHeight: {
-        xs: "none",
-        md: "var(--filter-section-height-cap)",
-      },
-      overflowY: {
-        xs: "visible",
-        md: "auto",
-      },
-      overflowX: "hidden",
+      maxWidth: "100%",
+      // True masonry via CSS multi-column. Column count auto-fits to the
+      // available section width; each card keeps its natural height and the
+      // browser balances them across columns. Cards have `break-inside: avoid`
+      // (see getCardSx) so they never split across columns.
+      columnWidth: `${FILTER_SECTION_CARD_COLUMN_WIDTH_PX}px`,
+      columnGap: `${FILTER_PANEL_SPACING_PX}px`,
+      columnFill: "balance",
       "& > .filter-section-column": {
-        display: "flex",
-        flexDirection: "column",
-        alignSelf: shouldStretchColumns ? "stretch" : "flex-start",
-        minHeight: {
-          xs: "auto",
-          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
-        },
-        height: {
-          xs: "auto",
-          md: shouldStretchColumns ? "var(--filter-section-height)" : "auto",
-        },
-        maxHeight: {
-          xs: "none",
-          md: shouldStretchColumns ? "var(--filter-section-height-cap)" : "none",
-        },
-        overflow: shouldStretchColumns ? "hidden" : "visible",
+        display: "block",
+        width: "100%",
+        minWidth: 0,
+        breakInside: "avoid",
+        pageBreakInside: "avoid",
+        WebkitColumnBreakInside: "avoid",
+        marginBottom: `${FILTER_PANEL_SPACING_PX}px`,
+        boxSizing: "border-box",
+      },
+      "& > .filter-section-column:last-of-type": {
+        marginBottom: 0,
       },
     };
   };
-  const getFilterSectionColumnSx = () => ({
-    flex: { xs: "1 1 100%", sm: `0 0 ${CARD_COLUMN_WIDTH}px` },
-    maxWidth: { xs: "100%", sm: `${CARD_COLUMN_WIDTH}px` },
-  });
+  const getFilterSectionColumnSx = (span = null) => {
+    void span;
+    return {
+      minWidth: 0,
+      width: "100%",
+    };
+  };
   const getCardSx = (cardIndex = 0) => {
     void cardIndex;
     const base = {
@@ -4093,8 +4390,7 @@ function FiltersView() {
       display: "inline-block",
       verticalAlign: "top",
       breakInside: "avoid",
-      mb: 3,
-      p: custom.cardPadding || 0,
+      mb: 0,
       position: "relative",
       overflow: "visible",
       boxSizing: "border-box",
@@ -4133,6 +4429,428 @@ function FiltersView() {
         : custom.iconHoverBg || theme.palette.action.hover,
     },
   });
+  // Helper: render the inner attribute cards (the children of the
+  // .filter-section-grid Box) for a given attribute filter-set. Used both by
+  // renderAttributeFilterSet (which wraps these in a Stack with its own
+  // header) and by the omop renderer when injecting cohort-overview attribute
+  // filters inline into a sibling omop section's grid.
+  const renderAttributeFilterCards = (filterSet, keyPrefix, options = {}) => {
+    const { sectionHeightCap: overrideSectionHeightCap } = options;
+    const receptorPanelFilters =
+      filterSet.id === "biomarkers"
+        ? filterSet.filters.filter((filter) =>
+            RECEPTOR_PANEL_CLASS_NAMES.includes(String(filter.key || "").trim())
+          )
+        : [];
+    const shouldRenderReceptorPanel = receptorPanelFilters.length > 0;
+    const renderedFilters = shouldRenderReceptorPanel
+      ? [
+          {
+            key: RECEPTOR_PANEL_SYNTHETIC_CLASS,
+            type: "attributes",
+            displayName: "Receptor Panel",
+            enabled: true,
+          },
+          ...filterSet.filters.filter(
+            (filter) => !RECEPTOR_PANEL_CLASS_NAMES.includes(String(filter.key || "").trim())
+          ),
+        ]
+      : filterSet.filters;
+    const classChartDataByClass = {};
+    renderedFilters.forEach((filter) => {
+      const className = filter.key;
+      if (className === RECEPTOR_PANEL_SYNTHETIC_CLASS) {
+        const combinedPanelData = receptorPanelFilters.flatMap((panelFilter) => {
+          const panelClassName = panelFilter.key;
+          const panelData =
+            attributeChartDataWithIncludedByClass[panelClassName] ||
+            attributeDisplayChartDataByClass[panelClassName] ||
+            [];
+          return Array.isArray(panelData) ? panelData : [];
+        });
+        classChartDataByClass[className] = combinedPanelData;
+        return;
+      }
+      const classData = attributeDisplayChartDataByClass[className] || [];
+      classChartDataByClass[className] =
+        attributeChartDataWithIncludedByClass[className] || classData;
+    });
+    const {
+      measuredCardHeightByClass,
+      cardHeightOverrideByClass,
+      cardMarginBottomByClass,
+      sectionHeightCap: computedSectionHeightCap,
+    } = buildSectionLayout("attributes", renderedFilters, classChartDataByClass);
+    const sectionHeightCap = overrideSectionHeightCap ?? computedSectionHeightCap;
+    const filterByClassName = Object.fromEntries(
+      renderedFilters.map((filter) => [filter.key, filter])
+    );
+    const orderedClassNames = renderedFilters.map((filter) => filter.key);
+
+    return orderedClassNames.map((className, classIndex) => {
+      const filter = filterByClassName[className];
+      if (!filter) {
+        return null;
+      }
+      const isReceptorPanelCard = className === RECEPTOR_PANEL_SYNTHETIC_CLASS;
+      const classError = isReceptorPanelCard
+        ? ""
+        : attributeData.errorsByClass[className] || "";
+      const classChartData = classChartDataByClass[className] || [];
+      const classDisplayName = isReceptorPanelCard
+        ? "Receptor Panel"
+        : filter.displayName || getFilterDisplayName("attributes", className);
+      const selectedValuesForClass = isReceptorPanelCard
+        ? []
+        : selectedAttributeValuesByClass[className] || [];
+      const onSelectionChangeForClass = handleSelectionChange(
+        setSelectedAttributeValuesByClass,
+        className
+      );
+      const sortMode =
+        attributeSortModeByClass[className] ||
+        getFilterDefaultSortMode("attributes", className);
+      const customSortOrder = getCustomSortOrderForDensity("attributes", className);
+      const classChartDataForRender = getChartDataForDensity(
+        classChartData,
+        "attributes",
+        className
+      );
+      const selectedCount = isReceptorPanelCard
+        ? receptorPanelFilters.reduce((sum, panelFilter) => {
+            const panelClassName = panelFilter.key;
+            const classSelections = selectedAttributeValuesByClass[panelClassName] || [];
+            return sum + classSelections.length;
+          }, 0)
+        : selectedValuesForClass.length;
+      const cardHeightOverride = cardHeightOverrideByClass[className];
+      const measuredCardHeight = Number(measuredCardHeightByClass[className]) || 0;
+      const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+      const configuredCardHeightCapPx = isReceptorPanelCard
+        ? undefined
+        : getFilterMaxHeightPx("attributes", className);
+      const resolvedCardHeightCapPx = Math.min(
+        FILTER_CARD_MAX_HEIGHT_PX,
+        configuredCardHeightCapPx == null
+          ? resolvedSectionHeightCapPx
+          : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
+      );
+      const boundedCardHeightOverride = Math.min(
+        resolvedCardHeightCapPx,
+        Math.max(0, Number(cardHeightOverride) || 0)
+      );
+      const shouldApplyCardHeightOverride =
+        boundedCardHeightOverride > 0 && measuredCardHeight > 0;
+      const cardMarginBottom = Math.max(
+        0,
+        Number(cardMarginBottomByClass[className]) || 0
+      );
+      const rowCount = isReceptorPanelCard
+        ? receptorPanelFilters.reduce((sum, panelFilter) => {
+            const panelData = classChartDataByClass[panelFilter.key] || [];
+            return sum + (Array.isArray(panelData) ? panelData.length : 0);
+          }, 0)
+        : classChartData.length;
+      const packedSpan = resolvePackedGridSpan({
+        displayName: classDisplayName,
+        rowCount,
+        isReceptorPanel: isReceptorPanelCard,
+      });
+      const cardOuterStyle = {
+        "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
+        "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
+          resolvedCardHeightCapPx
+        )}px`,
+        maxHeight: isReceptorPanelCard ? "none" : `${resolvedCardHeightCapPx}px`,
+        ...(shouldApplyCardHeightOverride
+          ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+          : {}),
+      };
+
+      if (isReceptorPanelCard) {
+        return (
+          <Box
+            key={`${keyPrefix}:${filterSet.id}:${className}`}
+            className="filter-section-column"
+            sx={getFilterSectionColumnSx(packedSpan)}
+          >
+            <Paper
+              elevation={0}
+              className="filter-card receptor-panel-card"
+              ref={setCardMeasureRef("attributes", className)}
+              style={cardOuterStyle}
+              data-card-margin-bottom={Math.round(cardMarginBottom)}
+              sx={{
+                ...getCardSx(classIndex),
+              }}
+            >
+              <Box className="filter-card-content" sx={getCardContentAreaSx(sectionHeightCap)}>
+                <Box
+                  className="filter-card-body"
+                  sx={{ display: "flex", flexDirection: "column", gap: 1, flex: 1, minHeight: 0 }}
+                >
+                  <Typography variant="subtitle2" sx={{ px: 0.5, fontWeight: 700 }}>
+                    Receptor Panel
+                  </Typography>
+                  {receptorPanelFilters.map((panelFilter) => {
+                    const panelClassName = panelFilter.key;
+                    const panelDisplayName =
+                      panelFilter.displayName ||
+                      getFilterDisplayName("attributes", panelClassName);
+                    const panelChartData = classChartDataByClass[panelClassName] || [];
+                    const panelSortMode =
+                      attributeSortModeByClass[panelClassName] ||
+                      getFilterDefaultSortMode("attributes", panelClassName);
+                    const panelCustomSortOrder = getCustomSortOrderForDensity(
+                      "attributes",
+                      panelClassName
+                    );
+                    const panelChartDataForRender = getChartDataForDensity(
+                      panelChartData,
+                      "attributes",
+                      panelClassName
+                    );
+                    const panelSelectedValues =
+                      selectedAttributeValuesByClass[panelClassName] || [];
+                    const panelSelectionChange = handleSelectionChange(
+                      setSelectedAttributeValuesByClass,
+                      panelClassName
+                    );
+                    return (
+                      <Box key={`${className}:${panelClassName}`} sx={{ minHeight: 0 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ px: 0.5, fontWeight: 600 }}
+                        >
+                          {panelDisplayName}
+                        </Typography>
+                        <HorizontalBarFilter
+                          key={`inline:attributes:${panelClassName}:${panelSortMode}`}
+                          className="filter-card-chart"
+                          title={panelDisplayName}
+                          showTitle={false}
+                          allowCollapse={false}
+                          showSortDimensionToggle={false}
+                          showSortCycleButton={false}
+                          fillContainer
+                          barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
+                        density={isCompactDensity ? "compact" : "standard"}
+                          data={panelChartDataForRender}
+                          selectedValues={panelSelectedValues}
+                          onSelectionChange={panelSelectionChange}
+                          onRowToggleExpand={handleAttributeParentExpansionChange(panelClassName)}
+                          fontScale={fontScale}
+                          defaultSort={panelSortMode}
+                          customSortOrder={panelCustomSortOrder}
+                          inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                          getPatientSummary={getPatientSummary}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+        );
+      }
+
+      return (
+        <Box
+          key={`${keyPrefix}:${filterSet.id}:${className}`}
+          className="filter-section-column"
+          sx={getFilterSectionColumnSx(packedSpan)}
+        >
+          <Paper
+            elevation={0}
+            className="filter-card"
+            ref={setCardMeasureRef("attributes", className)}
+            style={cardOuterStyle}
+            data-card-margin-bottom={Math.round(cardMarginBottom)}
+            data-card-height-cap={resolvedCardHeightCapPx}
+            data-card-height-override={
+              shouldApplyCardHeightOverride
+                ? Math.round(boundedCardHeightOverride)
+                : undefined
+            }
+            sx={{
+              ...getCardSx(classIndex),
+            }}
+          >
+            <Box className="filter-card-content" sx={getCardContentAreaSx(sectionHeightCap)}>
+              <Box
+                className="filter-card-body"
+                sx={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0 }}
+              >
+                <Button
+                  className="filter-card-open-button"
+                  type="button"
+                  variant={selectedCount > 0 ? "contained" : "outlined"}
+                  onClick={() =>
+                    handleOpenFilterModal("attributes", className, classDisplayName)
+                  }
+                  aria-label={`Open ${classDisplayName} filter`}
+                  sx={{
+                    justifyContent: "space-between",
+                    textTransform: "none",
+                    fontWeight: 700,
+                    minHeight: isCompactDensity ? 28 : 44,
+                    py: isCompactDensity ? 0.25 : undefined,
+                    px: isCompactDensity ? 0.75 : 1.25,
+                    fontSize: isCompactDensity ? "0.75rem" : undefined,
+                  }}
+                >
+                  <span>{classDisplayName}</span>
+                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                </Button>
+                {classError ? <Alert severity="error">{classError}</Alert> : null}
+                <HorizontalBarFilter
+                  key={`inline:attributes:${className}:${sortMode}`}
+                  className="filter-card-chart"
+                  title={classDisplayName}
+                  showTitle={false}
+                  allowCollapse={false}
+                  showSortDimensionToggle={false}
+                  showSortCycleButton={false}
+                  fillContainer
+                  barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
+                  density={isCompactDensity ? "compact" : "standard"}
+                  data={classChartDataForRender}
+                  selectedValues={selectedValuesForClass}
+                  onSelectionChange={onSelectionChangeForClass}
+                  onRowToggleExpand={handleAttributeParentExpansionChange(className)}
+                  fontScale={fontScale}
+                  defaultSort={sortMode}
+                  customSortOrder={customSortOrder}
+                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                  getPatientSummary={getPatientSummary}
+                />
+              </Box>
+            </Box>
+          </Paper>
+        </Box>
+      );
+    });
+  };
+
+  const renderAttributeFilterSet = (filterSet, keyPrefix = "attributes") => {
+    const receptorPanelFilters =
+      filterSet.id === "biomarkers"
+        ? filterSet.filters.filter((filter) =>
+            RECEPTOR_PANEL_CLASS_NAMES.includes(String(filter.key || "").trim())
+          )
+        : [];
+    const shouldRenderReceptorPanel = receptorPanelFilters.length > 0;
+    const renderedFilters = shouldRenderReceptorPanel
+      ? [
+          {
+            key: RECEPTOR_PANEL_SYNTHETIC_CLASS,
+            type: "attributes",
+            displayName: "Receptor Panel",
+            enabled: true,
+          },
+          ...filterSet.filters.filter(
+            (filter) => !RECEPTOR_PANEL_CLASS_NAMES.includes(String(filter.key || "").trim())
+          ),
+        ]
+      : filterSet.filters;
+    const sectionHasData = renderedFilters.some((filter) => {
+      const className = filter.key;
+      if (className === RECEPTOR_PANEL_SYNTHETIC_CLASS) {
+        return receptorPanelFilters.some((panelFilter) => {
+          const panelClassName = panelFilter.key;
+          const panelChartData =
+            attributeChartDataWithIncludedByClass[panelClassName] ||
+            attributeDisplayChartDataByClass[panelClassName] ||
+            [];
+          return Array.isArray(panelChartData) && panelChartData.length > 0;
+        });
+      }
+      const classChartData =
+        attributeChartDataWithIncludedByClass[className] ||
+        attributeDisplayChartDataByClass[className] ||
+        [];
+      return Array.isArray(classChartData) && classChartData.length > 0;
+    });
+    const classChartDataByClass = {};
+    renderedFilters.forEach((filter) => {
+      const className = filter.key;
+      if (className === RECEPTOR_PANEL_SYNTHETIC_CLASS) {
+        const combinedPanelData = receptorPanelFilters.flatMap((panelFilter) => {
+          const panelClassName = panelFilter.key;
+          const panelData =
+            attributeChartDataWithIncludedByClass[panelClassName] ||
+            attributeDisplayChartDataByClass[panelClassName] ||
+            [];
+          return Array.isArray(panelData) ? panelData : [];
+        });
+        classChartDataByClass[className] = combinedPanelData;
+        return;
+      }
+      const classData = attributeDisplayChartDataByClass[className] || [];
+      classChartDataByClass[className] =
+        attributeChartDataWithIncludedByClass[className] || classData;
+    });
+    const { sectionHeight, sectionHeightCap } = buildSectionLayout(
+      "attributes",
+      renderedFilters,
+      classChartDataByClass
+    );
+
+    // Size the section to its actual card count so adjacent sections in the
+    // same row sit next to each other instead of being padded out to 33%.
+    // In compact mode we allow more columns to keep one-row sections dense.
+    const MASONRY_COL_PX = FILTER_SECTION_CARD_COLUMN_WIDTH_PX;
+    const MASONRY_GAP_PX = FILTER_PANEL_SPACING_PX;
+    const MASONRY_MAX_COLS = FILTER_SECTION_MAX_COLUMNS;
+    const effectiveCols = Math.max(
+      1,
+      Math.min(MASONRY_MAX_COLS, renderedFilters.length)
+    );
+    const contentSizedWidthPx =
+      effectiveCols * (MASONRY_COL_PX + MASONRY_GAP_PX) - MASONRY_GAP_PX;
+    const contentSizedInlineStyle = {
+      flex: "0 0 auto",
+      width: `${contentSizedWidthPx}px`,
+      maxWidth: "100%",
+    };
+
+    return (
+      <Stack
+        key={`${keyPrefix}:${filterSet.id}`}
+        spacing={FILTER_PANEL_SPACING_UNITS}
+                        className="filter-set"
+        data-section-height-cap={sectionHeightCap}
+        style={contentSizedInlineStyle}
+        sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
+      >
+        <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
+          {filterSet.label}
+        </Typography>
+        {!isCompactDensity && cohortSize > 0 && sectionHasData ? (
+          <Typography variant="caption" color="text.secondary">
+            Showing filter values for {cohortSize.toLocaleString()} matched patient
+            {cohortSize === 1 ? "" : "s"}
+          </Typography>
+        ) : null}
+        <Box
+          className="filter-section-grid"
+          data-column-cap={
+            isPerCardColumnLayout ? Math.max(1, renderedFilters.length) : resolvedSectionColumnCap
+          }
+          data-section-height-cap={sectionHeightCap}
+          sx={getFilterGridSx(
+            sectionHeight,
+            FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
+            sectionHeightCap
+          )}
+        >
+          {renderAttributeFilterCards(filterSet, keyPrefix, { sectionHeightCap })}
+        </Box>
+      </Stack>
+    );
+  };
 
   return (
     <ThemeProvider theme={activeTheme}>
@@ -4163,7 +4881,7 @@ function FiltersView() {
           <Box
             sx={{
               display: "grid",
-              gap: 2,
+              gap: FILTER_PANEL_SPACING_UNITS,
               gridTemplateColumns: { xs: "1fr" },
               alignItems: "start",
             }}
@@ -4222,7 +4940,7 @@ function FiltersView() {
                       data-testid="filters-page-heading"
                       sx={{ fontWeight: 800, color: "text.primary", lineHeight: 1.2 }}
                     >
-                      Patient Cohort Explorer
+                      DeepPhe Patient Cohort Explorer
                     </Typography>
                   </Box>
                   {countResult ? (
@@ -4349,6 +5067,37 @@ function FiltersView() {
                         )}
                       </IconButton>
                     </Tooltip>
+                    <FormControl
+                      size="small"
+                      sx={{
+                        minWidth: 116,
+                        height: 32,
+                        bgcolor: "background.paper",
+                      }}
+                    >
+                      <InputLabel id="filter-density-select-label">Density</InputLabel>
+                      <Select
+                        labelId="filter-density-select-label"
+                        id="filter-density-select"
+                        value={filterPanelDensityMode}
+                        onChange={handleFilterPanelDensityModeChange}
+                        label="Density"
+                        inputProps={{
+                          "aria-label": "Filter density",
+                        }}
+                        sx={{
+                          height: 32,
+                          "& .MuiSelect-select": { py: 0.5 },
+                        }}
+                      >
+                        <MenuItem value={FILTER_PANEL_DENSITY_MODE.STANDARD} sx={{ fontSize: "0.8rem" }}>
+                          Standard
+                        </MenuItem>
+                        <MenuItem value={FILTER_PANEL_DENSITY_MODE.COMPACT} sx={{ fontSize: "0.8rem" }}>
+                          Compact
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
                       <PaletteOutlinedIcon
                         fontSize="small"
@@ -4418,15 +5167,20 @@ function FiltersView() {
         {attributeRootError ? <Alert severity="error">{attributeRootError}</Alert> : null}
 
         {!isLoading && !isAttributeLoading && !rootError && !attributeRootError ? (
-          <Stack spacing={2.5}>
+          <Stack spacing={FILTER_PANEL_SPACING_UNITS}>
             {omopFilterSets.length > 0 ? (
-              <Stack spacing={2}>
+              <Box sx={getFilterSetMasonrySx()}>
                 {omopFilterSetRows.map((rowGroup, rowIndex) => (
                   <Box
                     key={`omop-row:${rowGroup.id}:${rowIndex}`}
-                    className="filter-set-row"
+                    className="filter-set-masonry-item filter-set-row"
                     data-filter-set-row={rowGroup.id}
-                    sx={getFilterSetRowSx()}
+                    sx={[
+                      getFilterSetRowSx(),
+                      rowGroup.id === "cohort-overview"
+                        ? { gridColumn: "1 / -1", width: "100%", justifySelf: "stretch" }
+                        : null,
+                    ]}
                   >
                 {rowGroup.filterSets.map((filterSet) => {
                   const sectionHasData = filterSet.filters.some((filter) => {
@@ -4452,411 +5206,292 @@ function FiltersView() {
                       omopChartDataWithIncludedByClass[className] || classData;
                   });
                   const {
-                    columnGroups,
                     measuredCardHeightByClass,
                     cardHeightOverrideByClass,
                     cardMarginBottomByClass,
                     sectionHeight,
                     sectionHeightCap,
-                  } = buildSectionLayout(
-                    "omop",
-                    filterSet.filters,
-                    classChartDataByClass
-                  );
+                  } = buildSectionLayout("omop", filterSet.filters, classChartDataByClass);
                   const filterByClassName = Object.fromEntries(
                     filterSet.filters.map((filter) => [filter.key, filter])
                   );
-                  const orderedClassGroups =
-                    Array.isArray(columnGroups) && columnGroups.length > 0
-                      ? columnGroups
-                      : [filterSet.filters.map((filter) => filter.key)];
+                  const orderedClassNames = filterSet.filters.map((filter) => filter.key);
+
+                  const shouldInjectCohortOverviewAttributes =
+                    rowGroup.id === "cohort-overview" &&
+                    filterSet.id === "cancer-type" &&
+                    cohortOverviewInlineAttributeFilterSets.length > 0;
+
+                  // For the cohort-overview row, size each filter-set to its
+                  // own card count (capped at MASONRY_MAX_COLS columns) so the
+                  // sections sit left-to-right without lopsided whitespace
+                  // between them. Other rows keep the full-width row layout.
+                  const MASONRY_COL_PX = FILTER_SECTION_CARD_COLUMN_WIDTH_PX;
+                  const MASONRY_GAP_PX = FILTER_PANEL_SPACING_PX;
+                  const MASONRY_MAX_COLS = COHORT_OVERVIEW_MAX_COLUMNS;
+                  const injectedAttributeCardCount = shouldInjectCohortOverviewAttributes
+                    ? cohortOverviewInlineAttributeFilterSets.reduce(
+                        (sum, attributeFilterSet) =>
+                          sum + (attributeFilterSet.filters?.length || 0),
+                        0
+                      )
+                    : 0;
+                  const totalCardCount =
+                    filterSet.filters.length + injectedAttributeCardCount;
+                  const effectiveCols = Math.max(
+                    1,
+                    Math.min(MASONRY_MAX_COLS, totalCardCount)
+                  );
+                  const contentSizedWidthPx =
+                    effectiveCols * (MASONRY_COL_PX + MASONRY_GAP_PX) -
+                    MASONRY_GAP_PX;
+                  // Inline style wins over the parent row's `& > .filter-set`
+                  // sx rule (which would otherwise force 33%/50% flex basis).
+                  const cohortOverviewInlineStyle =
+                    rowGroup.id === "cohort-overview"
+                      ? {
+                          flex: "0 0 auto",
+                          width: `${contentSizedWidthPx}px`,
+                          maxWidth: "100%",
+                        }
+                      : undefined;
 
                   return (
-                    <Stack
-                      key={filterSet.id}
-                      spacing={1}
-                      className="filter-set"
-                      data-section-height-cap={sectionHeightCap}
-                      sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
-                    >
-                      <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
-                        {filterSet.label}
-                      </Typography>
-                      {cohortSize > 0 && sectionHasData ? (
-                        <Typography variant="caption" color="text.secondary">
-                          Showing filter values for {cohortSize.toLocaleString()} matched patient
-                          {cohortSize === 1 ? "" : "s"}
-                        </Typography>
-                      ) : null}
-                      <Box
-                        className="filter-section-grid"
-                        data-column-cap={
-                          isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
-                        }
+                    <React.Fragment key={filterSet.id}>
+                      <Stack
+                        spacing={FILTER_PANEL_SPACING_UNITS}
+                        className="filter-set"
                         data-section-height-cap={sectionHeightCap}
-                        sx={getFilterGridSx(
-                          sectionHeight,
-                          FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
-                          sectionHeightCap
-                        )}
+                        style={cohortOverviewInlineStyle}
+                        sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
                       >
-                        {orderedClassGroups.map((classGroup, columnIndex) => (
-                          <Box
-                            key={`${filterSet.id}:column:${columnIndex}`}
-                            className="filter-section-column"
-                            sx={getFilterSectionColumnSx()}
-                          >
-                          {classGroup.map((className, classIndex) => {
-                        const filter = filterByClassName[className];
-                        if (!filter) {
-                          return null;
-                        }
-                        const classError = omopData.errorsByClass[className] || "";
-                        const classChartData = classChartDataByClass[className] || [];
-                        const classDisplayName =
-                          filter.displayName || getFilterDisplayName("omop", className);
-                        const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
-                        const onSelectionChangeForClass = handleSelectionChange(
-                          setSelectedOmopValuesByClass,
-                          className
-                        );
-                        const sortMode =
-                          omopSortModeByClass[className] || getFilterDefaultSortMode("omop", className);
-                        const customSortOrder = getFilterCustomSortOrder("omop", className);
-                        const selectedCount = selectedValuesForClass.length;
-                        const cardHeightOverride = cardHeightOverrideByClass[className];
-                        const measuredCardHeight =
-                          Number(measuredCardHeightByClass[className]) || 0;
-                        const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-                        const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
-                        const resolvedCardHeightCapPx =
-                          configuredCardHeightCapPx == null
-                            ? resolvedSectionHeightCapPx
-                            : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx);
-                        const boundedCardHeightOverride = Math.min(
-                          resolvedCardHeightCapPx,
-                          Math.max(0, Number(cardHeightOverride) || 0)
-                        );
-                        const shouldApplyCardHeightOverride =
-                          boundedCardHeightOverride > 0 && measuredCardHeight > 0;
-                        const cardMarginBottom = Math.max(
-                          0,
-                          Number(cardMarginBottomByClass[className]) || 0
-                        );
-                        const cardOuterStyle = {
-                          "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
-                          "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
-                            resolvedCardHeightCapPx
-                          )}px`,
-                          maxHeight: `${resolvedCardHeightCapPx}px`,
-                          ...(shouldApplyCardHeightOverride
-                            ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
-                            : {}),
-                        };
-                        return (
-                          <Paper
-                            key={`${filterSet.id}:${className}`}
-                            elevation={0}
-                            className="filter-card"
-                            ref={setCardMeasureRef("omop", className)}
-                            style={cardOuterStyle}
-                            data-card-margin-bottom={Math.round(cardMarginBottom)}
-                            data-card-height-cap={resolvedCardHeightCapPx}
-                            data-card-height-override={
-                              shouldApplyCardHeightOverride
-                                ? Math.round(boundedCardHeightOverride)
-                                : undefined
+                        <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
+                          {filterSet.label}
+                        </Typography>
+                        {cohortSize > 0 && sectionHasData ? (
+                          <Typography variant="caption" color="text.secondary">
+                            Showing filter values for {cohortSize.toLocaleString()} matched patient
+                            {cohortSize === 1 ? "" : "s"}
+                          </Typography>
+                        ) : null}
+                        <Box
+                          className="filter-section-grid"
+                          data-column-cap={
+                            isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
+                          }
+                          data-section-height-cap={sectionHeightCap}
+                          sx={getFilterGridSx(
+                            sectionHeight,
+                            FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
+                            sectionHeightCap
+                          )}
+                        >
+                          {orderedClassNames.map((className, classIndex) => {
+                            const filter = filterByClassName[className];
+                            if (!filter) {
+                              return null;
                             }
-                            sx={{
-                              ...getCardSx(classIndex),
-                              mb: { xs: 3, md: `${cardMarginBottom}px` },
-                            }}
-                          >
-                            <Box
-                              className="filter-card-content"
-                              sx={getCardContentAreaSx(sectionHeightCap)}
-                            >
+                            const classError = omopData.errorsByClass[className] || "";
+                            const classChartData = classChartDataByClass[className] || [];
+                            const classDisplayName =
+                              filter.displayName || getFilterDisplayName("omop", className);
+                            const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
+                            const onSelectionChangeForClass = handleSelectionChange(
+                              setSelectedOmopValuesByClass,
+                              className
+                            );
+                            const sortMode =
+                              omopSortModeByClass[className] ||
+                              getFilterDefaultSortMode("omop", className);
+                            const customSortOrder = getCustomSortOrderForDensity(
+                              "omop",
+                              className
+                            );
+                            const classChartDataForRender = getChartDataForDensity(
+                              classChartData,
+                              "omop",
+                              className
+                            );
+                            const selectedCount = selectedValuesForClass.length;
+                            const cardHeightOverride = cardHeightOverrideByClass[className];
+                            const measuredCardHeight =
+                              Number(measuredCardHeightByClass[className]) || 0;
+                            const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+                            const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
+                            const resolvedCardHeightCapPx = Math.min(
+                              FILTER_CARD_MAX_HEIGHT_PX,
+                              configuredCardHeightCapPx == null
+                                ? resolvedSectionHeightCapPx
+                                : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
+                            );
+                            const boundedCardHeightOverride = Math.min(
+                              resolvedCardHeightCapPx,
+                              Math.max(0, Number(cardHeightOverride) || 0)
+                            );
+                            const shouldApplyCardHeightOverride =
+                              boundedCardHeightOverride > 0 && measuredCardHeight > 0;
+                            const cardMarginBottom = Math.max(
+                              0,
+                              Number(cardMarginBottomByClass[className]) || 0
+                            );
+                            const rowCount = Array.isArray(classChartData) ? classChartData.length : 0;
+                            const packedSpan = resolvePackedGridSpan({
+                              displayName: classDisplayName,
+                              rowCount,
+                            });
+                            const cardOuterStyle = {
+                              "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
+                              "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
+                                resolvedCardHeightCapPx
+                              )}px`,
+                              maxHeight: `${resolvedCardHeightCapPx}px`,
+                              ...(shouldApplyCardHeightOverride
+                                ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+                                : {}),
+                            };
+                            return (
                               <Box
-                                className="filter-card-body"
-                                sx={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0 }}
+                                key={`${filterSet.id}:${className}`}
+                                className="filter-section-column"
+                                sx={getFilterSectionColumnSx(packedSpan)}
                               >
-                                <Button
-                                  className="filter-card-open-button"
-                                  type="button"
-                                  variant={selectedCount > 0 ? "contained" : "outlined"}
-                                  onClick={() => handleOpenFilterModal("omop", className, classDisplayName)}
-                                  aria-label={`Open ${classDisplayName} filter`}
+                                <Paper
+                                  elevation={0}
+                                  className="filter-card"
+                                  ref={setCardMeasureRef("omop", className)}
+                                  style={cardOuterStyle}
+                                  data-card-margin-bottom={Math.round(cardMarginBottom)}
+                                  data-card-height-cap={resolvedCardHeightCapPx}
+                                  data-card-height-override={
+                                    shouldApplyCardHeightOverride
+                                      ? Math.round(boundedCardHeightOverride)
+                                      : undefined
+                                  }
                                   sx={{
-                                    justifyContent: "space-between",
-                                    textTransform: "none",
-                                    fontWeight: 700,
-                                    minHeight: 44,
-                                    px: 1.25,
-                                  }}
+                      ...getCardSx(classIndex),
+                    }}
                                 >
-                                  <span>{classDisplayName}</span>
-                                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
-                                </Button>
-                                {classError ? <Alert severity="error">{classError}</Alert> : null}
-                                <HorizontalBarFilter
-                                  key={`inline:omop:${className}:${sortMode}`}
-                                  className="filter-card-chart"
-                                  title={classDisplayName}
-                                  showTitle={false}
-                                  allowCollapse={false}
-                                  showSortDimensionToggle={false}
-                                  showSortCycleButton={false}
-                                  fillContainer
-                                  data={classChartData}
-                                  selectedValues={selectedValuesForClass}
-                                  onSelectionChange={onSelectionChangeForClass}
-                                  fontScale={fontScale}
-                                  defaultSort={sortMode}
-                                  customSortOrder={customSortOrder}
-                                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                                  getPatientSummary={getPatientSummary}
-                                />
+                                  <Box
+                                    className="filter-card-content"
+                                    sx={getCardContentAreaSx(sectionHeightCap)}
+                                  >
+                                    <Box
+                                      className="filter-card-body"
+                                      sx={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 0,
+                                        flex: 1,
+                                        minHeight: 0,
+                                      }}
+                                    >
+                                      <Button
+                                        className="filter-card-open-button"
+                                        type="button"
+                                        variant={selectedCount > 0 ? "contained" : "outlined"}
+                                        onClick={() =>
+                                          handleOpenFilterModal("omop", className, classDisplayName)
+                                        }
+                                        aria-label={`Open ${classDisplayName} filter`}
+                                        sx={{
+                                          justifyContent: "space-between",
+                                          textTransform: "none",
+                                          fontWeight: 700,
+                                          minHeight: isCompactDensity ? 28 : 44,
+                                          py: isCompactDensity ? 0.25 : undefined,
+                                          px: isCompactDensity ? 0.75 : 1.25,
+                                          fontSize: isCompactDensity ? "0.75rem" : undefined,
+                                        }}
+                                      >
+                                        <span>{classDisplayName}</span>
+                                        <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                                      </Button>
+                                      {classError ? <Alert severity="error">{classError}</Alert> : null}
+                                      <HorizontalBarFilter
+                                        key={`inline:omop:${className}:${sortMode}`}
+                                        className="filter-card-chart"
+                                        title={classDisplayName}
+                                        showTitle={false}
+                                        allowCollapse={false}
+                                        showSortDimensionToggle={false}
+                                        showSortCycleButton={false}
+                                        fillContainer
+                                        barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
+                        density={isCompactDensity ? "compact" : "standard"}
+                                        data={classChartDataForRender}
+                                        selectedValues={selectedValuesForClass}
+                                        onSelectionChange={onSelectionChangeForClass}
+                                        fontScale={fontScale}
+                                        defaultSort={sortMode}
+                                        customSortOrder={customSortOrder}
+                                        inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                                        getPatientSummary={getPatientSummary}
+                                      />
+                                    </Box>
+                                  </Box>
+                                </Paper>
                               </Box>
-                            </Box>
-                          </Paper>
-                        );
-                        })}
-                          </Box>
-                        ))}
-                      </Box>
-                    </Stack>
+                            );
+                          })}
+                          {shouldInjectCohortOverviewAttributes
+                            ? cohortOverviewInlineAttributeFilterSets.flatMap(
+                                (attributeFilterSet) =>
+                                  renderAttributeFilterCards(
+                                    attributeFilterSet,
+                                    "cohort-inline",
+                                    { sectionHeightCap }
+                                  )
+                              )
+                            : null}
+                        </Box>
+                      </Stack>
+                    </React.Fragment>
                   );
                 })}
                   </Box>
                 ))}
-              </Stack>
+              </Box>
             ) : (
               <Typography variant="body2" color="text.secondary">
                 No OMOP classes returned.
               </Typography>
             )}
 
-            {attributeFilterSets.length > 0 ? (
-              <Stack spacing={2}>
-                {attributeFilterSetRows.map((rowGroup, rowIndex) => (
+            {attributeFilterSetRowsExcludingCohortOverview.length > 0 ? (
+              <Box sx={getFilterSetMasonrySx()}>
+                {attributeFilterSetRowsExcludingCohortOverview.map((rowGroup, rowIndex) => (
                   <Box
                     key={`attributes-row:${rowGroup.id}:${rowIndex}`}
-                    className="filter-set-row"
+                    className="filter-set-masonry-item filter-set-row"
                     data-filter-set-row={rowGroup.id}
-                    sx={getFilterSetRowSx()}
+                    sx={[
+                      getFilterSetRowSx(),
+                      rowGroup.filterSets.length > 1
+                        ? { gridColumn: "1 / -1", width: "100%", justifySelf: "stretch" }
+                        : null,
+                    ]}
                   >
-                {rowGroup.filterSets.map((filterSet) => {
-                  const sectionHasData = filterSet.filters.some((filter) => {
-                    const classChartData =
-                      attributeChartDataWithIncludedByClass[filter.key] ||
-                      attributeDisplayChartDataByClass[filter.key] ||
-                      [];
-                    return Array.isArray(classChartData) && classChartData.length > 0;
-                  });
-                  const classChartDataByClass = {};
-                  filterSet.filters.forEach((filter) => {
-                    const className = filter.key;
-                    const classData = attributeDisplayChartDataByClass[className] || [];
-                    classChartDataByClass[className] =
-                      attributeChartDataWithIncludedByClass[className] || classData;
-                  });
-                  const {
-                    columnGroups,
-                    measuredCardHeightByClass,
-                    cardHeightOverrideByClass,
-                    cardMarginBottomByClass,
-                    sectionHeight,
-                    sectionHeightCap,
-                  } = buildSectionLayout(
-                    "attributes",
-                    filterSet.filters,
-                    classChartDataByClass
-                  );
-                  const filterByClassName = Object.fromEntries(
-                    filterSet.filters.map((filter) => [filter.key, filter])
-                  );
-                  const orderedClassGroups =
-                    Array.isArray(columnGroups) && columnGroups.length > 0
-                      ? columnGroups
-                      : [filterSet.filters.map((filter) => filter.key)];
-
-                  return (
-                    <Stack
-                      key={filterSet.id}
-                      spacing={1}
-                      className="filter-set"
-                      data-section-height-cap={sectionHeightCap}
-                      sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
-                    >
-                      <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
-                        {filterSet.label}
-                      </Typography>
-                      {cohortSize > 0 && sectionHasData ? (
-                        <Typography variant="caption" color="text.secondary">
-                          Showing filter values for {cohortSize.toLocaleString()} matched patient
-                          {cohortSize === 1 ? "" : "s"}
-                        </Typography>
-                      ) : null}
-                      <Box
-                        className="filter-section-grid"
-                        data-column-cap={
-                          isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
-                        }
-                        data-section-height-cap={sectionHeightCap}
-                        sx={getFilterGridSx(
-                          sectionHeight,
-                          FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
-                          sectionHeightCap
-                        )}
-                      >
-                        {orderedClassGroups.map((classGroup, columnIndex) => (
-                          <Box
-                            key={`${filterSet.id}:column:${columnIndex}`}
-                            className="filter-section-column"
-                            sx={getFilterSectionColumnSx()}
-                          >
-                          {classGroup.map((className, classIndex) => {
-                        const filter = filterByClassName[className];
-                        if (!filter) {
-                          return null;
-                        }
-                        const classError = attributeData.errorsByClass[className] || "";
-                        const classChartData = classChartDataByClass[className] || [];
-                        const classDisplayName =
-                          filter.displayName || getFilterDisplayName("attributes", className);
-                        const selectedValuesForClass = selectedAttributeValuesByClass[className] || [];
-                        const onSelectionChangeForClass = handleSelectionChange(
-                          setSelectedAttributeValuesByClass,
-                          className
-                        );
-                        const sortMode =
-                          attributeSortModeByClass[className] ||
-                          getFilterDefaultSortMode("attributes", className);
-                        const customSortOrder = getFilterCustomSortOrder("attributes", className);
-                        const selectedCount = selectedValuesForClass.length;
-                        const cardHeightOverride = cardHeightOverrideByClass[className];
-                        const measuredCardHeight =
-                          Number(measuredCardHeightByClass[className]) || 0;
-                        const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-                        const configuredCardHeightCapPx = getFilterMaxHeightPx("attributes", className);
-                        const resolvedCardHeightCapPx =
-                          configuredCardHeightCapPx == null
-                            ? resolvedSectionHeightCapPx
-                            : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx);
-                        const boundedCardHeightOverride = Math.min(
-                          resolvedCardHeightCapPx,
-                          Math.max(0, Number(cardHeightOverride) || 0)
-                        );
-                        const shouldApplyCardHeightOverride =
-                          boundedCardHeightOverride > 0 && measuredCardHeight > 0;
-                        const cardMarginBottom = Math.max(
-                          0,
-                          Number(cardMarginBottomByClass[className]) || 0
-                        );
-                        const cardOuterStyle = {
-                          "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
-                          "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
-                            resolvedCardHeightCapPx
-                          )}px`,
-                          maxHeight: `${resolvedCardHeightCapPx}px`,
-                          ...(shouldApplyCardHeightOverride
-                            ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
-                            : {}),
-                        };
-                        return (
-                          <Paper
-                            key={`${filterSet.id}:${className}`}
-                            elevation={0}
-                            className="filter-card"
-                            ref={setCardMeasureRef("attributes", className)}
-                            style={cardOuterStyle}
-                            data-card-margin-bottom={Math.round(cardMarginBottom)}
-                            data-card-height-cap={resolvedCardHeightCapPx}
-                            data-card-height-override={
-                              shouldApplyCardHeightOverride
-                                ? Math.round(boundedCardHeightOverride)
-                                : undefined
-                            }
-                            sx={{
-                              ...getCardSx(classIndex),
-                              mb: { xs: 3, md: `${cardMarginBottom}px` },
-                            }}
-                          >
-                            <Box
-                              className="filter-card-content"
-                              sx={getCardContentAreaSx(sectionHeightCap)}
-                            >
-                              <Box
-                                className="filter-card-body"
-                                sx={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0 }}
-                              >
-                                <Button
-                                  className="filter-card-open-button"
-                                  type="button"
-                                  variant={selectedCount > 0 ? "contained" : "outlined"}
-                                  onClick={() =>
-                                    handleOpenFilterModal("attributes", className, classDisplayName)
-                                  }
-                                  aria-label={`Open ${classDisplayName} filter`}
-                                  sx={{
-                                    justifyContent: "space-between",
-                                    textTransform: "none",
-                                    fontWeight: 700,
-                                    minHeight: 44,
-                                    px: 1.25,
-                                  }}
-                                >
-                                  <span>{classDisplayName}</span>
-                                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
-                                </Button>
-                                {classError ? <Alert severity="error">{classError}</Alert> : null}
-                                <HorizontalBarFilter
-                                  key={`inline:attributes:${className}:${sortMode}`}
-                                  className="filter-card-chart"
-                                  title={classDisplayName}
-                                  showTitle={false}
-                                  allowCollapse={false}
-                                  showSortDimensionToggle={false}
-                                  showSortCycleButton={false}
-                                  fillContainer
-                                  data={classChartData}
-                                  selectedValues={selectedValuesForClass}
-                                  onSelectionChange={onSelectionChangeForClass}
-                                  onRowToggleExpand={handleAttributeParentExpansionChange(className)}
-                                  fontScale={fontScale}
-                                  defaultSort={sortMode}
-                                  customSortOrder={customSortOrder}
-                                  inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                                  getPatientSummary={getPatientSummary}
-                                />
-                              </Box>
-                            </Box>
-                          </Paper>
-                        );
-                        })}
-                          </Box>
-                        ))}
-                      </Box>
-                    </Stack>
-                  );
-                })}
+                    {rowGroup.filterSets.map((filterSet) =>
+                      renderAttributeFilterSet(filterSet)
+                    )}
                   </Box>
                 ))}
-              </Stack>
-            ) : (
+              </Box>
+            ) : attributeFilterSets.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 No Attribute classes returned.
               </Typography>
-            )}
+            ) : null}
           </Stack>
         ) : null}
         {isPatientGridDockVisible ? (
           <Box
             sx={{
               position: "fixed",
-              left: { xs: 8, md: 16 },
-              right: { xs: 8, md: 16 },
+              left: "10%",
+              right: "10%",
               bottom: { xs: 8, md: 16 },
+              top: isPatientGridDockMaximized ? { xs: 72, md: 84 } : "auto",
               zIndex: (theme) => theme.zIndex.modal - 1,
               pointerEvents: "none",
             }}
@@ -4865,8 +5500,14 @@ function FiltersView() {
               elevation={10}
               data-testid="patient-grid-drawer"
               onKeyDown={(event) => {
-                if (event.key === "Escape" && isPatientGridDockExpanded) {
-                  setIsPatientGridDockExpanded(false);
+                if (event.key === "Escape") {
+                  if (isPatientGridDockMaximized) {
+                    setIsPatientGridDockMaximized(false);
+                    return;
+                  }
+                  if (isPatientGridDockExpanded) {
+                    setIsPatientGridDockExpanded(false);
+                  }
                 }
               }}
               sx={{
@@ -4875,39 +5516,273 @@ function FiltersView() {
                 border: "1px solid",
                 borderColor: "divider",
                 borderRadius: 2,
-                bgcolor: alpha(activeTheme.palette.background.paper, 0.9),
-                opacity: 0.9,
-                backdropFilter: "blur(14px)",
-                WebkitBackdropFilter: "blur(14px)",
+                bgcolor: activeTheme.palette.background.paper,
                 boxShadow: (theme) => theme.shadows[12],
-                maxHeight: { xs: "60vh", md: "min(64vh, 640px)" },
+                maxHeight: isPatientGridDockMaximized
+                  ? { xs: "calc(100vh - 88px)", md: "calc(100vh - 116px)" }
+                  : { xs: "72vh", md: "min(78vh, 820px)" },
+                height: isPatientGridDockMaximized
+                  ? { xs: "calc(100vh - 88px)", md: "calc(100vh - 116px)" }
+                  : "auto",
                 transition: "box-shadow 0.2s ease, transform 0.2s ease",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
-              <Box sx={{ px: 1.5, py: 1.25, minHeight: 0 }}>
-                <PatientGrid
-                  data={patientGridRows}
-                  cohortSize={cohortSize}
-                  totalCohortCount={cohortSize}
-                  totalPages={totalPatientGridPages}
-                  currentPage={currentPatientGridPage}
-                  pageSize={PATIENT_GRID_PAGE_SIZE}
-                  onPageChange={setCurrentPatientGridPage}
-                  isLoading={patientGridDrawerTableLoading}
-                  error={patientGridPageError}
-                  onRetry={handleRetryPatientSummary}
-                  embedded
-                  title={`Selected Patients (${Math.max(0, Number(cohortSize) || 0).toLocaleString()})`}
-                  subtitle={isPatientGridDockExpanded ? patientGridDrawerStatusText : ""}
-                  collapsible
-                  expanded={isPatientGridDockExpanded}
-                  onToggleExpanded={() => setIsPatientGridDockExpanded((previousValue) => !previousValue)}
-                  compactHeader
-                  toggleButtonTestId="patient-grid-drawer-toggle"
-                  collapsiblePanelId={patientGridDrawerPanelId}
-                  collapsedHeaderSummary={patientGridCollapsedHeaderSummary}
-                />
+              {patientGridDrawerFilterSummaryText ? (
+                <Box
+                  sx={{
+                    borderBottom: 1,
+                    borderColor: "divider",
+                    px: 1.5,
+                    py: 0.75,
+                    bgcolor: "action.hover",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      lineHeight: 1.35,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={patientGridDrawerFilterSummaryText}
+                  >
+                    {`Filters: ${patientGridDrawerFilterSummaryText}`}
+                  </Typography>
+                </Box>
+              ) : null}
+              <Box
+                onDoubleClick={(event) => {
+                  // Common window-control convention: double-click the title
+                  // bar to toggle maximize. Ignore double-clicks that land on
+                  // an actual tab or button so they don't fight existing handlers.
+                  const isInteractiveTarget = event.target.closest(
+                    'button, [role="tab"], [role="button"]'
+                  );
+                  if (isInteractiveTarget) return;
+                  setIsPatientGridDockMaximized((previousValue) => {
+                    const nextValue = !previousValue;
+                    if (nextValue) setIsPatientGridDockExpanded(true);
+                    return nextValue;
+                  });
+                }}
+                sx={{
+                  borderBottom: 1,
+                  borderColor: "divider",
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  pr: 0.5,
+                }}
+              >
+                <Tabs
+                  value={activeDrawerTab}
+                  onChange={(_, nextTab) => setActiveDrawerTab(nextTab)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  aria-label="Patient drawer tabs"
+                  sx={{
+                    minHeight: 36,
+                    flex: 1,
+                    minWidth: 0,
+                    "& .MuiTab-root": { minHeight: 36, py: 0.5, fontSize: "0.75rem" },
+                  }}
+                >
+                  <Tab
+                    label={`Selected Patients (${Math.max(0, Number(cohortSize) || 0).toLocaleString()})`}
+                    id="drawer-tab-0"
+                    aria-controls="drawer-tabpanel-0"
+                    sx={{ textTransform: "none", fontWeight: 600 }}
+                  />
+                  {openPatientIds.map((patientId, index) => (
+                    <Tab
+                      key={patientId}
+                      id={`drawer-tab-${index + 1}`}
+                      aria-controls={`drawer-tabpanel-${index + 1}`}
+                      sx={{ textTransform: "none" }}
+                      label={
+                        <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{ fontFamily: "ui-monospace, monospace", fontWeight: 500 }}
+                          >
+                            {patientId}
+                          </Typography>
+                          <Box
+                            component="span"
+                            role="button"
+                            aria-label={`Close patient tab for ${patientId}`}
+                            onClick={(event) => handleClosePatientTab(patientId, event)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                handleClosePatientTab(patientId, event);
+                              }
+                            }}
+                            tabIndex={0}
+                            sx={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 16,
+                              height: 16,
+                              borderRadius: "50%",
+                              fontSize: "0.6rem",
+                              lineHeight: 1,
+                              ml: 0.25,
+                              "&:hover": { bgcolor: "action.hover" },
+                              "&:focus-visible": {
+                                outline: "2px solid",
+                                outlineColor: "primary.main",
+                                outlineOffset: 1,
+                              },
+                            }}
+                          >
+                            ×
+                          </Box>
+                        </Box>
+                      }
+                    />
+                  ))}
+                </Tabs>
+                <Box
+                  role="group"
+                  aria-label="Drawer window controls"
+                  sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, ml: 0.25 }}
+                >
+                  <Tooltip
+                    title={
+                      isPatientGridDockExpanded
+                        ? "Minimize (collapse to header) — Esc"
+                        : "Restore"
+                    }
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label={
+                        isPatientGridDockExpanded
+                          ? "Minimize selected patients drawer"
+                          : "Restore selected patients drawer"
+                      }
+                      aria-expanded={isPatientGridDockExpanded}
+                      aria-controls={patientGridDrawerPanelId}
+                      data-testid="patient-grid-drawer-minimize"
+                      onClick={() => {
+                        setIsPatientGridDockExpanded((previousValue) => {
+                          const nextValue = !previousValue;
+                          // Collapsing to header always exits the maximized state.
+                          if (!nextValue && isPatientGridDockMaximized) {
+                            setIsPatientGridDockMaximized(false);
+                          }
+                          return nextValue;
+                        });
+                      }}
+                    >
+                      {isPatientGridDockExpanded ? (
+                        <RemoveIcon fontSize="small" />
+                      ) : (
+                        <AddIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip
+                    title={
+                      isPatientGridDockMaximized
+                        ? "Restore (exit fullscreen) — Esc"
+                        : "Maximize (fullscreen)"
+                    }
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label={
+                        isPatientGridDockMaximized
+                          ? "Restore selected patients drawer size"
+                          : "Maximize selected patients drawer"
+                      }
+                      aria-pressed={isPatientGridDockMaximized}
+                      data-testid="patient-grid-drawer-maximize"
+                      onClick={() => {
+                        setIsPatientGridDockMaximized((previousValue) => {
+                          const nextValue = !previousValue;
+                          if (nextValue) {
+                            setIsPatientGridDockExpanded(true);
+                          }
+                          return nextValue;
+                        });
+                      }}
+                    >
+                      {isPatientGridDockMaximized ? (
+                        <CloseFullscreenIcon fontSize="small" />
+                      ) : (
+                        <OpenInFullIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </Box>
+
+              <Box
+                role="tabpanel"
+                id="drawer-tabpanel-0"
+                aria-labelledby="drawer-tab-0"
+                hidden={activeDrawerTab !== 0}
+                sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 1.5, py: 1.25 }}
+              >
+                {activeDrawerTab === 0 ? (
+                  <PatientGrid
+                    data={patientGridRows}
+                    cohortSize={cohortSize}
+                    totalCohortCount={cohortSize}
+                    totalPages={totalPatientGridPages}
+                    currentPage={currentPatientGridPage}
+                    pageSize={patientGridPageSize}
+                    onPageChange={setCurrentPatientGridPage}
+                    isLoading={patientGridDrawerTableLoading}
+                    error={patientGridPageError}
+                    onRetry={handleRetryPatientSummary}
+                    embedded
+                    title={`Selected Patients (${Math.max(0, Number(cohortSize) || 0).toLocaleString()})`}
+                    subtitle={isPatientGridDockExpanded ? patientGridDrawerStatusText : ""}
+                    collapsible
+                    expanded={isPatientGridDockExpanded}
+                    onToggleExpanded={() => setIsPatientGridDockExpanded((previousValue) => !previousValue)}
+                    compactHeader
+                    toggleButtonTestId="patient-grid-drawer-toggle"
+                    collapsiblePanelId={patientGridDrawerPanelId}
+                    collapsedHeaderSummary={patientGridCollapsedHeaderSummary}
+                    onPatientOpen={handleOpenPatientTab}
+                    openPatientIds={openPatientIds}
+                  />
+                ) : null}
+              </Box>
+
+              {openPatientIds.map((patientId, index) => (
+                <Box
+                  key={patientId}
+                  role="tabpanel"
+                  id={`drawer-tabpanel-${index + 1}`}
+                  aria-labelledby={`drawer-tab-${index + 1}`}
+                  hidden={activeDrawerTab !== index + 1}
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowX: "hidden",
+                    overflowY: "auto",
+                    overscrollBehavior: "contain",
+                    py: 1.5,
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {activeDrawerTab === index + 1 ? (
+                    <EmbeddedPatientView patientId={patientId} />
+                  ) : null}
+                </Box>
+              ))}
             </Paper>
           </Box>
         ) : null}
@@ -5157,7 +6032,10 @@ function FiltersView() {
                   defaultSort={activeFilterDetail?.sortMode || DEFAULT_FILTER_VALUE_SORT_MODE}
                   customSortOrder={
                     activeFilterDetail
-                      ? getFilterCustomSortOrder(activeFilterDetail.type, activeFilterDetail.className)
+                      ? getCustomSortOrderForDensity(
+                          activeFilterDetail.type,
+                          activeFilterDetail.className
+                        )
                       : []
                   }
                   inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
