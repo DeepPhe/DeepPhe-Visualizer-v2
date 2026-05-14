@@ -563,31 +563,32 @@ export default function HorizontalBarFilter({
     Math.ceil(maxCountLabelLength * textFontSize * 0.62) + 12
   );
 
-  const availableWidth = Math.max(
-    MIN_CHART_WIDTH,
-    chartWidth - LEFT_PADDING - RIGHT_PADDING - countColumnWidth
-  );
   const hierarchyInsetWidth = hasHierarchyRows
     ? HIERARCHY_ICON_HIT_WIDTH + HIERARCHY_CHILD_INDENT
     : 0;
+  const columnGap = Math.max(6, Math.round(8 * safeFontScale));
+  // Pin count to the right edge first; derive bar region from remaining space.
+  const countColumnStartX = chartWidth - RIGHT_PADDING - countColumnWidth;
+  const labelBarRegionWidth = Math.max(0, countColumnStartX - columnGap - LEFT_PADDING);
   const estimatedLabelWidth = Math.ceil(maxLabelLength * textFontSize * 0.58) + 16 + hierarchyInsetWidth;
-  const minLabelWidth = Math.ceil(78 + safeFontScale * 14);
+  const minLabelWidth = isCompactDensity
+    ? Math.ceil(52 + safeFontScale * 6)
+    : Math.ceil(78 + safeFontScale * 14);
   const maxLabelWidth = Math.max(
-    82,
-    Math.round(availableWidth * LABEL_COLUMN_MAX_SHARE * LABEL_COLUMN_SHARE_MULTIPLIER)
+    isCompactDensity ? 60 : 82,
+    Math.round(
+      labelBarRegionWidth *
+        (isCompactDensity ? 0.6 : LABEL_COLUMN_MAX_SHARE) *
+        (isCompactDensity ? 1.0 : LABEL_COLUMN_SHARE_MULTIPLIER)
+    )
   );
   const labelColumnWidth = Math.min(
     maxLabelWidth,
     Math.max(minLabelWidth, estimatedLabelWidth)
   );
-  const columnGap = Math.max(6, Math.round(8 * safeFontScale));
   const barStartX = LEFT_PADDING + labelColumnWidth + columnGap;
-  const fullBarMaxWidth = Math.max(
-    24,
-    chartWidth - RIGHT_PADDING - countColumnWidth - columnGap - barStartX
-  );
+  const fullBarMaxWidth = Math.max(24, countColumnStartX - columnGap - barStartX);
   const barMaxWidth = Math.max(24, Math.round(fullBarMaxWidth * safeBarRegionScale));
-  const countColumnStartX = barStartX + barMaxWidth + columnGap;
   const maxLabelCharacters = Math.max(
     8,
     Math.floor((labelColumnWidth - 12 - hierarchyInsetWidth) / Math.max(1, textFontSize * 0.58))

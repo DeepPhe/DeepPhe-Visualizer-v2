@@ -119,7 +119,14 @@ const RECEPTOR_PANEL_CLASS_NAMES = [
   "Microsatellite Stable",
 ];
 const RECEPTOR_PANEL_SYNTHETIC_CLASS = "__RECEPTOR_PANEL__";
-const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
+const FILTER_SECTION_LABEL_SX = {
+  display: "block",
+  fontSize: "0.65rem",
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "text.secondary",
+  mb: 0.5,
+};
 const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
 const FILTER_SORT_DIMENSION = {
@@ -4185,7 +4192,7 @@ function FiltersView() {
   // (T Stage, N Stage, M Stage, Stage, Grade...) don't stretch wider than
   // their content. Max-col counts are chosen so the widest sections still
   // fit inside the row width without wrapping.
-  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = isCompactDensity ? 200 : 280;
+  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = isCompactDensity ? 240 : 280;
   const FILTER_SECTION_MAX_COLUMNS = isCompactDensity ? 7 : 6;
   const COHORT_OVERVIEW_MAX_COLUMNS = isCompactDensity ? 4 : 3;
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
@@ -4838,18 +4845,7 @@ function FiltersView() {
         }}
       >
         {!filterSet.standalone ? (
-          <Typography
-            component="h2"
-            variant="caption"
-            sx={{
-              display: "block",
-              fontSize: "0.65rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: "text.secondary",
-              mb: 0.5,
-            }}
-          >
+          <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
             {filterSet.label}
           </Typography>
         ) : null}
@@ -5288,7 +5284,7 @@ function FiltersView() {
                         style={cohortOverviewInlineStyle}
                         sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
                       >
-                        <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
+                        <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
                           {filterSet.label}
                         </Typography>
                         {cohortSize > 0 && sectionHasData ? (
