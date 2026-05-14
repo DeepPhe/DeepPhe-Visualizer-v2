@@ -24,10 +24,10 @@ const DEFAULT_TITLE = "Horizontal Bar Filter";
 const NOOP = () => {};
 
 const FALLBACK_CHART_WIDTH = 780;
-const MIN_CHART_WIDTH = 280;
-const LEFT_PADDING = 10;
-const RIGHT_PADDING = 10;
-const COUNT_COLUMN_MIN_WIDTH = 52;
+const MIN_CHART_WIDTH = 160;
+const LEFT_PADDING = 6;
+const RIGHT_PADDING = 6;
+const COUNT_COLUMN_MIN_WIDTH = 38;
 const LABEL_COLUMN_MAX_SHARE = 0.42;
 const LABEL_COLUMN_SHARE_MULTIPLIER = 1.25;
 const HIERARCHY_ICON_HIT_WIDTH = 14;
@@ -595,8 +595,8 @@ export default function HorizontalBarFilter({
 
   const columnHeaderHeight = Math.max(24, Math.round(26 * safeFontScale));
   const columnHeaderFontSize = Math.max(10, Math.round(10 * safeFontScale));
-  const verticalPaddingTop = 10;
-  const verticalPaddingBottom = 10;
+  const verticalPaddingTop = isCompactDensity ? 3 : 10;
+  const verticalPaddingBottom = isCompactDensity ? 3 : 10;
   const calculatedHeight = Math.max(
     rowHeight + verticalPaddingTop + verticalPaddingBottom,
     sortedData.length * rowHeight + verticalPaddingTop + verticalPaddingBottom
