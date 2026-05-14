@@ -4642,8 +4642,7 @@ function FiltersView() {
                           showSortDimensionToggle={false}
                           showSortCycleButton={false}
                           fillContainer
-                          barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
-                        density={isCompactDensity ? "compact" : "standard"}
+                          density={isCompactDensity ? "compact" : "standard"}
                           data={panelChartDataForRender}
                           selectedValues={panelSelectedValues}
                           onSelectionChange={panelSelectionChange}
@@ -4722,7 +4721,6 @@ function FiltersView() {
                   showSortDimensionToggle={false}
                   showSortCycleButton={false}
                   fillContainer
-                  barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
                   density={isCompactDensity ? "compact" : "standard"}
                   data={classChartDataForRender}
                   selectedValues={selectedValuesForClass}
@@ -5426,8 +5424,7 @@ function FiltersView() {
                                         showSortDimensionToggle={false}
                                         showSortCycleButton={false}
                                         fillContainer
-                                        barRegionScale={INLINE_FILTER_BAR_REGION_SCALE}
-                        density={isCompactDensity ? "compact" : "standard"}
+                                        density={isCompactDensity ? "compact" : "standard"}
                                         data={classChartDataForRender}
                                         selectedValues={selectedValuesForClass}
                                         onSelectionChange={onSelectionChangeForClass}
