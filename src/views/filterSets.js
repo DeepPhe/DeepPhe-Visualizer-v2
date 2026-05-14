@@ -268,6 +268,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "biomarkers",
     label: "Biomarkers",
+    row: "clinical-treatment",
     display: true,
     defaultExpanded: true,
     filters: [
