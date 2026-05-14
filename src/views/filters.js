@@ -265,6 +265,13 @@ function groupFilterSetsByRow(filterSets = []) {
     const rowId = String(filterSet?.row || "").trim() || fallbackRow;
     const isPinnedRow = rowId === "cohort-overview";
 
+    if (filterSet.standalone) {
+      activeRowGroup = { id: filterSet.id, filterSets: [filterSet] };
+      rowGroups.push(activeRowGroup);
+      activePackedWeight = 0;
+      return;
+    }
+
     if (isPinnedRow) {
       activePackedWeight = 0;
       if (!activeRowGroup || activeRowGroup.id !== rowId) {
@@ -4161,7 +4168,7 @@ function FiltersView() {
     hasNonDefaultAttributeSortMode ||
     Boolean(activeFilterModal) ||
     Boolean(String(activeFilterSearchQuery || "").trim());
-  const FILTER_PANEL_SPACING_PX = isCompactDensity ? 12 : 16;
+  const FILTER_PANEL_SPACING_PX = isCompactDensity ? 8 : 16;
   const FILTER_PANEL_SPACING_UNITS = FILTER_PANEL_SPACING_PX / 8;
   // Hard cap every filter card at 200px. Anything taller scrolls inside the
   // chart viewport (overflowY: auto on .horizontal-bar-filter-chart-viewport)
@@ -4170,16 +4177,17 @@ function FiltersView() {
   const FILTER_SECTION_HEIGHT_CAP_PX = 700;
   const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
   const PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX = 340;
-  const ROW_HEIGHT_ESTIMATE = isCompactDensity ? 22 : 36;
-  const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 76 : 120;
-  const NATURAL_STACK_GAP_PX = isCompactDensity ? 12 : 24;
+  const ROW_HEIGHT_ESTIMATE = isCompactDensity ? 24 : 36;
+  const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 60 : 120;
+  const NATURAL_STACK_GAP_PX = isCompactDensity ? 8 : 24;
   const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
-  // Keep card column width and max-cols stable across densities so the row
-  // layout doesn't reshape (and wrap) when toggling. Density savings come
-  // from shorter row heights and tighter card padding instead.
-  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = 280;
-  const FILTER_SECTION_MAX_COLUMNS = 6;
-  const COHORT_OVERVIEW_MAX_COLUMNS = 3;
+  // Compact mode uses a narrower per-card column so short-label filters
+  // (T Stage, N Stage, M Stage, Stage, Grade...) don't stretch wider than
+  // their content. Max-col counts are chosen so the widest sections still
+  // fit inside the row width without wrapping.
+  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = isCompactDensity ? 200 : 280;
+  const FILTER_SECTION_MAX_COLUMNS = isCompactDensity ? 7 : 6;
+  const COHORT_OVERVIEW_MAX_COLUMNS = isCompactDensity ? 4 : 3;
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const numericHeightCap = Number(sectionHeightCap);
     if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
@@ -4253,20 +4261,20 @@ function FiltersView() {
       flexDirection: "column",
       gap: 0,
       minHeight: 0,
-      height: "100%",
-      maxHeight: "none",
-      overflowY: "visible",
+      height: "auto",
+      maxHeight: "var(--filter-section-height-cap)",
+      overflowY: "auto",
       overflowX: "hidden",
       pr: 0,
       "& .filter-card-body": {
         display: "flex",
         flexDirection: "column",
         gap: 0,
-        flex: 1,
+        flex: "0 0 auto",
         minHeight: 0,
       },
       "& .filter-card-chart": {
-        flex: 1,
+        flex: "0 0 auto",
         minHeight: 0,
         maxHeight: `min(44vh, ${resolveCardChartHeightCapPx(resolvedSectionHeightCapPx)}px)`,
         overflowY: "hidden",
@@ -4392,7 +4400,7 @@ function FiltersView() {
       breakInside: "avoid",
       mb: 0,
       position: "relative",
-      overflow: "visible",
+      overflow: "hidden",
       boxSizing: "border-box",
       transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease",
     };
@@ -4817,19 +4825,36 @@ function FiltersView() {
     };
 
     return (
-      <Stack
+      <Box
         key={`${keyPrefix}:${filterSet.id}`}
-        spacing={FILTER_PANEL_SPACING_UNITS}
-                        className="filter-set"
+        className="filter-set"
         data-section-height-cap={sectionHeightCap}
         style={contentSizedInlineStyle}
-        sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
+        sx={{
+          ...getFilterSetSx(sectionHeight, sectionHeightCap),
+          breakInside: "avoid",
+          pageBreakInside: "avoid",
+          WebkitColumnBreakInside: "avoid",
+        }}
       >
-        <Typography component="h2" variant="subtitle1" sx={CONTEXT_HEADER_SX}>
-          {filterSet.label}
-        </Typography>
+        {!filterSet.standalone ? (
+          <Typography
+            component="h2"
+            variant="caption"
+            sx={{
+              display: "block",
+              fontSize: "0.65rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "text.secondary",
+              mb: 0.5,
+            }}
+          >
+            {filterSet.label}
+          </Typography>
+        ) : null}
         {!isCompactDensity && cohortSize > 0 && sectionHasData ? (
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
             Showing filter values for {cohortSize.toLocaleString()} matched patient
             {cohortSize === 1 ? "" : "s"}
           </Typography>
@@ -4848,7 +4873,7 @@ function FiltersView() {
         >
           {renderAttributeFilterCards(filterSet, keyPrefix, { sectionHeightCap })}
         </Box>
-      </Stack>
+      </Box>
     );
   };
 
@@ -5177,9 +5202,7 @@ function FiltersView() {
                     data-filter-set-row={rowGroup.id}
                     sx={[
                       getFilterSetRowSx(),
-                      rowGroup.id === "cohort-overview"
-                        ? { gridColumn: "1 / -1", width: "100%", justifySelf: "stretch" }
-                        : null,
+                      null,
                     ]}
                   >
                 {rowGroup.filterSets.map((filterSet) => {

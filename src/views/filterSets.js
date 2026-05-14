@@ -111,6 +111,7 @@ function normalizeFilterSet(filterSet) {
     id: normalizedId,
     label: String(filterSet.label || "").trim(),
     row: normalizeFilterSetRow(filterSet.row, normalizedId),
+    standalone: filterSet.standalone === true,
     defaultExpanded: filterSet.defaultExpanded !== false,
     display: filterSet.display !== false,
     filters: Array.isArray(filterSet.filters)
@@ -300,6 +301,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "clinical-status",
     label: "Clinical Status",
+    standalone: true,
     row: "clinical-status",
     display: true,
     defaultExpanded: true,
@@ -312,6 +314,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "treatment",
     label: "Treatment",
+    standalone: true,
     row: "treatment",
     display: true,
     defaultExpanded: true,
