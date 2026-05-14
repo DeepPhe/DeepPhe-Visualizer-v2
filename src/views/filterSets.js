@@ -301,8 +301,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "clinical-status",
     label: "Clinical Status",
-    standalone: true,
-    row: "clinical-status",
+    row: "clinical-treatment",
     display: true,
     defaultExpanded: true,
     filters: [
@@ -314,8 +313,7 @@ const FILTER_SET_CONFIG = [
   {
     id: "treatment",
     label: "Treatment",
-    standalone: true,
-    row: "treatment",
+    row: "clinical-treatment",
     display: true,
     defaultExpanded: true,
     filters: [

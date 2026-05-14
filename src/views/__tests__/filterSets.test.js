@@ -8,23 +8,49 @@ import {
 describe("filterSets", () => {
   it("returns configured ordered classes by type", () => {
     expect(getOrderedClassesByType("omop")).toEqual([
-      "CANCER",
       "AGE_AT_DX",
       "RACE",
       "GENDER",
       "ETHNICITY",
+      "CANCER",
     ]);
 
     expect(getOrderedClassesByType("attributes")).toEqual([
+      "Location",
+      "Topography, major",
       "Stage",
       "Lymph Involvement",
       "T Stage",
       "N Stage",
       "M Stage",
+      "Behavior",
+      "Metastatic Site",
+      "Grade",
       "Grade_Numeric",
       "Grade_Differentiated",
       "Grade_Tiered",
       "Grade_Gleason",
+      "Test Results",
+      "Tissue",
+      "Topography, minor",
+      "Quadrant",
+      "Clockface",
+      "Laterality",
+      "HER2/Neu Status",
+      "Estrogen Receptor Status",
+      "Progesterone Receptor Status",
+      "Microsatellite Stable",
+      "Breast Cancer Type 1 Susceptibility Protein",
+      "Breast Cancer Type 2 Susceptibility Protein",
+      "Genes",
+      "Performance Status",
+      "Course",
+      "Treatments",
+      "Diagnostic Procedures",
+      "Diagnostic Procedure",
+      "Therapeutic Procedures/Surgery",
+      "Therapeutic Procedures",
+      "Surgery",
     ]);
   });
 
@@ -34,8 +60,12 @@ describe("filterSets", () => {
       "attributes"
     );
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Grading", "Uncategorized"]);
-    expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["T Stage"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual([
+      "Staging & Disease Extent",
+      "Pathology",
+      "Uncategorized",
+    ]);
+    expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["T Stage", "Behavior"]);
     expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["Grade_Numeric"]);
     expect(resolvedSets[2].filters.map((filter) => filter.key)).toEqual(["Novel Class"]);
   });
@@ -43,9 +73,22 @@ describe("filterSets", () => {
   it("matches configured classes by normalized key and preserves API class strings", () => {
     const resolvedSets = resolveFilterSetsWithExtras(["grade numeric", "n stage"], "attributes");
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Grading"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging & Disease Extent", "Pathology"]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["n stage"]);
     expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["grade numeric"]);
+  });
+
+  it("maps topography classes with comma delimiters into primary-site and pathology", () => {
+    const resolvedSets = resolveFilterSetsWithExtras(
+      ["Topography, major", "Topography, minor"],
+      "attributes"
+    );
+
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Cancer Type & Primary Site", "Pathology"]);
+    expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual([
+      "Topography, major",
+    ]);
+    expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["Topography, minor"]);
   });
 
   it("provides a flat lookup map keyed by type:class", () => {
@@ -75,7 +118,7 @@ describe("filterSets", () => {
       "attributes"
     );
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging", "Uncategorized"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging & Disease Extent", "Uncategorized"]);
     expect(resolvedSets[0].filters[0]).toMatchObject({
       key: "lymph involvement",
       maxHeightPx: 300,
@@ -99,8 +142,13 @@ describe("filterSets", () => {
     const omopSets = getFilterSetsForType("omop");
     const demographicsSet = omopSets.find((set) => set.id === "demographics");
     const cancerTypeSet = omopSets.find((set) => set.id === "cancer-type");
+    const attributeSets = getFilterSetsForType("attributes");
+    const clinicalStatusSet = attributeSets.find(
+      (set) => set.id === "clinical-status"
+    );
 
     expect(demographicsSet?.row).toBe("cohort-overview");
     expect(cancerTypeSet?.row).toBe("cohort-overview");
+    expect(clinicalStatusSet?.row).toBe("clinical-treatment");
   });
 });

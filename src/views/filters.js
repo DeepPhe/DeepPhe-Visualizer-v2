@@ -270,16 +270,9 @@ function groupFilterSetsByRow(filterSets = []) {
   normalizedSets.forEach((filterSet, index) => {
     const fallbackRow = String(filterSet?.id || `row-${index}`).trim() || `row-${index}`;
     const rowId = String(filterSet?.row || "").trim() || fallbackRow;
-    const isPinnedRow = rowId === "cohort-overview";
+    const hasExplicitRow = rowId !== fallbackRow;
 
-    if (filterSet.standalone) {
-      activeRowGroup = { id: filterSet.id, filterSets: [filterSet] };
-      rowGroups.push(activeRowGroup);
-      activePackedWeight = 0;
-      return;
-    }
-
-    if (isPinnedRow) {
+    if (hasExplicitRow) {
       activePackedWeight = 0;
       if (!activeRowGroup || activeRowGroup.id !== rowId) {
         activeRowGroup = { id: rowId, filterSets: [] };
@@ -4844,11 +4837,9 @@ function FiltersView() {
           WebkitColumnBreakInside: "avoid",
         }}
       >
-        {!filterSet.standalone ? (
-          <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
-            {filterSet.label}
-          </Typography>
-        ) : null}
+        <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
+          {filterSet.label}
+        </Typography>
         {!isCompactDensity && cohortSize > 0 && sectionHasData ? (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
             Showing filter values for {cohortSize.toLocaleString()} matched patient
