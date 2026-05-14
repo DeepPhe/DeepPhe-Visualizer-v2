@@ -109,7 +109,7 @@ const obsidianTheme = createTheme({
     },
   },
   custom: {
-    barTrack: "#111D2E",
+    barTrack: "rgba(59, 130, 246, 0.18)",
     barFill: "#3B82F6",
     barHover: "#60A5FA",
     barActive: "#22D3EE",
@@ -255,7 +255,7 @@ const vaporTheme = createTheme({
     },
   },
   custom: {
-    barTrack: "rgba(255, 255, 255, 0.05)",
+    barTrack: "rgba(13, 148, 136, 0.20)",
     barFill: "#0D9488",
     barHover: "#14B8A6",
     barActive: "#2DD4BF",
@@ -437,7 +437,7 @@ const govukTheme = createTheme({
     },
   },
   custom: {
-    barTrack: "#F4F8FB",
+    barTrack: "rgba(29, 112, 184, 0.15)",
     barFill: "#1D70B8",
     barHover: "#1D70B8",
     barActive: "#00703C",
@@ -492,7 +492,7 @@ const govukTheme = createTheme({
 export const THEME_OPTIONS = [
   { key: "obsidian", label: "Obsidian" },
   { key: "vapor", label: "Vapor" },
-  { key: "govuk", label: "GOV.UK" },
+  { key: "govuk", label: "Standard" },
 ];
 
 const THEME_MAP = {
