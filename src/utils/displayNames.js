@@ -50,7 +50,9 @@ const EXPLICIT = {
   'HER2_sl_NeuExpressionByImmunohistochemistry2_add_': 'HER2 IHC 2+',
   'BreastCancerType1SusceptibilityProtein': 'BRCA1',
   'BreastCancerType2SusceptibilityProtein': 'BRCA2',
-  'MicrosatelliteStable':          'MSS (Microsatellite Stable)',
+  'MicrosatelliteStable':          'MSS',
+  'MicrosatelliteInstabilityLow':  'MSI-Low',
+  'MicrosatelliteInstabilityHigh': 'MSI-High',
 
   // --- Behavior ---
   'Metastatic_sl_Recurrent':       'Metastatic/Recurrent',

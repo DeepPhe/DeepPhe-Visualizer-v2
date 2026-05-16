@@ -143,7 +143,7 @@ function shouldShowTooltip(fullValue = "") {
   return String(fullValue || "").trim().length >= MIN_TOOLTIP_TEXT_LENGTH;
 }
 
-function renderTruncatedCell({ displayValue, fullValue, maxWidth, align = "left", muted = false }) {
+function renderTruncatedCell({ displayValue, fullValue, align = "left", muted = false }) {
   const textValue = String(displayValue ?? "").trim() || "—";
   const tooltipValue = String(fullValue ?? "").trim() || textValue;
 
@@ -155,7 +155,8 @@ function renderTruncatedCell({ displayValue, fullValue, maxWidth, align = "left"
         noWrap
         sx={{
           display: "block",
-          maxWidth,
+          width: "100%",
+          maxWidth: "100%",
           overflow: "hidden",
           textOverflow: "ellipsis",
           textAlign: align,
@@ -168,7 +169,7 @@ function renderTruncatedCell({ displayValue, fullValue, maxWidth, align = "left"
   );
 }
 
-function renderSummaryCell(summary, width) {
+function renderSummaryCell(summary) {
   const displayValue = getSummaryDisplayValue(summary);
   const overflowCount = getSummaryOverflowCount(summary);
   const fullValue = String(summary?.full || displayValue || "").trim() || "—";
@@ -181,7 +182,7 @@ function renderSummaryCell(summary, width) {
           display: "inline-flex",
           alignItems: "baseline",
           gap: 0.75,
-          maxWidth: width,
+          maxWidth: "100%",
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -210,9 +211,12 @@ function createColumns({ onToggleRow }) {
         </Box>
       ),
       size: 40,
+      minSize: 40,
+      maxSize: 40,
       meta: { exportable: false },
       enableSorting: false,
       enableHiding: false,
+      enableResizing: false,
       cell: ({ row }) => {
         if (!row.getCanExpand()) {
           return null;
@@ -249,7 +253,8 @@ function createColumns({ onToggleRow }) {
       accessorKey: "patientId",
       id: "patientId",
       header: "Patient ID",
-      size: 120,
+      size: 200,
+      minSize: 130,
       cell: ({ getValue }) => {
         const value = String(getValue() || "");
         return (
@@ -260,7 +265,8 @@ function createColumns({ onToggleRow }) {
               noWrap
               sx={{
                 display: "block",
-                maxWidth: 120,
+                width: "100%",
+                maxWidth: "100%",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -277,6 +283,7 @@ function createColumns({ onToggleRow }) {
       id: "ageAtDx",
       header: "Age at Dx",
       size: 65,
+      minSize: 65,
       sortingFn: (rowA, rowB, columnId) =>
         getAgeSortValue(rowA.getValue(columnId)) - getAgeSortValue(rowB.getValue(columnId)),
       cell: ({ getValue }) => {
@@ -285,7 +292,6 @@ function createColumns({ onToggleRow }) {
         return renderTruncatedCell({
           displayValue: textValue,
           fullValue: textValue,
-          maxWidth: 65,
           align: "right",
         });
       },
@@ -295,11 +301,11 @@ function createColumns({ onToggleRow }) {
       id: "gender",
       header: "Gender",
       size: 65,
+      minSize: 65,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 65,
         }),
     },
     {
@@ -307,11 +313,11 @@ function createColumns({ onToggleRow }) {
       id: "race",
       header: "Race",
       size: 100,
+      minSize: 90,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 100,
         }),
     },
     {
@@ -319,11 +325,11 @@ function createColumns({ onToggleRow }) {
       id: "ethnicity",
       header: "Ethnicity",
       size: 115,
+      minSize: 105,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 115,
         }),
     },
     {
@@ -331,11 +337,11 @@ function createColumns({ onToggleRow }) {
       id: "cancerType",
       header: "Cancer Type",
       size: 100,
+      minSize: 90,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 100,
         }),
     },
     {
@@ -343,6 +349,7 @@ function createColumns({ onToggleRow }) {
       id: "stage",
       header: "Stage",
       size: 90,
+      minSize: 90,
       sortingFn: (rowA, rowB) =>
         Number(rowA.original?.stageSortRank ?? Number.NEGATIVE_INFINITY) -
         Number(rowB.original?.stageSortRank ?? Number.NEGATIVE_INFINITY),
@@ -350,7 +357,6 @@ function createColumns({ onToggleRow }) {
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 90,
         }),
     },
     {
@@ -358,11 +364,11 @@ function createColumns({ onToggleRow }) {
       id: "grade",
       header: "Grade",
       size: 75,
+      minSize: 70,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 75,
         }),
     },
     {
@@ -370,11 +376,11 @@ function createColumns({ onToggleRow }) {
       id: "activeDx",
       header: "Active Dx",
       size: 200,
+      minSize: 150,
       cell: ({ row, getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
           fullValue: String(getValue() || "—"),
-          maxWidth: 200,
           muted: Boolean(row.original?.activeDxMeta?.historic),
         }),
     },
@@ -383,50 +389,55 @@ function createColumns({ onToggleRow }) {
       id: "diagnosesSummary",
       header: "Diagnoses",
       size: 200,
+      minSize: 150,
       meta: {
         exportValue: (row) => row?.original?.diagnosesSummary?.full || "",
       },
-      cell: ({ row }) => renderSummaryCell(row.original?.diagnosesSummary, 200),
+      cell: ({ row }) => renderSummaryCell(row.original?.diagnosesSummary),
     },
     {
       accessorFn: (row) => row?.biomarkersSummary?.full || "",
       id: "biomarkersSummary",
       header: "Biomarkers",
       size: 200,
+      minSize: 150,
       meta: {
         exportValue: (row) => row?.original?.biomarkersSummary?.full || "",
       },
-      cell: ({ row }) => renderSummaryCell(row.original?.biomarkersSummary, 200),
+      cell: ({ row }) => renderSummaryCell(row.original?.biomarkersSummary),
     },
     {
       accessorFn: (row) => row?.treatmentsSummary?.full || "",
       id: "treatmentsSummary",
       header: "Treatments",
       size: 180,
+      minSize: 150,
       meta: {
         exportValue: (row) => row?.original?.treatmentsSummary?.full || "",
       },
-      cell: ({ row }) => renderSummaryCell(row.original?.treatmentsSummary, 180),
+      cell: ({ row }) => renderSummaryCell(row.original?.treatmentsSummary),
     },
     {
       accessorFn: (row) => row?.proceduresSummary?.full || "",
       id: "proceduresSummary",
       header: "Procedures",
       size: 180,
+      minSize: 150,
       meta: {
         exportValue: (row) => row?.original?.proceduresSummary?.full || "",
       },
-      cell: ({ row }) => renderSummaryCell(row.original?.proceduresSummary, 180),
+      cell: ({ row }) => renderSummaryCell(row.original?.proceduresSummary),
     },
     {
       accessorFn: (row) => row?.findingsSummary?.full || "",
       id: "findingsSummary",
       header: "Key Findings",
       size: 180,
+      minSize: 150,
       meta: {
         exportValue: (row) => row?.original?.findingsSummary?.full || "",
       },
-      cell: ({ row }) => renderSummaryCell(row.original?.findingsSummary, 180),
+      cell: ({ row }) => renderSummaryCell(row.original?.findingsSummary),
     },
   ];
 }
@@ -697,27 +708,38 @@ export default function PatientGrid({
   toggleButtonTestId = undefined,
   collapsiblePanelId = undefined,
   collapsedHeaderSummary = null,
+  onPatientOpen = undefined,
+  openPatientIds = [],
 }) {
   const theme = useTheme();
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState([]);
   const [expandedRows, setExpandedRows] = useState({});
   const [columnVisibility, setColumnVisibility] = useState({});
+  const [columnSizing, setColumnSizing] = useState({});
+  const [columnSizingInfo, setColumnSizingInfo] = useState({});
   const [columnMenuAnchorEl, setColumnMenuAnchorEl] = useState(null);
+
+  const [contextMenu, setContextMenu] = useState(null); // { mouseX, mouseY, patientId } | null
 
   const toggleRowExpansion = useCallback((rowId) => {
     setExpandedRows((previous) => (previous?.[rowId] ? {} : { [rowId]: true }));
   }, []);
 
-  const columns = useMemo(() => createColumns({ onToggleRow: toggleRowExpansion }), [toggleRowExpansion]);
+  const handleDetailRowContextMenu = useCallback(
+    (event, patientId) => {
+      if (typeof onPatientOpen !== "function") return;
+      event.preventDefault();
+      setContextMenu({ mouseX: event.clientX, mouseY: event.clientY, patientId });
+    },
+    [onPatientOpen]
+  );
 
-  const tableMinWidth = useMemo(
-    () =>
-      columns.reduce((totalWidth, column) => {
-        const columnWidth = Number(column?.size);
-        return totalWidth + (Number.isFinite(columnWidth) ? columnWidth : 120);
-      }, 0),
-    [columns]
+  const handleContextMenuClose = useCallback(() => setContextMenu(null), []);
+
+  const columns = useMemo(
+    () => createColumns({ onToggleRow: toggleRowExpansion, onPatientOpen }),
+    [toggleRowExpansion, onPatientOpen]
   );
 
   const handleExpandedChange = useCallback((updater) => {
@@ -735,6 +757,8 @@ export default function PatientGrid({
       sorting,
       expanded: expandedRows,
       columnVisibility,
+      columnSizing,
+      columnSizingInfo,
     },
     getRowCanExpand: (row) => Boolean(row?.original?._raw),
     globalFilterFn: (row, _, filterValue) => {
@@ -775,11 +799,18 @@ export default function PatientGrid({
     onSortingChange: setSorting,
     onExpandedChange: handleExpandedChange,
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnSizingChange: setColumnSizing,
+    onColumnSizingInfoChange: setColumnSizingInfo,
+    columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+
+  const tableMinWidth = table
+    .getVisibleLeafColumns()
+    .reduce((totalWidth, column) => totalWidth + column.getSize(), 0);
 
   const filteredCount = table.getFilteredRowModel().rows.length;
   const loadedRowCount = data.length;
@@ -973,8 +1004,9 @@ export default function PatientGrid({
       >
           <TableContainer
             sx={{
-              maxHeight: 560,
+              maxHeight: embedded ? "none" : 560,
               overflowX: "auto",
+              overflowY: embedded ? "visible" : "auto",
               border: "1px solid",
               borderColor: "divider",
               borderRadius: 1,
@@ -989,13 +1021,19 @@ export default function PatientGrid({
                   return (
                     <TableCell
                       key={header.id}
+                      data-column-id={header.column.id}
+                      data-column-size={header.getSize()}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                       sx={{
                         fontWeight: 700,
                         cursor: canSort ? "pointer" : "default",
                         userSelect: "none",
                         whiteSpace: "nowrap",
-                        width: header.column.columnDef.size,
+                        width: header.getSize(),
+                        minWidth: header.getSize(),
+                        maxWidth: header.getSize(),
+                        position: "relative",
+                        pr: 1.5,
                         bgcolor: (muiTheme) =>
                           alpha(
                             muiTheme.palette.background.paper,
@@ -1005,6 +1043,45 @@ export default function PatientGrid({
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {canSort ? <SortIndicator column={header.column} /> : null}
+                      {header.column.getCanResize() ? (
+                        <Box
+                          role="separator"
+                          aria-label={`Resize ${String(header.column.columnDef.header || header.column.id)} column`}
+                          aria-orientation="vertical"
+                          data-testid={`patient-grid-column-resizer-${header.column.id}`}
+                          onMouseDown={(event) => {
+                            event.stopPropagation();
+                            header.getResizeHandler()(event);
+                          }}
+                          onTouchStart={(event) => {
+                            event.stopPropagation();
+                            header.getResizeHandler()(event);
+                          }}
+                          sx={{
+                            position: "absolute",
+                            top: 0,
+                            right: -5,
+                            height: "100%",
+                            width: 10,
+                            cursor: "col-resize",
+                            touchAction: "none",
+                            zIndex: 2,
+                            "&::after": {
+                              content: '""',
+                              position: "absolute",
+                              top: "20%",
+                              bottom: "20%",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              width: 2,
+                              borderRadius: 999,
+                              bgcolor: header.column.getIsResizing()
+                                ? "primary.main"
+                                : alpha(theme.palette.text.primary, 0.18),
+                            },
+                          }}
+                        />
+                      ) : null}
                     </TableCell>
                   );
                 })}
@@ -1060,14 +1137,35 @@ export default function PatientGrid({
                     }}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} sx={{ py: 0.7, verticalAlign: "top" }}>
+                      <TableCell
+                        key={cell.id}
+                        data-column-id={cell.column.id}
+                        data-column-size={cell.column.getSize()}
+                        sx={{
+                          py: 0.7,
+                          verticalAlign: "top",
+                          width: cell.column.getSize(),
+                          minWidth: cell.column.getSize(),
+                          maxWidth: cell.column.getSize(),
+                          overflow: "hidden",
+                        }}
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
                   </TableRow>
 
                   {row.getIsExpanded() ? (
-                    <TableRow>
+                    <TableRow
+                      onContextMenu={
+                        typeof onPatientOpen === "function"
+                          ? (event) => handleDetailRowContextMenu(event, row.original?.patientId)
+                          : undefined
+                      }
+                      sx={{
+                        cursor: typeof onPatientOpen === "function" ? "context-menu" : "default",
+                      }}
+                    >
                       <TableCell
                         colSpan={totalColumnCount}
                         sx={{
@@ -1119,6 +1217,49 @@ export default function PatientGrid({
             }}
           />
       </Box>
+
+      {/* Right-click context menu on detail rows */}
+      <Menu
+        open={Boolean(contextMenu)}
+        onClose={handleContextMenuClose}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined
+        }
+      >
+        {contextMenu && Array.isArray(openPatientIds) && openPatientIds.includes(contextMenu.patientId) ? (
+          [
+            <MenuItem
+              key="goto"
+              onClick={() => {
+                onPatientOpen?.(contextMenu.patientId);
+                handleContextMenuClose();
+              }}
+            >
+              Go to tab
+            </MenuItem>,
+            <Divider key="divider" />,
+            <MenuItem
+              key="open"
+              onClick={() => {
+                onPatientOpen?.(contextMenu.patientId);
+                handleContextMenuClose();
+              }}
+            >
+              Open in new tab
+            </MenuItem>,
+          ]
+        ) : (
+          <MenuItem
+            onClick={() => {
+              onPatientOpen?.(contextMenu?.patientId);
+              handleContextMenuClose();
+            }}
+          >
+            Open in new tab
+          </MenuItem>
+        )}
+      </Menu>
     </>
   );
 
@@ -1205,4 +1346,6 @@ PatientGrid.propTypes = {
   toggleButtonTestId: PropTypes.string,
   collapsiblePanelId: PropTypes.string,
   collapsedHeaderSummary: PropTypes.node,
+  onPatientOpen: PropTypes.func,
+  openPatientIds: PropTypes.arrayOf(PropTypes.string),
 };

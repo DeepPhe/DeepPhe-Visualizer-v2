@@ -32,7 +32,7 @@ export const MIN_ROWS_FOR_DISTRIBUTION = 5;
 
 function normalizeFilterType(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "omop" || normalized === "attributes") {
+  if (normalized === "omop" || normalized === "attributes" || normalized === "concepts") {
     return normalized;
   }
   return "";
@@ -145,12 +145,7 @@ const FILTER_SET_CONFIG = [
     display: true,
     defaultExpanded: true,
     filters: [
-      {
-        key: "AGE_AT_DX",
-        type: "omop",
-        displayName: "Age at Dx",
-        specialBehavior: "ageDecile",
-      },
+      { key: "AGE_AT_DX", type: "omop", displayName: "Age at Dx", specialBehavior: "ageDecile" },
       { key: "RACE", type: "omop", displayName: "Race" },
       { key: "GENDER", type: "omop", displayName: "Gender", displayMode: "distribution" },
       { key: "ETHNICITY", type: "omop", displayName: "Ethnicity", displayMode: "distribution" },
@@ -166,6 +161,29 @@ const FILTER_SET_CONFIG = [
       { key: "CANCER", type: "omop", displayName: "Cancer", displayMode: "compact" },
       { key: "Location", type: "attributes", enabled: true },
       { key: "Topography, major", type: "attributes", enabled: true },
+      { key: "Organ System", type: "attributes", enabled: true },
+      { key: "Histology", type: "attributes", enabled: true },
+      { key: "Disease or Disorder", type: "concepts", enabled: true },
+      { key: "Neoplasm", type: "concepts", enabled: true },
+    ],
+  },
+  {
+    id: "tumor-anatomy",
+    label: "Tumor Anatomy",
+    display: true,
+    defaultExpanded: true,
+    filters: [
+      { key: "Tissue", type: "attributes", enabled: true },
+      { key: "Mass", type: "attributes", enabled: true },
+      { key: "Topography, minor", type: "attributes", enabled: true },
+      { key: "Quadrant", type: "attributes", enabled: true },
+      { key: "Clockface", type: "attributes", enabled: true },
+      { key: "Laterality", type: "attributes", enabled: true },
+      { key: "Side", type: "attributes", enabled: true },
+      { key: "Spatial Qualifier", type: "attributes", enabled: true },
+      { key: "Body Part", type: "concepts", enabled: true },
+      { key: "Position", type: "concepts", enabled: true },
+      { key: "Body Fluid or Substance", type: "concepts", enabled: true },
     ],
   },
   {
@@ -181,8 +199,6 @@ const FILTER_SET_CONFIG = [
         hasRollup: true,
         displayMode: "distribution",
         defaultSortMode: "alpha-asc",
-        // In compact mode the card title already says "Stage", so strip the
-        // redundant prefix from each row label ("Stage III" -> "III").
         compactLabelStripPrefix: "Stage ",
         customSortOrder: [
           "Stage 0",
@@ -194,7 +210,7 @@ const FILTER_SET_CONFIG = [
           "Advanced Stage",
         ],
       },
-      { key: "Lymph Involvement", type: "attributes", maxHeightPx: 300 },
+      { key: "Disease Stage Qualifier", type: "attributes", enabled: true },
       {
         key: "T Stage",
         type: "attributes",
@@ -220,6 +236,11 @@ const FILTER_SET_CONFIG = [
         compactLabelStripPrefix: "M",
         customSortOrder: ["M0", "M1", "MX"],
       },
+      { key: "Generic TNM Finding", type: "concepts", enabled: true },
+      { key: "Pathologic TNM Finding", type: "concepts", enabled: true },
+      { key: "Lymph Involvement", type: "attributes", maxHeightPx: 300 },
+      { key: "Lymph Node", type: "concepts", enabled: true },
+      { key: "Metastatic Site", type: "attributes", maxHeightPx: 220 },
       {
         key: "Behavior",
         type: "attributes",
@@ -238,12 +259,13 @@ const FILTER_SET_CONFIG = [
           "Benign",
         ],
       },
-      { key: "Metastatic Site", type: "attributes", maxHeightPx: 220 },
+      { key: "Severity", type: "concepts", enabled: true },
+      { key: "Finding", type: "concepts", enabled: true },
     ],
   },
   {
     id: "pathology",
-    label: "Pathology",
+    label: "Pathology & Grade",
     display: true,
     defaultExpanded: true,
     filters: [
@@ -252,22 +274,14 @@ const FILTER_SET_CONFIG = [
       { key: "Grade_Differentiated", type: "attributes" },
       { key: "Grade_Tiered", type: "attributes" },
       { key: "Grade_Gleason", type: "attributes" },
-      {
-        key: "Test Results",
-        type: "attributes",
-        displayName: "Histologic Features",
-        enabled: true,
-      },
-      { key: "Tissue", type: "attributes", enabled: true },
-      { key: "Topography, minor", type: "attributes", enabled: true },
-      { key: "Quadrant", type: "attributes", enabled: true },
-      { key: "Clockface", type: "attributes", enabled: true },
-      { key: "Laterality", type: "attributes", enabled: true },
+      { key: "Disease Grade Qualifier", type: "concepts", enabled: true },
+      { key: "Test Results", type: "attributes", displayName: "Histologic Features", enabled: true },
+      { key: "Pathologic Process", type: "concepts", enabled: true },
     ],
   },
   {
     id: "biomarkers",
-    label: "Biomarkers",
+    label: "Molecular Markers & Biomarkers",
     row: "clinical-treatment",
     display: true,
     defaultExpanded: true,
@@ -275,7 +289,7 @@ const FILTER_SET_CONFIG = [
       { key: "HER2/Neu Status", type: "attributes", enabled: true },
       { key: "Estrogen Receptor Status", type: "attributes", enabled: true },
       { key: "Progesterone Receptor Status", type: "attributes", enabled: true },
-      { key: "Receptor Status", type: "attributes", enabled: false },
+      { key: "Receptor Status", type: "attributes", enabled: true },
       {
         key: "Microsatellite Stable",
         type: "attributes",
@@ -297,6 +311,10 @@ const FILTER_SET_CONFIG = [
         enabled: true,
       },
       { key: "Genes", type: "attributes", enabled: true },
+      { key: "Gene", type: "concepts", enabled: true },
+      { key: "Gene Product", type: "concepts", enabled: true },
+      { key: "Clinical Test Result", type: "concepts", enabled: true },
+      { key: "Quantitative Concept", type: "concepts", enabled: true },
     ],
   },
   {
@@ -308,23 +326,32 @@ const FILTER_SET_CONFIG = [
     filters: [
       { key: "Performance Status", type: "attributes", enabled: true },
       { key: "Course", type: "attributes", displayName: "Disease Course/Response", enabled: true },
-      { key: "Comorbidities", type: "attributes", enabled: false },
+      { key: "Comorbidities", type: "attributes", enabled: true },
+      { key: "Clinical Course of Disease", type: "concepts", enabled: true },
+      { key: "Disease Qualifier", type: "concepts", enabled: true },
+      { key: "Property or Attribute", type: "concepts", enabled: true },
+      { key: "General Qualifier", type: "concepts", enabled: true },
+      { key: "Temporal Qualifier", type: "concepts", enabled: true },
     ],
   },
   {
     id: "treatment",
-    label: "Treatment",
+    label: "Treatment & Interventions",
     row: "clinical-treatment",
     display: true,
     defaultExpanded: true,
     filters: [
       { key: "Treatments", type: "attributes", enabled: true },
-      { key: "Procedures", type: "attributes", enabled: false },
+      { key: "Procedures", type: "attributes", enabled: true },
       { key: "Diagnostic Procedures", type: "attributes", enabled: true },
       { key: "Diagnostic Procedure", type: "attributes", enabled: true },
       { key: "Therapeutic Procedures/Surgery", type: "attributes", enabled: true },
       { key: "Therapeutic Procedures", type: "attributes", enabled: true },
       { key: "Surgery", type: "attributes", enabled: true },
+      { key: "Pharmacologic Substance", type: "concepts", enabled: true },
+      { key: "Chemo/immuno/hormone Therapy Regimen", type: "concepts", enabled: true },
+      { key: "Intervention or Procedure", type: "concepts", enabled: true },
+      { key: "Imaging Device", type: "concepts", enabled: true },
     ],
   },
 ];
@@ -338,10 +365,12 @@ export const FILTER_SETS = FILTER_SET_CONFIG.map((filterSet) => normalizeFilterS
 const normalizedLookupByType = {
   omop: new Map(),
   attributes: new Map(),
+  concepts: new Map(),
 };
 const knownLookupKeysByType = {
   omop: new Set(),
   attributes: new Set(),
+  concepts: new Set(),
 };
 
 /**
@@ -513,6 +542,98 @@ export function resolveFilterSetsWithExtras(apiClasses, type) {
       display: true,
       defaultExpanded: true,
       filters: uncategorizedFilters,
+    });
+  }
+
+  return resolvedSets.map((filterSet) => cloneFilterSet(filterSet));
+}
+
+/**
+ * Resolves a merged list of FilterSets containing both attribute and concept filters,
+ * in the oncologist-configured order. Omop filters in the config are skipped here
+ * (omop is handled separately). Appends uncategorized sections for any API classes
+ * not matched in the config.
+ * @param {{ attributes: string[], concepts: string[] }} param0
+ * @returns {FilterSet[]}
+ */
+export function resolveFilterSetsForAttributesAndConcepts({
+  attributes: attrClasses,
+  concepts: conceptClasses,
+} = {}) {
+  const makeAvailableMap = (apiClasses) => {
+    const map = new Map();
+    (Array.isArray(apiClasses) ? apiClasses : []).forEach((raw) => {
+      const className = String(raw || "").trim();
+      if (!className) return;
+      const key = normalizeLookupKey(className);
+      if (key && !map.has(key)) map.set(key, className);
+    });
+    return map;
+  };
+
+  const availableByType = {
+    attributes: makeAvailableMap(attrClasses),
+    concepts: makeAvailableMap(conceptClasses),
+  };
+  const usedByType = { attributes: new Set(), concepts: new Set() };
+
+  const resolvedSets = [];
+
+  FILTER_SETS.forEach((filterSet) => {
+    if (filterSet.display === false) return;
+
+    const matchedFilters = filterSet.filters
+      .filter((f) => f.type === "attributes" || f.type === "concepts")
+      .map((filter) => {
+        const type = filter.type;
+        const available = availableByType[type];
+        if (!available) return null;
+        const lookupKey = normalizeLookupKey(filter.key);
+        const matchedClass = available.get(lookupKey);
+        if (!matchedClass || usedByType[type].has(lookupKey)) return null;
+        usedByType[type].add(lookupKey);
+        return normalizeFilterEntry({ ...filter, key: matchedClass });
+      })
+      .filter(Boolean);
+
+    if (matchedFilters.length > 0) {
+      resolvedSets.push({ ...filterSet, filters: matchedFilters });
+    }
+  });
+
+  // Uncategorized attributes
+  const uncatAttr = [];
+  availableByType.attributes.forEach((className, lookupKey) => {
+    if (usedByType.attributes.has(lookupKey)) return;
+    if (knownLookupKeysByType.attributes.has(lookupKey)) return;
+    uncatAttr.push(createDefaultFilterEntry("attributes", className));
+  });
+  if (uncatAttr.length > 0) {
+    resolvedSets.push({
+      id: "uncategorized-attributes",
+      label: "Uncategorized",
+      row: "uncategorized-attributes",
+      display: true,
+      defaultExpanded: true,
+      filters: uncatAttr,
+    });
+  }
+
+  // Uncategorized concepts
+  const uncatConcept = [];
+  availableByType.concepts.forEach((className, lookupKey) => {
+    if (usedByType.concepts.has(lookupKey)) return;
+    if (knownLookupKeysByType.concepts.has(lookupKey)) return;
+    uncatConcept.push(createDefaultFilterEntry("concepts", className));
+  });
+  if (uncatConcept.length > 0) {
+    resolvedSets.push({
+      id: "uncategorized-concepts",
+      label: "Uncategorized Concepts",
+      row: "uncategorized-concepts",
+      display: true,
+      defaultExpanded: true,
+      filters: uncatConcept,
     });
   }
 

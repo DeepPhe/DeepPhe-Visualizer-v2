@@ -538,28 +538,77 @@ describe("FiltersView", () => {
     }
   });
 
-  it("renders demographics and cancer type in the same filter-set row", async () => {
+  it("keeps patient/cancer/primary-site cohort overview separate from clinical status", async () => {
     const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       writable: true,
       value: createMinWidthMatchMedia(1920),
     });
+    getAttributeSummary.mockResolvedValueOnce({
+      classes: [
+        "Behavior",
+        "Grade_Numeric",
+        "M Stage",
+        "N Stage",
+        "T Stage",
+        "Course",
+        "Treatments",
+        "Location",
+        "Topography, major",
+        "Performance Status",
+      ],
+      instancesByClass: {
+        "T Stage": [
+          { value: "T1", count: 9 },
+          { value: "T2", count: 4 },
+        ],
+        "N Stage": [
+          { value: "N0", count: 8 },
+          { value: "N1", count: 3 },
+        ],
+        "M Stage": [
+          { value: "M0", count: 10 },
+          { value: "M1", count: 2 },
+        ],
+        Grade_Numeric: [
+          { value: "Grade 2", count: 6 },
+          { value: "Grade 3", count: 5 },
+        ],
+        Behavior: [
+          { value: "Invasive", count: 7 },
+          { value: "Malignant", count: 6 },
+        ],
+        Course: [{ value: "Primary", count: 9 }],
+        Treatments: [{ value: "Chemotherapy", count: 8 }],
+        Location: [{ value: "Breast", count: 12 }],
+        "Topography, major": [{ value: "Breast", count: 12 }],
+        "Performance Status": [{ value: "ECOG 1", count: 7 }],
+      },
+    });
 
     const { container, unmount } = renderComponent(<FiltersView />);
 
     try {
       await waitFor(() => {
-        expect(findSectionContainerByHeading(container, "Demographics")).not.toBeNull();
-        expect(findSectionContainerByHeading(container, "Cancer Type")).not.toBeNull();
+        expect(findSectionContainerByHeading(container, "Patient")).not.toBeNull();
+        expect(findSectionContainerByHeading(container, "Cancer Type & Primary Site")).not.toBeNull();
+        expect(findSectionContainerByHeading(container, "Primary Site")).not.toBeNull();
+        expect(findSectionContainerByHeading(container, "Clinical Status")).not.toBeNull();
       });
 
-      const demographicsRow = findFilterSetRowBySectionHeading(container, "Demographics");
-      const cancerTypeRow = findFilterSetRowBySectionHeading(container, "Cancer Type");
+      const patientRow = findFilterSetRowBySectionHeading(container, "Patient");
+      const cancerTypeRow = findFilterSetRowBySectionHeading(container, "Cancer Type & Primary Site");
+      const primarySiteRow = findFilterSetRowBySectionHeading(container, "Primary Site");
+      const clinicalStatusRow = findFilterSetRowBySectionHeading(container, "Clinical Status");
 
-      expect(demographicsRow).not.toBeNull();
-      expect(cancerTypeRow).toBe(demographicsRow);
-      expect(demographicsRow?.getAttribute("data-filter-set-row")).toBe("cohort-overview");
+      expect(patientRow).not.toBeNull();
+      expect(cancerTypeRow).toBe(patientRow);
+      expect(primarySiteRow).toBe(patientRow);
+      expect(patientRow?.getAttribute("data-filter-set-row")).toBe("cohort-overview");
+      expect(clinicalStatusRow).not.toBeNull();
+      expect(clinicalStatusRow?.getAttribute("data-filter-set-row")).toBe("clinical-status");
+      expect(clinicalStatusRow).not.toBe(patientRow);
     } finally {
       unmount();
       Object.defineProperty(window, "matchMedia", {
@@ -1500,6 +1549,84 @@ describe("FiltersView", () => {
         const drawerPanel = container.querySelector("#patient-grid-drawer-panel");
         expect(drawerToggle?.getAttribute("aria-expanded")).toBe("true");
         expect(drawerPanel?.hidden).toBe(false);
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("uses 40-row pagination when the selected patients drawer is maximized", async () => {
+    const patientIds = Array.from({ length: 55 }, (_, index) =>
+      `PATIENT-${String(index + 1).padStart(3, "0")}`
+    );
+    fetchDeepPheFilterCount.mockImplementation(({ includePatientIds }) =>
+      Promise.resolve({
+        count: patientIds.length,
+        patient_ids: includePatientIds ? patientIds : [],
+        timing: {
+          queryMs: 4.1,
+          bitmapMs: 0.8,
+          resolveMs: 0.3,
+          totalMs: 5.2,
+          itemCounts: [patientIds.length],
+        },
+      })
+    );
+    fetchDeepPheFilterSummary.mockImplementation(async (requestedPatientIds = []) =>
+      requestedPatientIds.map((patientId, index) => ({
+        patient_id: patientId,
+        demographics: {
+          age_at_dx: String(40 + index),
+          gender: "Female",
+          race: "White",
+          ethnicity: "Not Hispanic or Latino",
+          cancer_type: "Breast",
+        },
+        diagnoses: [{ name: "Breast carcinoma", source: "cancer" }],
+        staging: [{ name: "Stage I" }],
+        grading: [{ name: "Grade 2" }],
+        biomarkers: [],
+        procedures: [],
+        treatments: [],
+        findings: [],
+      }))
+    );
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findOpenFilterButton("Gender")).not.toBeUndefined();
+      });
+
+      await selectFilterValue("Gender", "Female");
+
+      await waitFor(() => {
+        expect(fetchDeepPheFilterSummary).toHaveBeenCalled();
+        const [firstPagePatientIds] = fetchDeepPheFilterSummary.mock.calls[0];
+        expect(Array.isArray(firstPagePatientIds)).toBe(true);
+        expect(firstPagePatientIds).toHaveLength(10);
+      });
+
+      const expandDrawerButton = container.querySelector(
+        'button[aria-label="Expand selected patients drawer"]'
+      );
+      expect(expandDrawerButton).not.toBeNull();
+      await clickAsync(expandDrawerButton);
+
+      await waitFor(() => {
+        const requestedPageSizes = fetchDeepPheFilterSummary.mock.calls.map(([requestedPatientIds]) =>
+          Array.isArray(requestedPatientIds) ? requestedPatientIds.length : 0
+        );
+        expect(requestedPageSizes).toContain(40);
+      });
+
+      await waitFor(() => {
+        const drawerText = String(findPatientGridDrawer(container)?.textContent || "").replace(
+          /\s+/g,
+          " "
+        );
+        expect(drawerText).toContain("1–40 of 55 patients");
       });
     } finally {
       unmount();

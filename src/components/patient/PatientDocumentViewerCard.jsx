@@ -20,6 +20,8 @@ import {
   Stack,
   Tab,
   Tabs,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -79,6 +81,31 @@ const GROUP_FAMILY_RANK = GROUP_FAMILY_ORDER.reduce((accumulator, familyName, in
   accumulator[familyName] = index;
   return accumulator;
 }, {});
+
+const GROUP_FAMILY_PREFIX = {
+  Anatomy: "A",
+  Device: "Dv",
+  Finding: "F",
+  Disorder: "D",
+  Severity: "Sv",
+  Attribute: "At",
+  Intervention: "Rx",
+};
+
+const GROUP_FAMILY_COLOR = {
+  Anatomy: "#99E6E6",
+  Device: "#785ef0",
+  Finding: "#ffbcdd",
+  Disorder: "#7fce94",
+  Severity: "#ff8712",
+  Attribute: "#ffef00",
+  Intervention: "#ca99f4",
+};
+
+function getGroupPrefix(groupName) {
+  const family = GROUP_FAMILY_BY_NAME[groupName];
+  return GROUP_FAMILY_PREFIX[family] || groupName.slice(0, 2).toUpperCase();
+}
 
 function clamp(value, minValue, maxValue) {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -375,10 +402,164 @@ function toConceptIds(value) {
   return [...new Set((Array.isArray(value) ? value : []).map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+function SelectionSummary({ context }) {
+  if (!context) {
+    return null;
+  }
+
+  const isUnknownValue = (value) =>
+    /^(unknown|n\/a|na|none|null|-)$/i.test(String(value || "").trim());
+
+  const formatDocumentType = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return "";
+    if (isUnknownValue(normalized)) {
+      return "Document type unknown (source data missing type)";
+    }
+    return normalized;
+  };
+
+  const formatEpisodeLabel = (value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return "";
+    if (isUnknownValue(normalized)) {
+      return "Episode unknown (source data not yet classified)";
+    }
+    return normalized;
+  };
+
+  const segments = [];
+
+  const push = (text, variant = "normal") => {
+    const normalized = String(text || "").trim();
+    if (normalized) {
+      segments.push({ text: normalized, variant });
+    }
+  };
+
+  switch (context.source) {
+    case "auto":
+      push("Auto-selected", "muted");
+      push("most recent document", "muted");
+      if (context.documentType) push(formatDocumentType(context.documentType), "meta");
+      if (context.documentDate) push(context.documentDate, "meta");
+      if (context.episodeLabel) push(formatEpisodeLabel(context.episodeLabel), "meta");
+      break;
+
+    case "timeline":
+      push("Timeline", "muted");
+      if (context.documentType) push(formatDocumentType(context.documentType), "accent");
+      if (context.documentDate) push(context.documentDate, "meta");
+      if (context.episodeLabel) push(formatEpisodeLabel(context.episodeLabel), "meta");
+      break;
+
+    case "fact": {
+      push(context.isTumorLevel ? "Tumor fact" : "Cancer fact", "muted");
+      if (context.cancerIndex != null) {
+        push(
+          context.tumorIndex != null
+            ? `Cancer ${context.cancerIndex} · Tumor ${context.tumorIndex}`
+            : `Cancer ${context.cancerIndex}`,
+          "accent"
+        );
+      }
+      if (context.categoryName) push(context.categoryName, "meta");
+      if (context.prettyName) push(context.prettyName, "strong");
+      break;
+    }
+
+    case "related-document": {
+      push("Linked document", "muted");
+      if (context.cancerIndex != null) {
+        push(
+          context.tumorIndex != null
+            ? `Cancer ${context.cancerIndex} · Tumor ${context.tumorIndex}`
+            : `Cancer ${context.cancerIndex}`,
+          "accent"
+        );
+      }
+      if (context.categoryName) push(context.categoryName, "meta");
+      if (context.prettyName) push(context.prettyName, "strong");
+      if (context.documentType) push(formatDocumentType(context.documentType), "meta");
+      if (context.documentDate) push(context.documentDate, "meta");
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  return (
+    <Box
+      component="span"
+      sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.4, mt: 0.15 }}
+    >
+      <Typography
+        component="span"
+        variant="caption"
+        sx={{ lineHeight: 1.4, color: "text.secondary", fontWeight: 600 }}
+      >
+        breadcrumb:
+      </Typography>
+      {segments.map((segment, index) => (
+        <React.Fragment key={index}>
+          <Typography
+            component="span"
+            variant="caption"
+            aria-hidden="true"
+            sx={{ color: "text.disabled", lineHeight: 1, userSelect: "none" }}
+          >
+            ·
+          </Typography>
+          <Typography
+            component="span"
+            variant="caption"
+            sx={{
+              lineHeight: 1.4,
+              color:
+                segment.variant === "muted"
+                  ? "text.disabled"
+                  : segment.variant === "accent"
+                  ? "primary.main"
+                  : segment.variant === "strong"
+                  ? "text.primary"
+                  : "text.secondary",
+              fontWeight:
+                segment.variant === "strong" || segment.variant === "accent" ? 600 : 400,
+            }}
+          >
+            {segment.text}
+          </Typography>
+        </React.Fragment>
+      ))}
+    </Box>
+  );
+}
+
+SelectionSummary.propTypes = {
+  context: PropTypes.shape({
+    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document"]),
+    documentType: PropTypes.string,
+    documentDate: PropTypes.string,
+    episodeLabel: PropTypes.string,
+    categoryName: PropTypes.string,
+    prettyName: PropTypes.string,
+    isTumorLevel: PropTypes.bool,
+    cancerIndex: PropTypes.number,
+    tumorIndex: PropTypes.number,
+  }),
+};
+
 export default function PatientDocumentViewerCard({
   document = null,
   concepts = [],
   factSelection = null,
+  embedded = false,
+  selectionContext = null,
 }) {
   const NO_ENABLED_GROUP_SENTINEL = "__NO_ENABLED_GROUPS__";
   const [activeTab, setActiveTab] = useState(0);
@@ -386,7 +567,18 @@ export default function PatientDocumentViewerCard({
   const [enabledGroupByName, setEnabledGroupByName] = useState({});
   const [selectedConceptIds, setSelectedConceptIds] = useState([]);
   const [confidenceMode, setConfidenceMode] = useState("byMention");
+  const [conceptGrouping, setConceptGrouping] = useState("byLabel");
   const [helpAnchorEl, setHelpAnchorEl] = useState(null);
+  const headingRef = useRef(null);
+  const documentScrollRef = useRef(null);
+
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    if (embedded && headingRef.current) {
+      headingRef.current.focus();
+    }
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const enabledGroups = useMemo(
     () =>
@@ -445,6 +637,58 @@ export default function PatientDocumentViewerCard({
   }, [factSelection?.factId, factSelection?.conceptIds]);
 
   const selectedConceptIdSet = useMemo(() => new Set(toConceptIds(selectedConceptIds)), [selectedConceptIds]);
+
+  const conceptRowsByFamily = useMemo(() => {
+    const byFamily = new Map();
+    highlightModel.conceptRows.forEach((row) => {
+      const family = GROUP_FAMILY_BY_NAME[row.group] || row.group;
+      if (!byFamily.has(family)) {
+        byFamily.set(family, []);
+      }
+      byFamily.get(family).push(row);
+    });
+    const ordered = [];
+    const seen = new Set();
+    GROUP_FAMILY_ORDER.forEach((family) => {
+      if (byFamily.has(family)) {
+        ordered.push({ family, rows: byFamily.get(family) });
+        seen.add(family);
+      }
+    });
+    byFamily.forEach((rows, family) => {
+      if (!seen.has(family)) {
+        ordered.push({ family, rows });
+      }
+    });
+    return ordered;
+  }, [highlightModel.conceptRows]);
+
+  useEffect(() => {
+    if (selectedConceptIds.length === 0) return;
+    const container = documentScrollRef.current;
+    if (!container) return;
+    const firstMention = container.querySelector("[data-first-selected-mention]");
+    if (firstMention) {
+      const containerRect = container.getBoundingClientRect();
+      const mentionRect = firstMention.getBoundingClientRect();
+      const viewportPadding = 10;
+      const mentionIsAbove = mentionRect.top < containerRect.top + viewportPadding;
+      const mentionIsBelow = mentionRect.bottom > containerRect.bottom - viewportPadding;
+
+      if (!mentionIsAbove && !mentionIsBelow) {
+        return;
+      }
+
+      const targetTop =
+        container.scrollTop +
+        (mentionRect.top - containerRect.top) -
+        Math.max(16, container.clientHeight * 0.28);
+      container.scrollTo({
+        top: Math.max(0, targetTop),
+        behavior: "smooth",
+      });
+    }
+  }, [selectedConceptIds]);
 
   const confidenceHistogram = useMemo(
     () =>
@@ -512,15 +756,22 @@ export default function PatientDocumentViewerCard({
 
   const openHelpPopover = Boolean(helpAnchorEl);
 
+  const cardSx = embedded
+    ? { border: 0, borderRadius: 0, display: "flex", flexDirection: "column", height: "100%" }
+    : { border: 1, borderColor: "divider" };
+  const titleVariant = embedded ? "subtitle1" : "h6";
+  const selectedDocument = document;
+
   if (!document) {
     return (
-      <Card elevation={0} sx={{ border: 1, borderColor: "divider" }}>
+      <Card elevation={0} sx={cardSx}>
         <CardHeader
           title="Document Viewer"
-          titleTypographyProps={{ variant: "h6", sx: { fontWeight: 700 } }}
+          sx={{ py: embedded ? 1 : undefined, px: embedded ? 1.5 : undefined }}
+          titleTypographyProps={{ variant: titleVariant, sx: { fontWeight: 700 } }}
         />
         <Divider />
-        <CardContent>
+        <CardContent sx={embedded ? { px: 1.5, py: 1, "&:last-child": { pb: 1 } } : undefined}>
           <Typography variant="body2" color="text.secondary">
             Select a document from the timeline to view text mentions and concept overlays.
           </Typography>
@@ -530,17 +781,57 @@ export default function PatientDocumentViewerCard({
   }
 
   return (
-    <Card elevation={0} sx={{ border: 1, borderColor: "divider" }}>
+    <Card elevation={0} sx={cardSx}>
       <CardHeader
-        title="Document Viewer"
-        subheader={document?.name || document?.id}
-        titleTypographyProps={{ variant: "h6", sx: { fontWeight: 700 } }}
-        subheaderTypographyProps={{ variant: "body2", color: "text.secondary" }}
+        title={
+          <span ref={headingRef} tabIndex={-1} style={{ outline: "none" }}>
+            {selectedDocument?.name || selectedDocument?.id || "Document Viewer"}
+          </span>
+        }
+        subheader={<SelectionSummary context={selectionContext} />}
+        sx={{ py: embedded ? 1 : undefined, px: embedded ? 1.5 : undefined }}
+        titleTypographyProps={{ variant: titleVariant, sx: { fontWeight: 700 } }}
+        subheaderTypographyProps={{ component: "div", variant: "caption" }}
       />
       <Divider />
-      <CardContent>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={4}>
+      <CardContent
+        sx={
+          embedded
+            ? {
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                px: 1.5,
+                py: 1,
+                "&:last-child": { pb: 1 },
+              }
+            : undefined
+        }
+      >
+        <Grid
+          container
+          spacing={2}
+          sx={embedded ? { flex: 1, minHeight: 0, overflow: "hidden", alignItems: "stretch" } : undefined}
+        >
+          <Grid
+            item
+            xs={12}
+            md={4}
+            sx={
+              embedded
+                ? {
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                    height: "100%",
+                    overflow: "hidden",
+                    alignSelf: "stretch",
+                  }
+                : undefined
+            }
+          >
             <Box
               sx={{
                 border: 1,
@@ -549,6 +840,7 @@ export default function PatientDocumentViewerCard({
                 minHeight: 360,
                 display: "flex",
                 flexDirection: "column",
+                ...(embedded ? { flex: 1, minHeight: 0 } : {}),
               }}
             >
               <Tabs
@@ -567,23 +859,87 @@ export default function PatientDocumentViewerCard({
               </Tabs>
               <Divider />
 
-              <Box sx={{ p: 1.25 }}>
+              <Box sx={{ p: 1.25, ...(embedded ? { flex: 1, minHeight: 0, overflowY: "auto" } : {}) }}>
                 <TabPanel value={activeTab} index={0}>
                   <Stack spacing={1}>
+                    {sortedGroupNames.length > 0 ? (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 1,
+                          pb: 0.75,
+                          borderBottom: 1,
+                          borderColor: "divider",
+                        }}
+                        role="list"
+                        aria-label="Concept group legend"
+                      >
+                        {sortedGroupNames.map((groupName) => {
+                          const family = GROUP_FAMILY_BY_NAME[groupName] || groupName;
+                          const prefix = getGroupPrefix(groupName);
+                          const color = highlightModel.groupColorByName[groupName] || DEFAULT_GROUP_COLOR;
+                          return (
+                            <Box
+                              key={groupName}
+                              role="listitem"
+                              sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+                            >
+                              <Box
+                                aria-hidden="true"
+                                sx={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "2px",
+                                  bgcolor: color,
+                                  border: "1px solid rgba(0,0,0,0.2)",
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ fontSize: "0.68rem" }}
+                              >
+                                <strong>{prefix}</strong> {family}
+                              </Typography>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    ) : null}
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                         Concepts in Document
                       </Typography>
-                      {selectedConceptIds.length > 0 ? (
-                        <Button size="small" variant="outlined" onClick={clearConceptFilter}>
-                          Clear
-                        </Button>
-                      ) : null}
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        <ToggleButtonGroup
+                          value={conceptGrouping}
+                          exclusive
+                          size="small"
+                          onChange={(_, next) => { if (next) setConceptGrouping(next); }}
+                          aria-label="Concept grouping"
+                        >
+                          <ToggleButton value="byLabel" aria-label="Group by label" sx={{ py: 0.25, px: 0.75, fontSize: "0.65rem", lineHeight: 1.4, textTransform: "none" }}>
+                            By label
+                          </ToggleButton>
+                          <ToggleButton value="byGroup" aria-label="Group by type" sx={{ py: 0.25, px: 0.75, fontSize: "0.65rem", lineHeight: 1.4, textTransform: "none" }}>
+                            By type
+                          </ToggleButton>
+                        </ToggleButtonGroup>
+                        {selectedConceptIds.length > 0 ? (
+                          <Button size="small" variant="outlined" onClick={clearConceptFilter}>
+                            Clear
+                          </Button>
+                        ) : null}
+                      </Stack>
                     </Stack>
 
-                    <Stack direction="row" spacing={0.75} flexWrap="wrap" sx={{ rowGap: 0.75 }}>
-                      {highlightModel.conceptRows.map((conceptRow) => {
+                    {(() => {
+                      const renderChip = (conceptRow, familyColor) => {
                         const isSelected = selectedConceptIdSet.has(conceptRow.conceptId);
+                        const hasActiveFilter = selectedConceptIdSet.size > 0;
+                        const isDimmed = hasActiveFilter && !isSelected;
                         const negationSummary = conceptNegationSummaryById.get(conceptRow.conceptId);
                         const allMentionsNegated = Boolean(
                           negationSummary &&
@@ -591,8 +947,7 @@ export default function PatientDocumentViewerCard({
                             negationSummary.negatedCount === negationSummary.mentionCount
                         );
                         const conceptColor =
-                          highlightModel.groupColorByName[conceptRow.group] || DEFAULT_GROUP_COLOR;
-
+                          familyColor ?? highlightModel.groupColorByName[conceptRow.group] ?? DEFAULT_GROUP_COLOR;
                         return (
                           <Chip
                             key={conceptRow.conceptId}
@@ -607,7 +962,7 @@ export default function PatientDocumentViewerCard({
                                   pr: allMentionsNegated ? 1.1 : 0,
                                 }}
                               >
-                                {`${conceptRow.label} (${conceptRow.mentionCount})`}
+                                {`${getGroupPrefix(conceptRow.group)} · ${conceptRow.label} (${conceptRow.mentionCount})`}
                                 {allMentionsNegated ? (
                                   <Box
                                     component="span"
@@ -629,15 +984,61 @@ export default function PatientDocumentViewerCard({
                             }
                             onClick={() => handleConceptToggle(conceptRow.conceptId)}
                             sx={{
-                              backgroundColor: conceptColor,
+                              backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
                               border: isSelected ? "1.5px solid #333" : "1px solid rgba(0,0,0,0.2)",
                               fontWeight: isSelected ? 700 : 500,
+                              opacity: isDimmed ? 0.55 : 1,
+                              transition: "border-color 0.12s ease, border-width 0.12s ease",
+                              "&.MuiChip-clickable:hover": {
+                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
+                                opacity: isDimmed ? 0.55 : 1,
+                                border: isSelected ? "2px solid #333" : "2px solid rgba(0,0,0,0.45)",
+                              },
+                              "&.MuiChip-clickable:focus-visible": {
+                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
+                                opacity: isDimmed ? 0.55 : 1,
+                                border: "2px solid #333",
+                              },
                               "& .MuiChip-label": { px: 0.9 },
                             }}
                           />
                         );
-                      })}
-                    </Stack>
+                      };
+
+                      if (conceptGrouping === "byGroup") {
+                        return (
+                          <Stack spacing={1.25}>
+                            {conceptRowsByFamily.map(({ family, rows }) => (
+                              <Box key={family}>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontWeight: 700,
+                                    color: "text.secondary",
+                                    textTransform: "uppercase",
+                                    fontSize: "0.62rem",
+                                    letterSpacing: "0.05em",
+                                    display: "block",
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  {family}
+                                </Typography>
+                                <Stack direction="row" spacing={0.75} flexWrap="wrap" sx={{ rowGap: 0.75 }}>
+                                  {rows.map((row) => renderChip(row, GROUP_FAMILY_COLOR[family] ?? DEFAULT_GROUP_COLOR))}
+                                </Stack>
+                              </Box>
+                            ))}
+                          </Stack>
+                        );
+                      }
+
+                      return (
+                        <Stack direction="row" spacing={0.75} flexWrap="wrap" sx={{ rowGap: 0.75 }}>
+                          {highlightModel.conceptRows.map((row) => renderChip(row))}
+                        </Stack>
+                      );
+                    })()}
                   </Stack>
                 </TabPanel>
 
@@ -735,7 +1136,23 @@ export default function PatientDocumentViewerCard({
             </Box>
           </Grid>
 
-          <Grid item xs={12} md={8}>
+          <Grid
+            item
+            xs={12}
+            md={8}
+            sx={
+              embedded
+                ? {
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                    height: "100%",
+                    overflow: "hidden",
+                    alignSelf: "stretch",
+                  }
+                : undefined
+            }
+          >
             {!(typeof document?.text === "string" && document.text.length > 0) ? (
               <Alert severity="warning" sx={{ mb: 2 }}>
                 This document payload does not include text. Mention overlays require full text.
@@ -743,14 +1160,25 @@ export default function PatientDocumentViewerCard({
             ) : null}
 
             <Box
+              ref={documentScrollRef}
+              data-testid="patient-document-text-pane"
+              onWheelCapture={(event) => {
+                event.stopPropagation();
+              }}
+              onTouchMoveCapture={(event) => {
+                event.stopPropagation();
+              }}
               sx={{
                 border: 1,
                 borderColor: "divider",
                 borderRadius: 1,
                 p: 1.5,
                 minHeight: 280,
-                maxHeight: 560,
-                overflow: "auto",
+                ...(embedded ? { flex: 1, minHeight: 0, height: 0 } : {}),
+                overflowY: "auto",
+                overflowX: "hidden",
+                overscrollBehavior: "contain",
+                touchAction: "pan-y",
                 bgcolor: "background.paper",
               }}
             >
@@ -764,7 +1192,12 @@ export default function PatientDocumentViewerCard({
                   fontSize: "0.875rem",
                 }}
               >
-                {highlightModel.segments.map((segment, index) => {
+                {(() => {
+                  const firstSelectedSegmentIndex =
+                    selectedConceptIdSet.size > 0
+                      ? highlightModel.segments.findIndex((seg) => seg.type === "mention")
+                      : -1;
+                  return highlightModel.segments.map((segment, index) => {
                   if (segment.type === "text") {
                     return <React.Fragment key={`text-${index}`}>{segment.text}</React.Fragment>;
                   }
@@ -787,6 +1220,7 @@ export default function PatientDocumentViewerCard({
                         component="button"
                         type="button"
                         onClick={() => handleConceptToggle(mention.conceptId)}
+                        {...(index === firstSelectedSegmentIndex ? { "data-first-selected-mention": "" } : {})}
                         sx={{
                           mx: 0,
                           px: 0.25,
@@ -823,7 +1257,8 @@ export default function PatientDocumentViewerCard({
                       </Box>
                     </Tooltip>
                   );
-                })}
+                });
+                })()}
               </Typography>
             </Box>
           </Grid>
@@ -862,5 +1297,17 @@ PatientDocumentViewerCard.propTypes = {
   factSelection: PropTypes.shape({
     factId: PropTypes.string,
     conceptIds: PropTypes.arrayOf(PropTypes.string),
+  }),
+  embedded: PropTypes.bool,
+  selectionContext: PropTypes.shape({
+    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document"]),
+    documentType: PropTypes.string,
+    documentDate: PropTypes.string,
+    episodeLabel: PropTypes.string,
+    categoryName: PropTypes.string,
+    prettyName: PropTypes.string,
+    isTumorLevel: PropTypes.bool,
+    cancerIndex: PropTypes.number,
+    tumorIndex: PropTypes.number,
   }),
 };

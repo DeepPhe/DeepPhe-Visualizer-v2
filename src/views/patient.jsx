@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -33,11 +33,23 @@ const DEFAULT_THEME_KEY = "govuk";
 const LOOKUP_MODE_PATIENT_ID = "patient-id";
 const LOOKUP_MODE_VIZ2_DOCS = "viz2-docs";
 
+/**
+ * @typedef {Object} SelectionContext
+ * @property {"auto"|"timeline"|"fact"|"related-document"} source
+ * @property {string|null} [documentType]   - report type, e.g. "NOTE"
+ * @property {string|null} [documentDate]   - formatted date string, e.g. "2010/02/05"
+ * @property {string|null} [episodeLabel]   - e.g. "Treatment"
+ * @property {string|null} [categoryName]   - fact category, e.g. "Location"
+ * @property {string|null} [prettyName]     - fact value, e.g. "Upper-Outer Quadrant of the Breast"
+ * @property {boolean}     [isTumorLevel]   - true when fact is on a tumor, not the cancer
+ * @property {number|null} [cancerIndex]    - 1-based position in cancerSummary array
+ * @property {number|null} [tumorIndex]     - 1-based position in cancer's tumor list
+ */
+
 function getMostRecentDocumentId(reportData = []) {
   if (!Array.isArray(reportData) || reportData.length === 0) {
     return "";
   }
-
   return String(reportData[reportData.length - 1]?.id || "").trim();
 }
 
@@ -54,10 +66,49 @@ export default function PatientView() {
   const [cancerSummary, setCancerSummary] = useState([]);
   const [factSelection, setFactSelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [selectionContext, setSelectionContext] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const requestIdRef = useRef(0);
+
+  const resolveCancerTumorIndex = useCallback(
+    (cancerId, tumorId) => {
+      const normalizedCancerId = String(cancerId || "").trim();
+      const normalizedTumorId = String(tumorId || "").trim();
+
+      if (!normalizedCancerId) {
+        return { cancerIndex: null, tumorIndex: null };
+      }
+
+      const cancerIndex = cancerSummary.findIndex(
+        (cancer) =>
+          String(cancer?.cancerId || cancer?.title || "").trim() === normalizedCancerId
+      );
+
+      if (cancerIndex === -1) {
+        return { cancerIndex: null, tumorIndex: null };
+      }
+
+      if (!normalizedTumorId) {
+        return { cancerIndex: cancerIndex + 1, tumorIndex: null };
+      }
+
+      const tumors = Array.isArray(cancerSummary[cancerIndex]?.tumors?.listViewData)
+        ? cancerSummary[cancerIndex].tumors.listViewData
+        : [];
+
+      const tumorIndex = tumors.findIndex(
+        (tumor) => String(tumor?.id || "").trim() === normalizedTumorId
+      );
+
+      return {
+        cancerIndex: cancerIndex + 1,
+        tumorIndex: tumorIndex === -1 ? null : tumorIndex + 1,
+      };
+    },
+    [cancerSummary]
+  );
 
   const activeTheme = useMemo(() => getThemeByKey(DEFAULT_THEME_KEY), []);
   const activeErrorMessage =
@@ -70,7 +121,7 @@ export default function PatientView() {
       return null;
     }
 
-    return documents.find((document) => document.id === selectedDocumentId) || documents[0];
+    return documents.find((document) => document.id === selectedDocumentId) || null;
   }, [patientData, selectedDocumentId]);
 
   useEffect(() => {
@@ -135,6 +186,9 @@ export default function PatientView() {
 
     setIsLoading(true);
     setErrorMessage("");
+    setFactSelection(null);
+    setSelectedDocumentId("");
+    setSelectionContext(null);
 
     try {
       const nextPatientData = isViz2Mode
@@ -157,7 +211,17 @@ export default function PatientView() {
       setTimelineData(nextTimeline);
       setCancerSummary(nextCancerSummary);
       setFactSelection(null);
-      setSelectedDocumentId(getMostRecentDocumentId(nextTimeline.reportData));
+      const mostRecentId = getMostRecentDocumentId(nextTimeline.reportData);
+      const mostRecentReport = (nextTimeline.reportData || []).find(
+        (r) => String(r?.id || "").trim() === mostRecentId
+      );
+      setSelectedDocumentId(mostRecentId);
+      setSelectionContext({
+        source: "auto",
+        documentType: String(mostRecentReport?.type || "").trim() || null,
+        documentDate: String(mostRecentReport?.formattedDate || "").trim() || null,
+        episodeLabel: String(mostRecentReport?.episode || "").trim() || null,
+      });
     } catch (error) {
       if (requestIdRef.current !== requestId) {
         return;
@@ -168,6 +232,7 @@ export default function PatientView() {
       setCancerSummary([]);
       setFactSelection(null);
       setSelectedDocumentId("");
+      setSelectionContext(null);
       setLoadedPatientId("");
       setErrorMessage(error?.message || "Failed to load patient details.");
     } finally {
@@ -182,6 +247,53 @@ export default function PatientView() {
     setErrorMessage("");
   };
 
+  const handleSelectDocumentFromTimeline = useCallback(
+    (docId) => {
+      const normalizedDocId = String(docId || "").trim();
+      setSelectedDocumentId(normalizedDocId);
+
+      const report = (timelineData?.reportData || []).find(
+        (r) => String(r?.id || "").trim() === normalizedDocId
+      );
+
+      setSelectionContext({
+        source: "timeline",
+        documentType: String(report?.type || "").trim() || null,
+        documentDate: String(report?.formattedDate || "").trim() || null,
+        episodeLabel: String(report?.episode || "").trim() || null,
+      });
+    },
+    [timelineData]
+  );
+
+  const handleSelectRelatedDocument = useCallback(
+    (docId) => {
+      const normalizedDocId = String(docId || "").trim();
+      setSelectedDocumentId(normalizedDocId);
+
+      const report = (timelineData?.reportData || []).find(
+        (r) => String(r?.id || "").trim() === normalizedDocId
+      );
+
+      const { cancerIndex, tumorIndex } = resolveCancerTumorIndex(
+        factSelection?.cancerId,
+        factSelection?.tumorId
+      );
+
+      setSelectionContext({
+        source: "related-document",
+        categoryName: factSelection?.categoryName || null,
+        prettyName: factSelection?.prettyName || null,
+        isTumorLevel: factSelection?.source === "tumor-attribute",
+        cancerIndex,
+        tumorIndex,
+        documentType: String(report?.type || "").trim() || null,
+        documentDate: String(report?.formattedDate || "").trim() || null,
+      });
+    },
+    [factSelection, timelineData, resolveCancerTumorIndex]
+  );
+
   const handleFactSelect = (factId) => {
     const normalizedFactId = String(factId || "").trim();
     if (!normalizedFactId || !patientData) {
@@ -190,6 +302,7 @@ export default function PatientView() {
 
     if (factSelection?.factId === normalizedFactId) {
       setFactSelection(null);
+      setSelectionContext(null);
       return;
     }
 
@@ -197,7 +310,22 @@ export default function PatientView() {
     setFactSelection(nextSelection);
 
     if (nextSelection?.documentIds?.length > 0) {
-      setSelectedDocumentId(String(nextSelection.documentIds[0] || "").trim());
+      const firstDocId = String(nextSelection.documentIds[0] || "").trim();
+      setSelectedDocumentId(firstDocId);
+
+      const { cancerIndex, tumorIndex } = resolveCancerTumorIndex(
+        nextSelection.cancerId,
+        nextSelection.tumorId
+      );
+
+      setSelectionContext({
+        source: "fact",
+        categoryName: nextSelection.categoryName || null,
+        prettyName: nextSelection.prettyName || null,
+        isTumorLevel: nextSelection.source === "tumor-attribute",
+        cancerIndex,
+        tumorIndex,
+      });
     }
   };
 
@@ -281,13 +409,33 @@ export default function PatientView() {
               <Typography variant="body2" color="text.secondary">
                 Loaded patient: <strong>{loadedPatientId}</strong>
               </Typography>
+              <Typography
+                component="p"
+                variant="caption"
+                aria-live="polite"
+                aria-atomic="true"
+                sx={{
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  overflow: "hidden",
+                  clip: "rect(0,0,0,0)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selectedDocument
+                  ? `Document viewer opened: ${selectedDocument.name || selectedDocument.id}`
+                  : ""}
+              </Typography>
 
               <Box
                 sx={{
                   display: "grid",
                   gridTemplateColumns: {
                     xs: "minmax(0, 1fr)",
-                    lg: "200px minmax(0, 1fr) 36%",
+                    lg: selectedDocument
+                      ? "200px minmax(0, 1fr) 280px minmax(0, 2fr)"
+                      : "200px minmax(0, 1fr) 280px",
                   },
                   border: 1,
                   borderColor: "divider",
@@ -325,7 +473,7 @@ export default function PatientView() {
                     factSelection={factSelection}
                     selectedDocumentId={selectedDocumentId}
                     onFactSelect={handleFactSelect}
-                    onSelectDocument={setSelectedDocumentId}
+                    onSelectDocument={handleSelectRelatedDocument}
                   />
                 </Box>
 
@@ -343,16 +491,30 @@ export default function PatientView() {
                     timelineData={timelineData}
                     selectedDocumentId={selectedDocumentId}
                     relatedDocumentIds={factSelection?.documentIds || []}
-                    onSelectDocument={setSelectedDocumentId}
+                    onSelectDocument={handleSelectDocumentFromTimeline}
                   />
                 </Box>
-              </Box>
 
-              <PatientDocumentViewerCard
-                document={selectedDocument}
-                concepts={patientData.concepts}
-                factSelection={factSelection}
-              />
+                {selectedDocument ? (
+                  <Box
+                    sx={{
+                      minWidth: 0,
+                      minHeight: 0,
+                      borderTop: { xs: 1, lg: 0 },
+                      borderLeft: { lg: 1 },
+                      borderColor: "divider",
+                    }}
+                  >
+                    <PatientDocumentViewerCard
+                      embedded
+                      document={selectedDocument}
+                      concepts={patientData.concepts}
+                      factSelection={factSelection}
+                      selectionContext={selectionContext}
+                    />
+                  </Box>
+                ) : null}
+              </Box>
             </Stack>
           ) : null}
         </Stack>

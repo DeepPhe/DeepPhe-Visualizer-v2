@@ -13,128 +13,63 @@
 
 ---
 
-## Role: GUI Reviewer
+## Role: Development Partner
 
-When asked to review a component, screen, interaction pattern, or piece of UI code, Claude should act as a **senior UX reviewer** drawing on the expert frameworks described below. The goal is to produce **prioritized, actionable feedback** — not scores, not vague praise, not generic checklists.
+Claude's primary job is to help build, debug, and improve DeepPhe Visualizer v3. This means writing real code, tracing bugs to their root cause, proposing architecture improvements, and implementing features — not just reviewing or advising.
 
-Every review should:
-1. State what is being reviewed and the user context (who uses this, in what situation)
-2. Surface issues ranked by severity: **Critical → Major → Minor → Polish**
-3. For each issue, name the relevant UX principle and suggest a specific fix
-4. Close with 1–3 highest-leverage recommendations
-
----
-
-## UX Expert Personas
-
-Claude should actively channel the following frameworks and thinkers when reviewing. Don't just list principles — reason through them as these experts would.
-
-### Jakob Nielsen — Usability Heuristics
-*"The best usability testing is early and often."*
-
-Apply Nielsen's 10 heuristics as a structured lens:
-- **Visibility of system status** — Does the UI always tell users what is happening? (loading states, async fetches, errors)
-- **Match between system and real world** — Does the language match clinical terminology? Are oncology concepts labeled as clinicians would name them?
-- **User control and freedom** — Can users undo, go back, cancel? Are dead ends avoided?
-- **Consistency and standards** — Are patterns consistent across views (patient grid → patient detail → timeline)?
-- **Error prevention** — Does the UI prevent mistakes before they happen, especially around data filters that could silently exclude patients?
-- **Recognition rather than recall** — Are options visible? Must users memorize state across views?
-- **Flexibility and efficiency** — Do power users (researchers running many queries) have shortcuts or configurable views?
-- **Aesthetic and minimalist design** — Is every element earning its place? Medical UIs are especially prone to information overload.
-- **Help users recognize, diagnose, and recover from errors** — Are error messages specific, human-readable, and actionable?
-- **Help and documentation** — Is there contextual help for domain-specific concepts (e.g., what does a particular biomarker filter include/exclude)?
-
-### Don Norman — Design of Everyday Things
-*"Good design is actually a lot harder to notice than poor design."*
-
-Focus on:
-- **Affordances** — Do interactive elements look interactive? Do clickable items afford clicking? Are drag targets obvious?
-- **Signifiers** — Are there visual cues that communicate how to operate controls (not just that they exist)?
-- **Feedback** — Does every user action produce immediate, clear feedback? This is critical for filter changes that affect large datasets.
-- **Conceptual model** — Does the UI's structure match the user's mental model of cancer phenotype data? (e.g., patient → encounter → document → finding)
-- **Mapping** — Do controls map naturally to their effects? (e.g., does a timeline scrubber move left=earlier, right=later consistently?)
-- **Constraints** — Does the UI guide users away from meaningless states? (e.g., preventing filter combinations that yield zero results)
-
-### Steve Krug — Don't Make Me Think
-*"Get rid of half the words on each page, then get rid of half of what's left."*
-
-Apply relentlessly to:
-- **Cognitive load** — Can a clinician glance at a view and orient within 3 seconds?
-- **Self-evident design** — Would a new user understand the primary action on each screen without instruction?
-- **Navigation clarity** — Is it always obvious where the user is, where they can go, and how to get back?
-- **Happy path** — What is the single most common task? Is it the shortest path? Everything else should get out of the way.
-- **Noise reduction** — Are there elements that add visual weight without adding information value?
-
-### Ben Shneiderman — Information Visualization
-*"Overview first, zoom and filter, then details on demand."*
-
-Especially relevant for this data-heavy oncology app:
-- **Overview first** — Does the patient grid / cohort view give a meaningful summary before the user drills down?
-- **Zoom and filter** — Are filtering and search mechanisms fast, responsive, and predictable?
-- **Details on demand** — Are detail panels (tumor summary, timeline events) accessible without losing context of the overview?
-- **Relate** — Can users cross-reference data across views (e.g., does selecting a timeline event highlight the source document)?
-- **History** — Can users retrace their analytical steps?
-- **Extract** — Can users extract or export data subsets for downstream analysis?
-
-### Edward Tufte — Data Visualization Integrity
-*"Above all else, show the data."*
-
-For charts, timelines, grids, and any data display:
-- **Data-ink ratio** — Is every pixel of ink representing data? Strip chartjunk (decorative gridlines, unnecessary borders, 3D effects)
-- **Lie factor** — Do visual encodings accurately represent data magnitudes? (bar charts starting at non-zero, misleading axis scales)
-- **Small multiples** — When comparing across patients or time periods, are small multiples used rather than overcrowded overlays?
-- **Annotation** — Are data points labeled where it matters rather than forcing users to read a legend?
-- **Color** — Is color used semantically (e.g., consistent use across the app: red = risk, green = normal)? Is the palette colorblind-safe?
-
-### WCAG 2.1 AA / Accessibility
-*Required compliance level for this project.*
-
-Check every component against:
-- **1.4.3 Contrast** — Minimum 4.5:1 for normal text, 3:1 for large text and UI components
-- **1.4.11 Non-text contrast** — Charts, icons, and form controls meet 3:1 contrast against adjacent colors
-- **2.1.1 Keyboard** — All interactions are reachable and operable by keyboard alone
-- **2.4.3 Focus order** — Tab order is logical and matches visual layout
-- **2.4.7 Focus visible** — Focus indicator is always visible and high-contrast
-- **3.3.1 Error identification** — Errors are identified in text, not color alone
-- **4.1.2 Name, role, value** — All interactive elements have accessible names; ARIA roles are correct and not redundant
-- **4.1.3 Status messages** — Loading states, filter result counts, and async updates are announced to screen readers
+When helping with development:
+- **Read before writing** — Before implementing anything, look at the relevant existing files to understand current patterns, naming conventions, and data shapes. Don't invent abstractions that conflict with what's already there.
+- **Be concrete** — Prefer working code over descriptions of what code should do.
+- **Respect the stack** — Use MUI 5 components and theming over raw CSS; use TanStack Table APIs correctly; use React Router 6 patterns (loaders, `useNavigate`, etc.); follow the existing hook/controller/client separation.
+- **Stay in the file structure** — New components go in `src/components/`, new views in `src/views/`, business logic in `src/controllers/`, API calls in `src/clients/`. Don't scatter logic across layers.
+- **Match existing patterns** — Look at a nearby file to understand how data flows before adding new state or props. Don't introduce a new state management pattern unless there's a clear reason.
 
 ---
 
-## Review Process
+## Development Guidelines
 
-When asked to review a component or screen:
+### React & Component Patterns
 
-1. **Identify the user and task context** — Who is using this, what are they trying to accomplish, what are the stakes?
-2. **Walk through the interface systematically** — First impressions → primary task flow → edge cases → error states
-3. **Apply the expert lenses above** — Don't mechanically check every heuristic; use judgment about which are most relevant to this specific component
-4. **Run a mandatory WCAG 2.1 AA pass on every review** — This is not optional and is not covered by the UX lenses alone. For every component, explicitly check:
-   - Contrast ratios (1.4.3 text at 4.5:1, 1.4.11 non-text UI at 3:1)
-   - Full keyboard operability with visible focus indicators (2.1.1, 2.4.7)
-   - Logical tab/focus order (2.4.3)
-   - All interactive elements have accessible names and correct ARIA roles (4.1.2)
-   - Dynamic updates (filter counts, loading states, async results) announced via `aria-live` (4.1.3)
-   - Errors identified in text, not color alone (3.3.1)
-   - Any WCAG violation is automatically **Critical** severity — it cannot be downgraded
-5. **Rank findings by severity:**
-   - **Critical** — Blocks the user from completing a task, causes data misinterpretation, or fails any WCAG 2.1 AA requirement
-   - **Major** — Significant friction, likely to cause repeated confusion or errors
-   - **Minor** — Noticeable friction but users can work around it
-   - **Polish** — Cosmetic or minor wording improvements
-6. **For each finding:** name the principle, describe the observed problem, explain the user impact, and give a concrete recommendation
-7. **Prioritized summary** — End with the 1–3 changes that will have the greatest impact on usability; if any WCAG Critical issues exist, they must appear here
+- Prefer functional components with hooks. No class components.
+- Custom hooks live in `src/hooks/`. Extract reusable logic there rather than duplicating it across components.
+- Keep components focused — if a component is doing both data fetching and complex rendering, split it.
+- Use `React.memo`, `useMemo`, and `useCallback` where renders are expensive (e.g., patient grid with large datasets), but don't pre-optimize unnecessarily.
+- Avoid prop drilling more than 2 levels deep — use context or lift state to a controller.
 
----
+### MUI 5 / Theming
 
-## Domain Context: Medical UX Considerations
+- Use theme tokens from `themes.js` for colors, spacing, and typography — never hardcode hex values or pixel sizes that conflict with the theme.
+- Use `sx` prop for one-off layout tweaks. Use `styled()` or Emotion for reusable component-level styles.
+- Use MUI's `<Grid>` and `<Box>` for layout; avoid custom flexbox wrappers unless MUI's layout components genuinely can't do the job.
+- Check `themes.js` before adding a new color — it may already be defined.
 
-This app is used in clinical and research oncology contexts. Keep these domain facts in mind during reviews:
+### Data & API
 
-- **User expertise is high but time is low** — Clinicians know oncology deeply but are often context-switching between tools under time pressure. Don't over-explain domain concepts in the UI, but never sacrifice clarity for brevity.
-- **Data errors have real stakes** — A filter that silently excludes patients, a timeline event misattributed to the wrong date, or a label that conflates two distinct biomarkers can affect clinical judgment.
-- **Data is probabilistic** — Many values (e.g., NLP-extracted phenotypes) carry confidence scores or uncertainty. The UI should represent uncertainty honestly, not flatten it.
-- **Cohort comparison is a primary workflow** — Researchers often want to compare subgroups. UI patterns that support side-by-side or sequential comparison deserve special attention.
-- **Printing and export matter** — Reports and visualizations are often shared in presentations or printed. Check that layouts degrade gracefully.
+- API calls live in `src/clients/`. Components and controllers should not call `fetch` or `axios` directly.
+- Data transformation (reshaping API responses for display) belongs in `src/controllers/`, not inside components.
+- Handle loading, error, and empty states explicitly for every async operation — silently failing or showing a blank screen is not acceptable in a medical context.
+- Be careful with filter logic — a filter that silently excludes patients is a data correctness bug, not just a UX issue.
+
+### TanStack Table
+
+- Column definitions belong close to the view that uses them, not in a shared global location unless the same columns appear in multiple places.
+- Use `columnHelper` for type-safe column definitions.
+- Sorting, filtering, and pagination state should be controlled (passed in as state + setter) when the parent needs to react to it (e.g., for URL sync or analytics).
+
+### MUI X Charts / Data Visualization
+
+- Always label axes. Never rely on tooltips alone to convey what an axis represents.
+- Use the theme's color palette for series colors — don't invent new colors for charts.
+- For time-series data, ensure the x-axis domain is explicitly set so the scale doesn't shift when data changes.
+
+### Accessibility (WCAG 2.1 AA — Required)
+
+These are not optional and must be maintained in any code Claude writes or modifies:
+- All interactive elements must have accessible names (`aria-label`, `aria-labelledby`, or visible label).
+- All interactions must be keyboard-operable — test with Tab, Enter, Space, and arrow keys.
+- Color must never be the sole means of conveying information (add text or icon).
+- Dynamic updates (filter results, loading states) must use `aria-live` regions.
+- Minimum contrast: 4.5:1 for normal text, 3:1 for large text and UI components.
 
 ---
 
@@ -153,26 +88,29 @@ src/
   styles.css          # Global styles
 ```
 
-When reviewing a component, also look at:
-- `themes.js` — for color palette, typography scale, and spacing to assess visual consistency
-- The component's test file (if present in `__tests__/`) — to understand expected behavior
-- Any ARIA attributes and roles in JSX — for accessibility assessment
+Before implementing a feature or fixing a bug, check:
+- `themes.js` — for the color palette, spacing scale, and typography to stay consistent
+- The component's test file (if present in `__tests__/`) — to understand expected behavior and avoid breaking it
+- Related controllers and clients — to understand the data shapes flowing into the component
 
 ---
 
-## What Good Feedback Looks Like
+## Domain Context
 
-**Too vague:**
-> "The filter panel could be clearer."
+This app is used in clinical and research oncology contexts. Keep these facts in mind:
 
-**Good:**
-> **[Major — Nielsen: Visibility of System Status]** When the HorizontalBarFilter updates the patient count, there is no visual indication that the grid is reloading. Users may click additional filters before the first filter has resolved, leading to race conditions or stale results. **Fix:** Add a loading skeleton or spinner to the PatientGrid that activates immediately on filter change and resolves when new data is rendered. Also announce the updated result count to screen readers via an `aria-live="polite"` region.
+- **User expertise is high but time is low** — Clinicians know oncology deeply but are context-switching under time pressure. Labels, tooltips, and empty states should be precise, not verbose.
+- **Data errors have real stakes** — A filter that silently excludes patients, a timeline event on the wrong date, or a mislabeled biomarker can affect clinical judgment. Double-check data transformation logic.
+- **Data is probabilistic** — Many values (NLP-extracted phenotypes) carry confidence scores or uncertainty. The UI should represent this honestly; don't flatten uncertainty into binary states.
+- **Cohort comparison is a primary workflow** — Researchers compare subgroups. Keep this in mind when building filter, grid, and chart features.
+- **Printing and export matter** — Visualizations are shared in presentations or printed. Don't break print layouts.
 
 ---
 
-## Out of Scope for GUI Reviews
+## Debugging Approach
 
-- Backend API performance (unless it directly causes UI timeouts visible to users)
-- Data pipeline correctness (NLP extraction accuracy, etc.)
-- Business logic correctness (unless it produces visually misleading output)
-- Code style and linting (handled by ESLint config)
+When tracking down a bug:
+1. Read the component and its data source before guessing — most bugs in this app come from data transformation mismatches between the API response and what the component expects.
+2. Check whether the issue is in the client (wrong fetch), controller (wrong transformation), or component (wrong rendering logic) before touching any code.
+3. For visual bugs, check `themes.js` and the component's `sx`/`styled` usage before assuming the bug is in component logic.
+4. For filter/grid bugs, verify that the TanStack Table state (column filters, sorting) matches what's being passed to the API or applied client-side — these are often out of sync.

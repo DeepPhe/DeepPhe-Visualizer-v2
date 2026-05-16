@@ -257,6 +257,7 @@ export default function CancerTumorSummaryCard({
   selectedDocumentId = "",
   onFactSelect = undefined,
   onSelectDocument = undefined,
+  contentAutoHeight = false,
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
   const normalizedCancers = Array.isArray(cancers) ? cancers : [];
@@ -289,7 +290,7 @@ export default function CancerTumorSummaryCard({
                 py: 0.25,
                 borderRadius: 999,
                 fontWeight: 600,
-                bgcolor: "error.main",
+                bgcolor: "info.main",
                 color: "#fff",
               }}
             >
@@ -304,9 +305,13 @@ export default function CancerTumorSummaryCard({
           px: 1.5,
           py: 1,
           "&:last-child": { pb: 1 },
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
+          ...(contentAutoHeight
+            ? {}
+            : {
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+              }),
         }}
       >
         {normalizedCancers.length === 0 ? (
@@ -509,4 +514,5 @@ CancerTumorSummaryCard.propTypes = {
   selectedDocumentId: PropTypes.string,
   onFactSelect: PropTypes.func,
   onSelectDocument: PropTypes.func,
+  contentAutoHeight: PropTypes.bool,
 };

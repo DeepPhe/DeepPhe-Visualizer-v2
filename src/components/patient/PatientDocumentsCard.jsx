@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  Alert,
   Box,
   Card,
   CardContent,
@@ -249,14 +248,6 @@ export default function PatientDocumentsCard({
           </Typography>
         ) : (
           <Stack spacing={1}>
-            {chartModel.dateDiagnostics?.hasDateCollapse ? (
-              <Alert severity="warning" sx={{ py: 0.5 }}>
-                All documents currently resolve to the same timestamp (
-                {chartModel.dateDiagnostics.collapsedDateLabel || "unknown"}). Timeline points will stack
-                vertically.
-              </Alert>
-            ) : null}
-
             {isCollapsedTimestampMode ? (
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ rowGap: 1 }}>
                 <Typography variant="caption" sx={{ fontWeight: 700 }}>
@@ -282,9 +273,11 @@ export default function PatientDocumentsCard({
                     borderColor: "divider",
                     borderRadius: 1,
                     overflowX: "auto",
+                    overflowY: "hidden",
                     bgcolor: "background.paper",
                     display: "flex",
                     justifyContent: "center",
+                    maxHeight: 200,
                   }}
                 >
                   <svg

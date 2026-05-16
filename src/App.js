@@ -8,6 +8,8 @@ import FilterSetsConfigView from "./views/filter-sets-config";
 import PatientView from "./views/patient";
 import PerfPanel from "./components/PerfPanel";
 
+const SHOW_PERF_TRACKER = false;
+
 function HomeView() {
   return (
     <main className="app">
@@ -51,7 +53,7 @@ function App() {
         <Route path="/patient" element={<PatientView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      <PerfPanel />
+      {SHOW_PERF_TRACKER ? <PerfPanel /> : null}
     </BrowserRouter>
   );
 }

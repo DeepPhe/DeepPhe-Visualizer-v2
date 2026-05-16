@@ -941,5 +941,6 @@ registerRollupRules("T Stage", createStageRuleSet("T"));
 registerRollupRules("N Stage", createStageRuleSet("N"));
 registerRollupRules("M Stage", createStageRuleSet("M"));
 registerRollupRules("Stage", overallStageRuleSet);
+registerRollupRules("Grade", gradeRuleSet);
 registerRollupRules("Grade_Numeric", gradeRuleSet);
 registerRollupRules("Behavior", behaviorRuleSet);
