@@ -190,11 +190,7 @@ export default function FilterSetsConfigView() {
     setWorkingFilterSets(cloneFilterSets(FILTER_SETS));
   }, []);
 
-  const handleExportConfig = useCallback(() => {
-    const exportPayload = cloneFilterSets(workingFilterSets);
-    console.log("[FilterSetsConfigView] exported config", exportPayload);
-    console.log(JSON.stringify(exportPayload, null, 2));
-  }, [workingFilterSets]);
+  const handleExportConfig = useCallback(() => {}, []);
 
   const summary = useMemo(() => {
     const totalSets = workingFilterSets.length;
