@@ -1,8 +1,33 @@
-import {
-  AGE_DECILE_LABELS,
-  COUNT_FIELDS,
-  VALUE_FIELDS_BY_ATTRIBUTE,
-} from "../constants/debugConstants";
+export const AGE_DECILE_LABELS = [
+  "0-9",
+  "10-19",
+  "20-29",
+  "30-39",
+  "40-49",
+  "50-59",
+  "60-69",
+  "70-79",
+  "80-89",
+  "90+",
+];
+
+export const AGE_AT_DX_ATTRIBUTE = "AGE_AT_DX";
+
+const VALUE_FIELDS_BY_ATTRIBUTE = {
+  [AGE_AT_DX_ATTRIBUTE]: ["age_at_dx", "value", "age"],
+  ETHNICITY: ["ethnicity", "value"],
+  GENDER: ["gender", "value"],
+  RACE: ["race", "value"],
+  CANCER: ["cancer", "value", "classUri"],
+};
+
+const COUNT_FIELDS = [
+  "count",
+  "patient_count",
+  "patientCount",
+  "num_patients",
+  "frequency",
+];
 
 /**
  * Normalizes API payload shapes to an array of row objects.

@@ -10,7 +10,7 @@ import {
   sortDistributionAlphanumerically,
   summarizeInstances,
 } from "../dataProcessing";
-import { AGE_AT_DX_ATTRIBUTE, AGE_DECILE_LABELS } from "../../constants/debugConstants";
+import { AGE_AT_DX_ATTRIBUTE, AGE_DECILE_LABELS } from "../dataProcessing";
 
 describe("dataProcessing utilities", () => {
   describe("asRowArray", () => {

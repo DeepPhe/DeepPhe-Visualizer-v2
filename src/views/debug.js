@@ -33,10 +33,6 @@ import {
 } from "../controllers/omap";
 import {
   AGE_AT_DX_ATTRIBUTE,
-  ATTRIBUTES_GRID_TEMPLATE_COLUMNS,
-  GRID_TEMPLATE_COLUMNS,
-} from "../constants/debugConstants";
-import {
   getAgeDecileDistribution,
   getCategoryDistribution,
   getSummaryTotalCount,
@@ -46,6 +42,12 @@ import {
 import { useDataLoader } from "../hooks/useDataLoader";
 import SectionJumpLinks from "../components/debug/SectionJumpLinks";
 import HorizontalBarFilter from "../components/HorizontalBarFilter";
+
+const GRID_TEMPLATE_COLUMNS = "repeat(auto-fit, minmax(240px, 1fr))";
+const ATTRIBUTES_GRID_TEMPLATE_COLUMNS = {
+  xs: "1fr",
+  md: "1fr 1fr",
+};
 
 const DEFAULT_SECTION_STATE = {
   omop: false,

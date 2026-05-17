@@ -1,8 +1,9 @@
 import React from "react";
 import { alpha, useTheme } from "@mui/material/styles";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { MAX_BAR_CHART_VALUES } from "../../constants/debugConstants";
 import { sortDistributionAlphanumerically } from "../../utils/dataProcessing";
+
+const MAX_BAR_CHART_VALUES = 12;
 import FilterableValueCountTable from "./FilterableValueCountTable";
 
 function SummaryChart({ distribution }) {
