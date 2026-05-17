@@ -80,7 +80,6 @@ const SLOW_QUERY_THRESHOLD_MS = 100;
 const PATIENT_GRID_DEFAULT_PAGE_SIZE = 10;
 const PATIENT_GRID_MAXIMIZED_PAGE_SIZE = 40;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
-const INLINE_FILTER_BAR_REGION_SCALE = 0.2;
 const AGE_AT_DX_CLASS = "AGE_AT_DX";
 const AGE_SELECTION_MODE = {
   DECILE: "decile",
@@ -106,13 +105,6 @@ const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   md: 3,
   lg: 6,
   xl: 6,
-});
-const PACKED_GRID_COLUMN_COUNT_BY_BREAKPOINT = Object.freeze({
-  xs: 1,
-  sm: 4,
-  md: 6,
-  lg: 12,
-  xl: 12,
 });
 const FILTER_SECTION_LABEL_SX = {
   display: "block",
@@ -299,37 +291,6 @@ function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
   )}`;
 }
 
-async function runTasksWithConcurrency(tasks = [], maxConcurrency = 1) {
-  const queuedTasks = Array.isArray(tasks) ? tasks.filter((task) => typeof task === "function") : [];
-  if (queuedTasks.length === 0) {
-    return;
-  }
-
-  const concurrency = Math.max(1, Math.floor(Number(maxConcurrency) || 1));
-  const workerCount = Math.min(concurrency, queuedTasks.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (queuedTasks.length > 0) {
-        const nextTask = queuedTasks.shift();
-        if (!nextTask) {
-          break;
-        }
-        await nextTask();
-      }
-    })
-  );
-}
-
-function getColumnCapMaxWidthPx(columnCap, columnWidthPx, columnGapPx) {
-  const resolvedColumnCap = toResolvedColumnCap(columnCap, 1);
-  const resolvedColumnWidth = Math.max(1, Number(columnWidthPx) || 1);
-  const resolvedColumnGap = Math.max(0, Number(columnGapPx) || 0);
-  return (
-    resolvedColumnCap * resolvedColumnWidth +
-    Math.max(0, resolvedColumnCap - 1) * resolvedColumnGap
-  );
-}
 
 function getInitialThemeKey() {
   try {
