@@ -306,6 +306,15 @@ export function sortDistributionAlphanumerically(distribution = []) {
  * @param {string} value
  * @returns {string}
  */
+/**
+ * Normalizes a filter class/attribute name to a canonical uppercase key.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function normalizeClassName(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
 export function getAnchorId(sectionKey, value) {
   const normalizedSection = String(sectionKey || "").toLowerCase();
   const normalizedValue = String(value || "")

@@ -1,4 +1,5 @@
 import { DEEPPHE_API_LOCATION } from "../config";
+import { normalizeClassName } from "../utils/dataProcessing";
 import { endSpan, startSpan } from "../utils/perfTracker";
 
 const OPENAPI_JSON_PATH = "/openapi.json";
@@ -44,7 +45,6 @@ export const DEEPPHE_OPENAPI_JSON_URL = joinUrl(
 );
 
 const normalizeMethod = (method) => String(method || "GET").trim().toUpperCase();
-const normalizeClassName = (value) => String(value || "").trim().toUpperCase();
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {

@@ -58,7 +58,7 @@ import EmbeddedPatientView from "../components/EmbeddedPatientView";
 import PatientGrid from "../components/PatientGrid";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
 import { MONOSPACE_STACK, THEME_OPTIONS, THEME_STORAGE_KEY, getThemeByKey } from "../themes";
-import { getAgeDecileLabel } from "../utils/dataProcessing";
+import { getAgeDecileLabel, normalizeClassName } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
 import { endSpan, startSpan } from "../utils/perfTracker";
 import {
@@ -772,10 +772,6 @@ function applyHighContrast(theme) {
       pageBgExtra: null,
     },
   });
-}
-
-function normalizeClassName(value) {
-  return String(value || "").trim().toUpperCase();
 }
 
 function normalizeClassLookupKey(value) {
