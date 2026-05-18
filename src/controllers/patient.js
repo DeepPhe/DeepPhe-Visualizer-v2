@@ -2,6 +2,7 @@ import {
   fetchAttributesSummary,
   fetchCancersSummary,
   fetchConceptsSummary,
+  fetchDeepPheFilterSummary,
   fetchOmopSummary,
   fetchPatient,
   fetchPatientCancers,
@@ -505,4 +506,8 @@ export async function loadPatientProfile(
     cancersPayload,
     conceptsPayload,
   });
+}
+
+export async function loadPatientFilterSummary(patientIds) {
+  return fetchDeepPheFilterSummary(patientIds);
 }

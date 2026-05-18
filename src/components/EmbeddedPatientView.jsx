@@ -6,8 +6,8 @@ import CancerTumorSummaryCard from "./patient/CancerTumorSummaryCard";
 import PatientDocumentsCard from "./patient/PatientDocumentsCard";
 import PatientDocumentViewerCard from "./patient/PatientDocumentViewerCard";
 import PatientSummaryCard from "./patient/PatientSummaryCard";
-import { fetchDeepPheFilterSummary, fetchOmopInstances } from "../clients/deepphe-data-api";
-import { loadPatientProfile } from "../controllers/patient";
+import { getInstances } from "../controllers/omap";
+import { loadPatientFilterSummary, loadPatientProfile } from "../controllers/patient";
 import { asRowArray, getValueFromRow } from "../utils/dataProcessing";
 import { transformCancerSummary } from "../utils/patientView/transformCancerSummary";
 import { transformDocumentTimeline } from "../utils/patientView/transformDocumentTimeline";
@@ -187,10 +187,7 @@ async function loadPatientOmopDetails(patientId) {
   const attributes = ["GENDER", "RACE", "ETHNICITY", "AGE_AT_DX", "CANCER"];
   const results = await Promise.allSettled(
     attributes.map((attribute) =>
-      fetchOmopInstances({
-        attribute,
-        patientId: normalizedPatientId,
-      })
+      getInstances(attribute, { patientId: normalizedPatientId })
     )
   );
 
@@ -299,7 +296,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
 
     const run = async () => {
       try {
-        const summaryPayload = await fetchDeepPheFilterSummary([normalizedId]);
+        const summaryPayload = await loadPatientFilterSummary([normalizedId]);
         if (patientSummaryRequestIdRef.current !== requestId) {
           return;
         }
