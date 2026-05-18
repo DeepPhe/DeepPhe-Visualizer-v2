@@ -57,7 +57,13 @@ import HorizontalBarFilter from "../components/HorizontalBarFilter";
 import EmbeddedPatientView from "../components/EmbeddedPatientView";
 import PatientGrid from "../components/PatientGrid";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
-import { MONOSPACE_STACK, THEME_OPTIONS, THEME_STORAGE_KEY, getThemeByKey } from "../themes";
+import {
+  FILTER_PANEL_DENSITY_MODE,
+  FONT_SCALE_OPTIONS,
+  findClosestFontScaleIndex,
+  useFilterPagePreferences,
+} from "../hooks/useFilterPagePreferences";
+import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
 import { getAgeDecileLabel, normalizeClassName } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
 import { endSpan, startSpan } from "../utils/perfTracker";
@@ -95,10 +101,6 @@ const FILTER_LAYOUT_MODE = {
   STACKED: "stacked",
   PER_CARD_COLUMN: "per-card-column",
 };
-const FILTER_PANEL_DENSITY_MODE = {
-  STANDARD: "standard",
-  COMPACT: "compact",
-};
 const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   xs: 1,
   sm: 2,
@@ -125,11 +127,7 @@ const FILTER_SORT_DIRECTION = {
   DESC: "desc",
 };
 
-const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
-const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
-const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
-const COMPACT_MODE_STORAGE_KEY = "filterPageCompactMode";
 const THEME_COLOR_OVERRIDES_STORAGE_KEY = "filterPageThemeColorOverrides";
 const THEME_EDITOR_MENU_VALUE = "__theme-builder__";
 const THEME_COLOR_VALUE_PATTERN =
@@ -139,7 +137,6 @@ const THEME_COLOR_VALUE_EXACT_PATTERN =
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 const THEME_COLOR_ROOT_KEYS = ["palette", "custom", "components"];
 const EMPTY_THEME_COLOR_OVERRIDES = Object.freeze({});
-const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 const FONT_FAMILY_OPTIONS = [
   { key: "wcag-sans", label: "WCAG Sans", stack: 'Inter, Roboto, "Open Sans", sans-serif' },
   { key: "theme-default", label: "Theme Default", stack: null },
@@ -291,33 +288,6 @@ function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
 }
 
 
-function getInitialThemeKey() {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored && THEME_OPTIONS.some((option) => option.key === stored)) {
-      return stored;
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  if (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
-    return "obsidian";
-  }
-  return "govuk";
-}
-
-function getInitialFontScale() {
-  try {
-    const stored = Number.parseFloat(localStorage.getItem(FONT_SCALE_STORAGE_KEY) || "");
-    const hasMatch = FONT_SCALE_OPTIONS.some((scale) => Math.abs(scale - stored) < 0.001);
-    if (hasMatch) {
-      return stored;
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  return 1;
-}
 
 function getInitialFontFamilyKey() {
   try {
@@ -329,32 +299,6 @@ function getInitialFontFamilyKey() {
     // localStorage unavailable
   }
   return "wcag-sans";
-}
-
-function getInitialBooleanPref(storageKey) {
-  try {
-    return localStorage.getItem(storageKey) === "true";
-  } catch {
-    // localStorage unavailable
-  }
-  return false;
-}
-
-function getInitialFilterPanelDensityMode() {
-  try {
-    const stored = localStorage.getItem(COMPACT_MODE_STORAGE_KEY);
-    if (stored === "true") {
-      return FILTER_PANEL_DENSITY_MODE.COMPACT;
-    }
-    if (stored === "false") {
-      return FILTER_PANEL_DENSITY_MODE.STANDARD;
-    }
-  } catch {
-    // localStorage unavailable
-  }
-
-  // Default to compact for higher information density on first load.
-  return FILTER_PANEL_DENSITY_MODE.COMPACT;
 }
 
 function normalizeThemeColorOverridesByTheme(rawValue) {
@@ -632,23 +576,6 @@ const TOGGLED_REDUCED_MOTION_STYLES = (
   />
 );
 
-function findClosestFontScaleIndex(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return FONT_SCALE_OPTIONS.indexOf(1);
-  }
-
-  let bestIndex = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  FONT_SCALE_OPTIONS.forEach((option, index) => {
-    const distance = Math.abs(option - numericValue);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = index;
-    }
-  });
-  return bestIndex;
-}
 
 function scaleCssLengthValue(value, multiplier) {
   if (!Number.isFinite(multiplier) || multiplier === 1) {
@@ -2383,17 +2310,22 @@ function filterRowsByQuery(data, searchQuery) {
 }
 
 function FiltersView() {
-  const [themeKey, setThemeKey] = useState(getInitialThemeKey);
-  const [fontScale, setFontScale] = useState(getInitialFontScale);
+  const {
+    themeKey,
+    fontScale,
+    highContrast,
+    reducedMotion,
+    filterPanelDensityMode,
+    isCompactDensity,
+    changeTheme,
+    changeFontScale,
+    toggleHighContrast,
+    toggleReducedMotion,
+    changeFilterPanelDensityMode,
+  } = useFilterPagePreferences();
   const [fontFamilyKey] = useState(getInitialFontFamilyKey);
-  const [highContrast, setHighContrast] = useState(() => getInitialBooleanPref(HIGH_CONTRAST_STORAGE_KEY));
-  const [reducedMotion, setReducedMotion] = useState(() => getInitialBooleanPref(REDUCED_MOTION_STORAGE_KEY));
-  const [filterPanelDensityMode, setFilterPanelDensityMode] = useState(
-    getInitialFilterPanelDensityMode
-  );
-  const isCompactDensity = filterPanelDensityMode === FILTER_PANEL_DENSITY_MODE.COMPACT;
   const [isThemeBuilderOpen, setIsThemeBuilderOpen] = useState(false);
-  const [themeBuilderThemeKey, setThemeBuilderThemeKey] = useState(getInitialThemeKey);
+  const [themeBuilderThemeKey, setThemeBuilderThemeKey] = useState(() => themeKey);
   const [themeBuilderSearchQuery, setThemeBuilderSearchQuery] = useState("");
   const [themeColorOverridesByTheme, setThemeColorOverridesByTheme] = useState(
     getInitialThemeColorOverridesByTheme
@@ -2473,16 +2405,8 @@ function FiltersView() {
       setIsThemeBuilderOpen(true);
       return;
     }
-    if (!THEME_OPTIONS.some((option) => option.key === nextKey)) {
-      return;
-    }
-    setThemeKey(nextKey);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, nextKey);
-    } catch {
-      // localStorage unavailable
-    }
-  }, [themeKey]);
+    changeTheme(nextKey);
+  }, [themeKey, changeTheme]);
 
   const themeBuilderTheme = useMemo(() => getThemeByKey(themeBuilderThemeKey), [themeBuilderThemeKey]);
   const themeBuilderColorEntries = useMemo(
@@ -2574,79 +2498,15 @@ function FiltersView() {
   }, []);
 
   const handleThemeBuilderApplyTheme = useCallback(() => {
-    if (!THEME_OPTIONS.some((option) => option.key === themeBuilderThemeKey)) {
-      return;
-    }
-    setThemeKey(themeBuilderThemeKey);
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, themeBuilderThemeKey);
-    } catch {
-      // localStorage unavailable
-    }
-  }, [themeBuilderThemeKey]);
+    changeTheme(themeBuilderThemeKey);
+  }, [themeBuilderThemeKey, changeTheme]);
 
-  const handleFontScaleChange = useCallback((delta) => {
-    setFontScale((previousScale) => {
-      if (!Number.isFinite(delta) || delta === 0) {
-        return previousScale;
-      }
-
-      const currentIndex = findClosestFontScaleIndex(previousScale);
-      const nextIndex = Math.max(
-        0,
-        Math.min(FONT_SCALE_OPTIONS.length - 1, currentIndex + Math.sign(delta))
-      );
-      const nextScale = FONT_SCALE_OPTIONS[nextIndex];
-
-      try {
-        localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(nextScale));
-      } catch {
-        // localStorage unavailable
-      }
-
-      return nextScale;
-    });
-  }, []);
-
-  const handleHighContrastToggle = useCallback(() => {
-    setHighContrast((previousValue) => {
-      const nextValue = !previousValue;
-      try {
-        localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, String(nextValue));
-      } catch {
-        // localStorage unavailable
-      }
-      return nextValue;
-    });
-  }, []);
-
-  const handleReducedMotionToggle = useCallback(() => {
-    setReducedMotion((previousValue) => {
-      const nextValue = !previousValue;
-      try {
-        localStorage.setItem(REDUCED_MOTION_STORAGE_KEY, String(nextValue));
-      } catch {
-        // localStorage unavailable
-      }
-      return nextValue;
-    });
-  }, []);
+  const handleFontScaleChange = changeFontScale;
+  const handleHighContrastToggle = toggleHighContrast;
+  const handleReducedMotionToggle = toggleReducedMotion;
   const handleFilterPanelDensityModeChange = useCallback((event) => {
-    const requestedMode = String(event?.target?.value || "").trim().toLowerCase();
-    const nextMode =
-      requestedMode === FILTER_PANEL_DENSITY_MODE.STANDARD
-        ? FILTER_PANEL_DENSITY_MODE.STANDARD
-        : FILTER_PANEL_DENSITY_MODE.COMPACT;
-    setFilterPanelDensityMode(nextMode);
-    try {
-      localStorage.setItem(
-        COMPACT_MODE_STORAGE_KEY,
-        String(nextMode === FILTER_PANEL_DENSITY_MODE.COMPACT)
-      );
-    } catch {
-      // localStorage unavailable
-    }
-  }, []);
+    changeFilterPanelDensityMode(String(event?.target?.value || "").trim().toLowerCase());
+  }, [changeFilterPanelDensityMode]);
   const getOmopSummaryForFilters = useCallback(
     () => getOmopSummary({ includePatientIds: false }),
     []
