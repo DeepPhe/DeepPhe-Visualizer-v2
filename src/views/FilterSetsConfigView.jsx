@@ -25,9 +25,8 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { ThemeProvider } from "@mui/material/styles";
 import { Link as RouterLink } from "react-router-dom";
 import { FILTER_SETS } from "./filterSets";
-import { THEME_OPTIONS, getThemeByKey } from "../themes";
+import { THEME_OPTIONS, THEME_STORAGE_KEY, getThemeByKey } from "../themes";
 
-const THEME_STORAGE_KEY = "filterPageTheme";
 const CONTEXT_HEADER_SX = { fontWeight: 700, letterSpacing: 0.2 };
 
 function getInitialThemeKey() {

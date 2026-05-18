@@ -57,7 +57,7 @@ import HorizontalBarFilter from "../components/HorizontalBarFilter";
 import EmbeddedPatientView from "../components/EmbeddedPatientView";
 import PatientGrid from "../components/PatientGrid";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
-import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
+import { MONOSPACE_STACK, THEME_OPTIONS, THEME_STORAGE_KEY, getThemeByKey } from "../themes";
 import { getAgeDecileLabel } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
 import { endSpan, startSpan } from "../utils/perfTracker";
@@ -125,7 +125,6 @@ const FILTER_SORT_DIRECTION = {
   DESC: "desc",
 };
 
-const THEME_STORAGE_KEY = "filterPageTheme";
 const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
 const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";

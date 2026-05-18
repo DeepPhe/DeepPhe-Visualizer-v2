@@ -6,6 +6,8 @@ import { createTheme } from "@mui/material/styles";
 export const MONOSPACE_STACK =
   "'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace";
 
+export const THEME_STORAGE_KEY = "filterPageTheme";
+
 // ---------------------------------------------------------------------------
 // Theme 1 — Obsidian
 // ---------------------------------------------------------------------------
