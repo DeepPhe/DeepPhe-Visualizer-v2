@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -24,8 +24,7 @@ import {
   loadViz2PatientOptions,
   loadViz2PatientProfile,
 } from "../controllers/patient";
-import { transformCancerSummary } from "../utils/patientView/transformCancerSummary";
-import { transformDocumentTimeline } from "../utils/patientView/transformDocumentTimeline";
+import { usePatientData } from "../hooks/usePatientData";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 import { getThemeByKey } from "../themes";
 
@@ -60,17 +59,14 @@ export default function PatientView() {
   const [viz2PatientId, setViz2PatientId] = useState("");
   const [isViz2OptionsLoading, setIsViz2OptionsLoading] = useState(false);
   const [viz2OptionsErrorMessage, setViz2OptionsErrorMessage] = useState("");
+  const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
+    usePatientData();
   const [loadedPatientId, setLoadedPatientId] = useState("");
-  const [patientData, setPatientData] = useState(null);
-  const [timelineData, setTimelineData] = useState(null);
-  const [cancerSummary, setCancerSummary] = useState([]);
   const [factSelection, setFactSelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectionContext, setSelectionContext] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isRandomLoading, setIsRandomLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const requestIdRef = useRef(0);
+  const [validationMessage, setValidationMessage] = useState("");
 
   const resolveCancerTumorIndex = useCallback(
     (cancerId, tumorId) => {
@@ -112,6 +108,7 @@ export default function PatientView() {
 
   const activeTheme = useMemo(() => getThemeByKey(DEFAULT_THEME_KEY), []);
   const activeErrorMessage =
+    validationMessage ||
     errorMessage ||
     (lookupMode === LOOKUP_MODE_VIZ2_DOCS ? viz2OptionsErrorMessage : "");
 
@@ -175,76 +172,45 @@ export default function PatientView() {
     ).trim();
 
     if (!normalizedPatientId) {
-      setErrorMessage(
+      setValidationMessage(
         isViz2Mode ? "Please select a Viz2 patient." : "Please enter a patient ID."
       );
       return;
     }
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-
-    setIsLoading(true);
-    setErrorMessage("");
+    setValidationMessage("");
     setFactSelection(null);
     setSelectedDocumentId("");
     setSelectionContext(null);
 
-    try {
-      const nextPatientData = isViz2Mode
-        ? await loadViz2PatientProfile(normalizedPatientId)
-        : await loadPatientProfile(normalizedPatientId);
-      if (requestIdRef.current !== requestId) {
-        return;
-      }
+    const loader = isViz2Mode ? loadViz2PatientProfile : loadPatientProfile;
+    const result = await loadPatient(normalizedPatientId, loader);
 
-      const nextTimeline = transformDocumentTimeline({
-        patientId: nextPatientData.patientId,
-        patientName: nextPatientData.patientName,
-        demographics: nextPatientData.demographics,
-        documents: nextPatientData.documents,
-      });
-      const nextCancerSummary = transformCancerSummary(nextPatientData.cancers);
-
-      setLoadedPatientId(nextPatientData.patientId || normalizedPatientId);
-      setPatientData(nextPatientData);
-      setTimelineData(nextTimeline);
-      setCancerSummary(nextCancerSummary);
-      setFactSelection(null);
-      const mostRecentId = getMostRecentDocumentId(nextTimeline.reportData);
-      const mostRecentReport = (nextTimeline.reportData || []).find(
-        (r) => String(r?.id || "").trim() === mostRecentId
-      );
-      setSelectedDocumentId(mostRecentId);
-      setSelectionContext({
-        source: "auto",
-        documentType: String(mostRecentReport?.type || "").trim() || null,
-        documentDate: String(mostRecentReport?.formattedDate || "").trim() || null,
-        episodeLabel: String(mostRecentReport?.episode || "").trim() || null,
-      });
-    } catch (error) {
-      if (requestIdRef.current !== requestId) {
-        return;
-      }
-
-      setPatientData(null);
-      setTimelineData(null);
-      setCancerSummary([]);
+    if (!result) {
+      setLoadedPatientId("");
       setFactSelection(null);
       setSelectedDocumentId("");
       setSelectionContext(null);
-      setLoadedPatientId("");
-      setErrorMessage(error?.message || "Failed to load patient details.");
-    } finally {
-      if (requestIdRef.current === requestId) {
-        setIsLoading(false);
-      }
+      return;
     }
+
+    setLoadedPatientId(result.patientData.patientId || normalizedPatientId);
+    const mostRecentId = getMostRecentDocumentId(result.timelineData.reportData);
+    const mostRecentReport = (result.timelineData.reportData || []).find(
+      (r) => String(r?.id || "").trim() === mostRecentId
+    );
+    setSelectedDocumentId(mostRecentId);
+    setSelectionContext({
+      source: "auto",
+      documentType: String(mostRecentReport?.type || "").trim() || null,
+      documentDate: String(mostRecentReport?.formattedDate || "").trim() || null,
+      episodeLabel: String(mostRecentReport?.episode || "").trim() || null,
+    });
   };
 
   const handleLookupModeChange = (nextLookupMode) => {
     setLookupMode(nextLookupMode);
-    setErrorMessage("");
+    setValidationMessage("");
   };
 
   const handleSelectDocumentFromTimeline = useCallback(
@@ -335,9 +301,9 @@ export default function PatientView() {
     try {
       const randomPatientId = await loadRandomPatientId();
       setPatientIdInput(randomPatientId);
-      setErrorMessage("");
+      setValidationMessage("");
     } catch (error) {
-      setErrorMessage(error?.message || "Failed to pick a random patient.");
+      setValidationMessage(error?.message || "Failed to pick a random patient.");
     } finally {
       setIsRandomLoading(false);
     }

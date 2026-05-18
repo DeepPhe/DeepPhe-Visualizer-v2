@@ -7,10 +7,9 @@ import PatientDocumentsCard from "./patient/PatientDocumentsCard";
 import PatientDocumentViewerCard from "./patient/PatientDocumentViewerCard";
 import PatientSummaryCard from "./patient/PatientSummaryCard";
 import { getInstances } from "../controllers/omap";
-import { loadPatientFilterSummary, loadPatientProfile } from "../controllers/patient";
+import { loadPatientFilterSummary } from "../controllers/patient";
+import { usePatientData } from "../hooks/usePatientData";
 import { asRowArray, getValueFromRow } from "../utils/dataProcessing";
-import { transformCancerSummary } from "../utils/patientView/transformCancerSummary";
-import { transformDocumentTimeline } from "../utils/patientView/transformDocumentTimeline";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 
 /**
@@ -211,15 +210,11 @@ async function loadPatientOmopDetails(patientId) {
 
 export default function EmbeddedPatientView({ patientId = "" }) {
   const theme = useTheme();
-  const [patientData, setPatientData] = useState(null);
-  const [timelineData, setTimelineData] = useState(null);
-  const [cancerSummary, setCancerSummary] = useState([]);
+  const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
+    usePatientData();
   const [factSelection, setFactSelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectionContext, setSelectionContext] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const requestIdRef = useRef(0);
   const omopRequestIdRef = useRef(0);
   const patientSummaryRequestIdRef = useRef(0);
   const [omopDetails, setOmopDetails] = useState(EMPTY_OMOP_DETAILS);
@@ -228,61 +223,23 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   useEffect(() => {
     const normalizedId = String(patientId || "").trim();
     if (!normalizedId) {
-      setPatientData(null);
-      setTimelineData(null);
-      setCancerSummary([]);
       setFactSelection(null);
       setSelectedDocumentId("");
       setSelectionContext(null);
-      setErrorMessage("");
       setOmopDetails(EMPTY_OMOP_DETAILS);
       setPatientSummaryData(null);
       return undefined;
     }
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    setIsLoading(true);
-    setErrorMessage("");
+    loadPatient(normalizedId).then((result) => {
+      if (!result) return;
+      setFactSelection(null);
+      setSelectedDocumentId("");
+      setSelectionContext(null);
+    });
 
-    const run = async () => {
-      try {
-        const nextPatientData = await loadPatientProfile(normalizedId);
-        if (requestIdRef.current !== requestId) return;
-
-        const nextTimeline = transformDocumentTimeline({
-          patientId: nextPatientData.patientId,
-          patientName: nextPatientData.patientName,
-          demographics: nextPatientData.demographics,
-          documents: nextPatientData.documents,
-        });
-        const nextCancerSummary = transformCancerSummary(nextPatientData.cancers);
-
-        setPatientData(nextPatientData);
-        setTimelineData(nextTimeline);
-        setCancerSummary(nextCancerSummary);
-        setFactSelection(null);
-        setSelectedDocumentId("");
-        setSelectionContext(null);
-      } catch (error) {
-        if (requestIdRef.current !== requestId) return;
-        setPatientData(null);
-        setTimelineData(null);
-        setCancerSummary([]);
-        setFactSelection(null);
-        setSelectedDocumentId("");
-        setSelectionContext(null);
-        setErrorMessage(error?.message || "Failed to load patient details.");
-      } finally {
-        if (requestIdRef.current === requestId) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    run();
     return undefined;
-  }, [patientId]);
+  }, [patientId, loadPatient]);
 
   useEffect(() => {
     const normalizedId = String(patientId || "").trim();
