@@ -2879,12 +2879,16 @@ function FiltersView() {
   const attributeRootError = attributeData.errorMessage;
   const conceptRootError = conceptData.errorMessage;
   const hasDataErrors = !!(rootError || attributeRootError || conceptRootError);
-  // Show the loading indicator until the first full count pass completes. Once
-  // isInitialIncludedCountsReady is true we keep the sections visible even if
-  // React StrictMode triggers a second useBatchDataLoader run (which briefly
-  // sets isLoading back to true before the second API call finishes).
-  const shouldShowFilterLoadingState = !hasDataErrors && !isInitialIncludedCountsReady;
-  const canRenderFilterSections = !hasDataErrors && isInitialIncludedCountsReady;
+  // Gate on whether all three batch loaders have completed — not on the async
+  // per-row count pass (isInitialIncludedCountsReady). Waiting for the count
+  // pass creates a window where the loading indicator disappears but the filter
+  // sections haven't mounted yet, causing a visible blank flash. Showing
+  // sections as soon as base data is loaded is strictly better: bars render
+  // with total counts immediately, and included-count indicators appear once
+  // `loadIncludedCounts` finishes its async work.
+  const allBaseDataLoaded = !isLoading && !isAttributeLoading && !isConceptLoading;
+  const shouldShowFilterLoadingState = !hasDataErrors && !allBaseDataLoaded;
+  const canRenderFilterSections = !hasDataErrors && allBaseDataLoaded;
   const activeFilters = useMemo(
     () =>
       buildActiveFilters({
@@ -5665,6 +5669,7 @@ function FiltersView() {
                 id="drawer-tabpanel-0"
                 aria-labelledby="drawer-tab-0"
                 hidden={activeDrawerTab !== 0 || !isPatientGridDockExpanded}
+                style={{ display: activeDrawerTab === 0 && isPatientGridDockExpanded ? "block" : "none" }}
                 sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 1.5, py: 1.25 }}
               >
                 {activeDrawerTab === 0 ? (
@@ -5702,6 +5707,10 @@ function FiltersView() {
                   id={`drawer-tabpanel-${index + 1}`}
                   aria-labelledby={`drawer-tab-${index + 1}`}
                   hidden={activeDrawerTab !== index + 1 || !isPatientGridDockExpanded}
+                  style={{
+                    display:
+                      activeDrawerTab === index + 1 && isPatientGridDockExpanded ? "flex" : "none",
+                  }}
                   sx={{
                     flex: 1,
                     minHeight: 0,
@@ -5713,7 +5722,7 @@ function FiltersView() {
                     flexDirection: "column",
                   }}
                 >
-                  {activeDrawerTab === index + 1 ? (
+                  {activeDrawerTab === index + 1 && isPatientGridDockExpanded ? (
                     <EmbeddedPatientView patientId={patientId} />
                   ) : null}
                 </Box>
