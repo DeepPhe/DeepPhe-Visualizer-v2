@@ -142,6 +142,13 @@ if (!IS_DEV) {
     };
 
     addToBuffer(event);
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[perf:${event.type}] ${event.name} — ${event.duration}ms${event.status !== "ok" ? ` (${event.status})` : ""}`,
+      Object.keys(event.meta).length ? event.meta : undefined
+    );
+
     return event;
   };
 

@@ -2,6 +2,22 @@ import { useCallback, useRef, useState } from "react";
 import { loadPatientProfile } from "../controllers/patient";
 import { transformCancerSummary } from "../utils/patientView/transformCancerSummary";
 import { transformDocumentTimeline } from "../utils/patientView/transformDocumentTimeline";
+import { endSpan, startSpan } from "../utils/perfTracker";
+
+const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
+
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function logPerf(message, details = {}) {
+  if (!isPerfLoggingEnabled) return;
+  // eslint-disable-next-line no-console
+  console.log(`[usePatientData] ${message}`, details);
+}
 
 /**
  * Manages patient profile state with request-ID-based cancellation.
@@ -24,13 +40,24 @@ export function usePatientData() {
     if (!normalized) return null;
 
     const requestId = ++requestIdRef.current;
+    const loadStartTime = nowMs();
+    const span = startSpan(`patient:load:${normalized}`, "user_interaction", {
+      patientId: normalized,
+    });
     setIsLoading(true);
     setErrorMessage("");
 
     try {
+      const fetchStartTime = nowMs();
       const nextPatientData = await loader(normalized);
-      if (requestIdRef.current !== requestId) return null;
+      const fetchMs = Math.round(nowMs() - fetchStartTime);
 
+      if (requestIdRef.current !== requestId) {
+        endSpan(span, "cancelled", { fetchMs });
+        return null;
+      }
+
+      const transformStartTime = nowMs();
       const nextTimeline = transformDocumentTimeline({
         patientId: nextPatientData.patientId,
         patientName: nextPatientData.patientName,
@@ -38,17 +65,31 @@ export function usePatientData() {
         documents: nextPatientData.documents,
       });
       const nextCancerSummary = transformCancerSummary(nextPatientData.cancers);
+      const transformMs = Math.round(nowMs() - transformStartTime);
 
       setPatientData(nextPatientData);
       setTimelineData(nextTimeline);
       setCancerSummary(nextCancerSummary);
+
+      const totalMs = Math.round(nowMs() - loadStartTime);
+      logPerf("load complete", { patientId: normalized, fetchMs, transformMs, totalMs });
+      endSpan(span, "ok", { fetchMs, transformMs, totalMs });
+
       return { patientData: nextPatientData, timelineData: nextTimeline, cancerSummary: nextCancerSummary };
     } catch (error) {
-      if (requestIdRef.current !== requestId) return null;
+      if (requestIdRef.current !== requestId) {
+        endSpan(span, "cancelled", { errorMessage: error?.message || "" });
+        return null;
+      }
       setPatientData(null);
       setTimelineData(null);
       setCancerSummary([]);
       setErrorMessage(error?.message || "Failed to load patient details.");
+
+      const totalMs = Math.round(nowMs() - loadStartTime);
+      logPerf("load failed", { patientId: normalized, totalMs, message: error?.message || "" });
+      endSpan(span, "error", { errorMessage: error?.message || "", totalMs });
+
       return null;
     } finally {
       if (requestIdRef.current === requestId) {

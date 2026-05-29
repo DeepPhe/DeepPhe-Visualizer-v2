@@ -195,6 +195,63 @@ describe("filterLayout helpers", () => {
     expect(layout.cardMarginBottomByClass.ETHNICITY).toBe(0);
   });
 
+  // --- Validation cases for the three DP improvements ---
+
+  it("lex tiebreak (sumSq) picks balanced partition when maxHeight is tied", () => {
+    // [400][200][100,100] and [400][200,100][100] both give maxH=400.
+    // sumSq: 400²+200²+224²=250176 vs 400²+324²+100²=274976.
+    // New algorithm must pick the lower-sumSq partition.
+    const layout = buildTallestAlignedLayout(
+      ["A", "B", "C", "D"],
+      { A: 400, B: 200, C: 100, D: 100 },
+      {},
+      24,
+      3
+    );
+    expect(layout.columnGroups).toEqual([["A"], ["B"], ["C", "D"]]);
+  });
+
+  it("column-count search selects k giving smallest maxHeight", () => {
+    // k=3: maxH=100; k=2: maxH=224; k=1: maxH=348. k=3 must win.
+    const layout = buildTallestAlignedLayout(
+      ["A", "B", "C"],
+      { A: 100, B: 100, C: 100 },
+      {},
+      24,
+      3
+    );
+    expect(layout.columnGroups).toEqual([["A"], ["B"], ["C"]]);
+  });
+
+  it("column-count search prefers fewer columns when maxH and sumSq are tied across k values", () => {
+    // gap=0, heights=[100,100,0].
+    // k=2: [A][B,C] => maxH=100, sumSq=100²+100²=20000.
+    // k=3: [A][B][C] => maxH=100, sumSq=100²+100²+0²=20000.
+    // Same lex tuple — smaller k (2) must win.
+    const layout = buildTallestAlignedLayout(
+      ["A", "B", "C"],
+      { A: 100, B: 100, C: 0 },
+      {},
+      0,
+      3
+    );
+    expect(layout.columnGroups).toEqual([["A"], ["B", "C"]]);
+  });
+
+  it("uses measured heights in the DP, not base estimates", () => {
+    // base [100,100,300]: optimal k=2 split is [A,B][C] (maxH=max(224,300)=300).
+    // measured [300,100,100]: optimal k=2 split is [A][B,C] (maxH=max(300,224)=300).
+    // After Change 3 the DP runs on measured heights, so result must be [A][B,C].
+    const layout = buildTallestAlignedLayout(
+      ["A", "B", "C"],
+      { A: 100, B: 100, C: 300 },
+      { A: 300, B: 100, C: 100 },
+      24,
+      2
+    );
+    expect(layout.columnGroups).toEqual([["A"], ["B", "C"]]);
+  });
+
   it("equalizes column heights for mixed solo and multi-card columns", () => {
     const layout = buildFilterSectionLayout({
       classNames: ["A", "B", "C", "D", "E"],

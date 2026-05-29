@@ -67,14 +67,13 @@ export function buildTallestAlignedLayout(
     };
   }
 
-  const resolvedColumnCount = Math.max(
-    1,
-    Math.min(normalizedClassNames.length, resolvedMaxColumns)
-  );
-  const cumulativeBaseHeights = [0];
+  // Change 3: use measured heights (falling back to base) in the DP so that
+  // post-measurement re-runs partition on real DOM heights, not just estimates.
+  const cumulativeEffectiveHeights = [0];
   normalizedClassNames.forEach((className) => {
-    cumulativeBaseHeights.push(
-      cumulativeBaseHeights[cumulativeBaseHeights.length - 1] + getBaseHeight(className)
+    cumulativeEffectiveHeights.push(
+      cumulativeEffectiveHeights[cumulativeEffectiveHeights.length - 1] +
+        getEffectiveHeight(className)
     );
   });
   const getSegmentHeight = (startIndex, endIndexExclusive) => {
@@ -83,68 +82,82 @@ export function buildTallestAlignedLayout(
       return 0;
     }
     const sumHeights =
-      cumulativeBaseHeights[endIndexExclusive] - cumulativeBaseHeights[startIndex];
+      cumulativeEffectiveHeights[endIndexExclusive] -
+      cumulativeEffectiveHeights[startIndex];
     return sumHeights + Math.max(0, itemCount - 1) * resolvedNaturalGap;
   };
-  const bestMaxHeightByGroupCount = Array.from(
-    { length: resolvedColumnCount + 1 },
-    () =>
-      Array.from({ length: normalizedClassNames.length + 1 }, () => Number.POSITIVE_INFINITY)
-  );
-  const splitIndexByGroupCount = Array.from(
-    { length: resolvedColumnCount + 1 },
-    () => Array.from({ length: normalizedClassNames.length + 1 }, () => -1)
-  );
-  bestMaxHeightByGroupCount[0][0] = 0;
 
-  for (let groupCount = 1; groupCount <= resolvedColumnCount; groupCount += 1) {
-    for (
-      let endIndex = groupCount;
-      endIndex <= normalizedClassNames.length;
-      endIndex += 1
-    ) {
-      for (let splitIndex = groupCount - 1; splitIndex < endIndex; splitIndex += 1) {
-        const previousCost =
-          bestMaxHeightByGroupCount[groupCount - 1][splitIndex];
-        if (!Number.isFinite(previousCost)) {
+  // Change 1: DP cell is a lex tuple {maxH, sumSq}.
+  // Comparator: smaller maxH wins; ties broken by smaller sumSq.
+  // This replaces the old "splitIndex < currentBestSplit" tiebreak and
+  // minimises variance across column heights among equally-tall partitions.
+  const n = normalizedClassNames.length;
+  const INF = Number.POSITIVE_INFINITY;
+  const dp = Array.from({ length: resolvedMaxColumns + 1 }, () =>
+    Array.from({ length: n + 1 }, () => ({ maxH: INF, sumSq: INF }))
+  );
+  const splitAt = Array.from({ length: resolvedMaxColumns + 1 }, () =>
+    Array.from({ length: n + 1 }, () => -1)
+  );
+  dp[0][0] = { maxH: 0, sumSq: 0 };
+
+  // Change 2: run the DP for every k from 1 to resolvedMaxColumns so the
+  // outer winner-selection below can pick the column count, not just the split.
+  for (let k = 1; k <= resolvedMaxColumns; k += 1) {
+    for (let end = k; end <= n; end += 1) {
+      for (let split = k - 1; split < end; split += 1) {
+        const prev = dp[k - 1][split];
+        if (!Number.isFinite(prev.maxH)) {
           continue;
         }
 
-        const groupHeight = getSegmentHeight(splitIndex, endIndex);
-        const candidateCost = Math.max(previousCost, groupHeight);
-        const bestCost = bestMaxHeightByGroupCount[groupCount][endIndex];
-        const currentBestSplit = splitIndexByGroupCount[groupCount][endIndex];
-        const isStrictlyBetter = candidateCost < bestCost - LAYOUT_EPSILON;
-        const isSameCostEarlierSplit =
-          Math.abs(candidateCost - bestCost) <= LAYOUT_EPSILON &&
-          (currentBestSplit < 0 || splitIndex < currentBestSplit);
+        const h = getSegmentHeight(split, end);
+        const candMax = Math.max(prev.maxH, h);
+        const candSumSq = prev.sumSq + h * h;
+        const best = dp[k][end];
 
-        if (isStrictlyBetter || isSameCostEarlierSplit) {
-          bestMaxHeightByGroupCount[groupCount][endIndex] = candidateCost;
-          splitIndexByGroupCount[groupCount][endIndex] = splitIndex;
+        const isLexBetter =
+          candMax < best.maxH - LAYOUT_EPSILON ||
+          (Math.abs(candMax - best.maxH) <= LAYOUT_EPSILON &&
+            candSumSq < best.sumSq - LAYOUT_EPSILON);
+
+        if (isLexBetter) {
+          dp[k][end] = { maxH: candMax, sumSq: candSumSq };
+          splitAt[k][end] = split;
         }
       }
     }
   }
 
+  // Change 2: pick the winning column count. Prefer smaller maxH, then
+  // smaller sumSq, then smaller k (denser visual) on a full tie.
+  let bestK = 1;
+  let bestCell = dp[1][n];
+  for (let k = 2; k <= resolvedMaxColumns; k += 1) {
+    const cell = dp[k][n];
+    const isLexBetter =
+      cell.maxH < bestCell.maxH - LAYOUT_EPSILON ||
+      (Math.abs(cell.maxH - bestCell.maxH) <= LAYOUT_EPSILON &&
+        cell.sumSq < bestCell.sumSq - LAYOUT_EPSILON);
+    if (isLexBetter) {
+      bestK = k;
+      bestCell = cell;
+    }
+  }
+
+  // Reconstruct column groups from the winning k.
   const reversedColumnGroups = [];
-  let currentEndIndex = normalizedClassNames.length;
-  for (
-    let groupCount = resolvedColumnCount;
-    groupCount >= 1;
-    groupCount -= 1
-  ) {
-    const splitIndex = splitIndexByGroupCount[groupCount][currentEndIndex];
-    if (splitIndex < 0) {
+  let currentEndIndex = n;
+  for (let k = bestK; k >= 1; k -= 1) {
+    const split = splitAt[k][currentEndIndex];
+    if (split < 0) {
       reversedColumnGroups.push([...normalizedClassNames]);
       currentEndIndex = 0;
       break;
     }
 
-    reversedColumnGroups.push(
-      normalizedClassNames.slice(splitIndex, currentEndIndex)
-    );
-    currentEndIndex = splitIndex;
+    reversedColumnGroups.push(normalizedClassNames.slice(split, currentEndIndex));
+    currentEndIndex = split;
   }
 
   const activeColumnGroups = reversedColumnGroups.reverse().filter((group) => group.length > 0);

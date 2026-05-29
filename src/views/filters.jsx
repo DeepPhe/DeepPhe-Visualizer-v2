@@ -2535,7 +2535,9 @@ function FiltersView() {
   const [countResult, setCountResult] = useState(null);
   const [includedCountByRowKey, setIncludedCountByRowKey] = useState({});
   const [includedPatientIdsByRowKey, setIncludedPatientIdsByRowKey] = useState({});
+  const [isInitialIncludedCountsReady, setIsInitialIncludedCountsReady] = useState(false);
   const includedPatientIdsByRowKeyRef = useRef({});
+  const hasCompletedInitialIncludedCountsLoadRef = useRef(false);
   const [countError, setCountError] = useState("");
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [currentPatientGridPage, setCurrentPatientGridPage] = useState(0);
@@ -2553,6 +2555,14 @@ function FiltersView() {
     const cardMeasureRefs = useRef({});
     const patientSummaryCacheRef = useRef(new Map());
     const rowCountResultCacheRef = useRef(new Map());
+  const markInitialIncludedCountsReady = useCallback(() => {
+    if (hasCompletedInitialIncludedCountsLoadRef.current) {
+      return;
+    }
+
+    hasCompletedInitialIncludedCountsLoadRef.current = true;
+    setIsInitialIncludedCountsReady(true);
+  }, []);
 
   useEffect(() => {
     if (fontFamilyKey !== "open-dyslexic" || typeof document === "undefined") {
@@ -2868,6 +2878,20 @@ function FiltersView() {
   const rootError = omopData.errorMessage;
   const attributeRootError = attributeData.errorMessage;
   const conceptRootError = conceptData.errorMessage;
+  const isBaseFilterDataLoading = isLoading || isAttributeLoading || isConceptLoading;
+  const isInitialFilterHydrationLoading =
+    !isBaseFilterDataLoading &&
+    !rootError &&
+    !attributeRootError &&
+    !conceptRootError &&
+    !isInitialIncludedCountsReady;
+  const shouldShowFilterLoadingState =
+    isBaseFilterDataLoading || isInitialFilterHydrationLoading;
+  const canRenderFilterSections =
+    !shouldShowFilterLoadingState &&
+    !rootError &&
+    !attributeRootError &&
+    !conceptRootError;
   const activeFilters = useMemo(
     () =>
       buildActiveFilters({
@@ -2933,6 +2957,12 @@ function FiltersView() {
 
   useEffect(() => {
     let isActive = true;
+
+    if (isLoading || isAttributeLoading || isConceptLoading) {
+      return () => {
+        isActive = false;
+      };
+    }
 
     const staticCountsByRowKey = {};
     const staticPatientIdsByRowKey = {};
@@ -3048,12 +3078,17 @@ function FiltersView() {
     }
 
     if (countRequests.length === 0) {
+      markInitialIncludedCountsReady();
       return () => {
         isActive = false;
       };
     }
 
     const loadIncludedCounts = async () => {
+      const includedCountsStartTime =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
       const nextCountsByRowKey = { ...staticCountsByRowKey };
       const nextPatientIdsByRowKey = { ...staticPatientIdsByRowKey };
 
@@ -3118,6 +3153,18 @@ function FiltersView() {
 
           return mergedPatientIdsByRowKey;
         });
+        markInitialIncludedCountsReady();
+        if (SHOULD_LOG_FILTERS_PERF) {
+          // eslint-disable-next-line no-console
+          console.log("[FiltersView] row-level counts complete", {
+            requestCount: countRequests.length,
+            totalMs: Math.round(
+              ((typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()) - includedCountsStartTime) * 100
+            ) / 100,
+          });
+        }
       }
     };
 
@@ -3132,6 +3179,10 @@ function FiltersView() {
     ageDecileInstanceMap,
     chartClassRows,
     hasSelections,
+    isAttributeLoading,
+    isConceptLoading,
+    isLoading,
+    markInitialIncludedCountsReady,
     rollupInstanceMapByClass,
     ]);
 
@@ -3366,6 +3417,10 @@ function FiltersView() {
           return;
         }
         endSpan(filterSpan, "ok", successMeta);
+        if (SHOULD_LOG_FILTERS_PERF) {
+          // eslint-disable-next-line no-console
+          console.log("[FiltersView] filter query complete", successMeta);
+        }
         setCountResult(nextResult);
       } catch (error) {
         if (!isActive) {
@@ -3635,8 +3690,21 @@ function FiltersView() {
     setPatientGridPageError("");
 
     const loadPatientPage = async () => {
+      const pageLoadStartTime =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
       try {
+        const fetchStartTime =
+          typeof performance !== "undefined" && typeof performance.now === "function"
+            ? performance.now()
+            : Date.now();
         const summaryPayload = await fetchDeepPheFilterSummary(currentPatientGridPageIds);
+        const fetchMs = Math.round(
+          ((typeof performance !== "undefined" && typeof performance.now === "function"
+            ? performance.now()
+            : Date.now()) - fetchStartTime) * 100
+        ) / 100;
         const summaryRowsRaw = Array.isArray(summaryPayload)
           ? summaryPayload
           : Array.isArray(summaryPayload?.data)
@@ -3664,6 +3732,19 @@ function FiltersView() {
           return nextCache;
         });
         setPatientGridPageError("");
+        if (SHOULD_LOG_FILTERS_PERF) {
+          // eslint-disable-next-line no-console
+          console.log("[FiltersView] patient grid page loaded", {
+            page: currentPatientGridPage,
+            patientCount: pageRows.length,
+            fetchMs,
+            totalMs: Math.round(
+              ((typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()) - pageLoadStartTime) * 100
+            ) / 100,
+          });
+        }
       } catch (error) {
         if (!isActive) {
           return;
@@ -4526,8 +4607,24 @@ function FiltersView() {
                     fontSize: isCompactDensity ? "0.75rem" : undefined,
                   }}
                 >
-                  <span>{classDisplayName}</span>
-                  <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                  <Box
+                    component="span"
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      textAlign: "left",
+                      pr: 1,
+                    }}
+                    title={classDisplayName}
+                  >
+                    {classDisplayName}
+                  </Box>
+                  <Box component="span" sx={{ flexShrink: 0 }}>
+                    {selectedCount > 0 ? `${selectedCount} selected` : "Details"}
+                  </Box>
                 </Button>
                 {classError ? <Alert severity="error">{classError}</Alert> : null}
                 <HorizontalBarFilter
@@ -4970,7 +5067,7 @@ function FiltersView() {
           </Box>
         </Box>
 
-        {isLoading || isAttributeLoading || isConceptLoading ? (
+        {shouldShowFilterLoadingState ? (
           <Typography variant="body2" color="text.secondary">
             Loading filters...
           </Typography>
@@ -4980,7 +5077,7 @@ function FiltersView() {
         {attributeRootError ? <Alert severity="error">{attributeRootError}</Alert> : null}
         {conceptRootError ? <Alert severity="error">{conceptRootError}</Alert> : null}
 
-        {!isLoading && !isAttributeLoading && !isConceptLoading && !rootError && !attributeRootError && !conceptRootError ? (
+        {canRenderFilterSections ? (
           <Stack spacing={FILTER_PANEL_SPACING_UNITS}>
             {omopFilterSets.length > 0 ? (
               <Box sx={getFilterSetMasonrySx()}>
@@ -5233,8 +5330,24 @@ function FiltersView() {
                                           fontSize: isCompactDensity ? "0.75rem" : undefined,
                                         }}
                                       >
-                                        <span>{classDisplayName}</span>
-                                        <span>{selectedCount > 0 ? `${selectedCount} selected` : "Details"}</span>
+                                        <Box
+                                          component="span"
+                                          sx={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap",
+                                            textAlign: "left",
+                                            pr: 1,
+                                          }}
+                                          title={classDisplayName}
+                                        >
+                                          {classDisplayName}
+                                        </Box>
+                                        <Box component="span" sx={{ flexShrink: 0 }}>
+                                          {selectedCount > 0 ? `${selectedCount} selected` : "Details"}
+                                        </Box>
                                       </Button>
                                       {classError ? <Alert severity="error">{classError}</Alert> : null}
                                       <HorizontalBarFilter

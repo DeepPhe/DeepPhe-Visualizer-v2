@@ -1,5 +1,21 @@
 import { useEffect, useState } from "react";
 import { summarizeInstances } from "../utils/dataProcessing";
+import { endSpan, startSpan } from "../utils/perfTracker";
+
+const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
+
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function logPerf(context, message, details = {}) {
+  if (!isPerfLoggingEnabled) return;
+  // eslint-disable-next-line no-console
+  console.log(`[useDataLoader:${context}] ${message}`, details);
+}
 
 const INSTANCE_CONTEXT_BY_SECTION = {
   OMOP: "OMOP",
@@ -46,12 +62,18 @@ export function useDataLoader(
     }
 
     const loadData = async () => {
+      const loadStartTime = nowMs();
+      const span = startSpan(`batch:${errorContext}`, "api_call", { context: errorContext });
       setIsLoading(true);
       setErrorMessage("");
 
       try {
+        const classesStartTime = nowMs();
         const classesResult = await getClassesFn();
         const classList = Array.isArray(classesResult) ? classesResult : [];
+        const classesMs = Math.round(nowMs() - classesStartTime);
+
+        const instancesStartTime = nowMs();
         const instanceResults = await Promise.allSettled(
           classList.map(async (className) => {
             const instances = await getInstancesFn(className, parsedInstanceOptions);
@@ -61,6 +83,7 @@ export function useDataLoader(
             };
           })
         );
+        const instancesMs = Math.round(nowMs() - instancesStartTime);
 
         const nextSummaryByClass = {};
         const nextErrorsByClass = {};
@@ -78,17 +101,45 @@ export function useDataLoader(
             callResult.reason?.message || `Failed to load ${instanceContext} instances.`;
         });
 
-        if (isActive) {
-          setClasses(classList);
-          setSummaryByClass(nextSummaryByClass);
-          setErrorsByClass(nextErrorsByClass);
-          setIsLoading(false);
+        if (!isActive) {
+          logPerf(errorContext, "stale response ignored", {
+            classesMs,
+            instancesMs,
+          });
+          endSpan(span, "cancelled", { errorMessage: "stale response ignored" });
+          return;
         }
+
+        setClasses(classList);
+        setSummaryByClass(nextSummaryByClass);
+        setErrorsByClass(nextErrorsByClass);
+        setIsLoading(false);
+
+        logPerf(errorContext, "load complete", {
+          classes: classList.length,
+          classesMs,
+          instancesMs,
+          totalMs: Math.round(nowMs() - loadStartTime),
+        });
+        endSpan(span, "ok", {
+          classes: classList.length,
+          classesMs,
+          instancesMs,
+        });
       } catch (error) {
         if (isActive) {
           setErrorMessage(error?.message || `Failed to load ${errorContext} classes.`);
           setIsLoading(false);
+
+          logPerf(errorContext, "load failed", {
+            totalMs: Math.round(nowMs() - loadStartTime),
+            message: error?.message || "",
+          });
+          endSpan(span, "error", { errorMessage: error?.message || "" });
+          return;
         }
+
+        endSpan(span, "cancelled", { errorMessage: error?.message || "" });
       }
     };
 
