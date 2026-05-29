@@ -836,6 +836,44 @@ export const fetchDeepPheFilterCount = async ({
   throw new Error("DeepPhe filter count endpoint is unavailable on this server.");
 };
 
+/**
+ * Sends all row-level filter count queries as a single batch request instead of
+ * N individual requests.  Replaces the browser-exhausting Promise.all pattern.
+ *
+ * @param {Array<{ filters: Array, includePatientIds?: boolean }>} queries
+ * @returns {Promise<Array>} Positional array of count results (same shape as /count response)
+ * @throws {Error} When the batch endpoint is unreachable or returns a non-2xx status
+ */
+const BATCH_CHUNK_SIZE = 200;
+
+export const fetchDeepPheFilterCountBatch = async (queries = []) => {
+  if (!Array.isArray(queries) || queries.length === 0) {
+    return [];
+  }
+
+  const normalizedQueries = queries.map(({ filters, includePatientIds = false }) => ({
+    filters: normalizeFilterCountFilters(filters),
+    includePatientIds,
+  }));
+
+  // Split into chunks to avoid 413 Payload Too Large on large filter sets.
+  const results = [];
+  for (let i = 0; i < normalizedQueries.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = normalizedQueries.slice(i, i + BATCH_CHUNK_SIZE);
+    const response = await requestDeepPheEndpoint(
+      "/deepphe/filter/count/batch",
+      "POST",
+      { body: { queries: chunk } }
+    );
+    if (!Array.isArray(response?.results)) {
+      throw new Error("Batch filter count response missing results array");
+    }
+    results.push(...response.results);
+  }
+
+  return results;
+};
+
 export const fetchDeepPheFilterSummary = async (patientIds = []) => {
   const normalizedPatientIds = [...new Set(patientIds.map((id) => String(id || "").trim()))].filter(
     Boolean

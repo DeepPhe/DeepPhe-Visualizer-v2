@@ -50,6 +50,7 @@ import { getSummary as getAttributesSummary } from "../controllers/attributes";
 import { getSummary as getConceptsSummary } from "../controllers/concepts";
 import {
   fetchDeepPheFilterCount,
+  fetchDeepPheFilterCountBatch,
   fetchDeepPheFilterSummary,
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
@@ -66,7 +67,7 @@ import {
 import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
 import { getAgeDecileLabel, normalizeClassName } from "../utils/dataProcessing";
 import { toDisplayName } from "../utils/displayNames";
-import { endSpan, startSpan } from "../utils/perfTracker";
+import { endSpan, logMilestone, startSpan } from "../utils/perfTracker";
 import {
   FILTER_ENTRY_BY_TYPE_CLASS,
   resolveFilterSetsWithExtras,
@@ -559,6 +560,7 @@ const REDUCED_MOTION_STYLES = (
         "*, *::before, *::after": {
           transitionDuration: "0.01ms !important",
           animationDuration: "0.01ms !important",
+          animationIterationCount: "1 !important",
         },
       },
     }}
@@ -571,6 +573,7 @@ const TOGGLED_REDUCED_MOTION_STYLES = (
       "*, *::before, *::after": {
         transitionDuration: "0.01ms !important",
         animationDuration: "0.01ms !important",
+        animationIterationCount: "1 !important",
       },
     }}
   />
@@ -2544,6 +2547,7 @@ function FiltersView() {
   const [openPatientIds, setOpenPatientIds] = useState([]);
   const [activeDrawerTab, setActiveDrawerTab] = useState(0);
   const [patientGridPageCache, setPatientGridPageCache] = useState(() => new Map());
+  const patientGridPageCacheRef = useRef(new Map());
   const [isPatientGridPageLoading, setIsPatientGridPageLoading] = useState(false);
   const [patientGridPageError, setPatientGridPageError] = useState("");
   const [patientGridPageRetryToken, setPatientGridPageRetryToken] = useState(0);
@@ -2642,13 +2646,11 @@ function FiltersView() {
     }
 
     if (SHOULD_LOG_FILTERS_PERF) {
-      // eslint-disable-next-line no-console
-      console.log("[FiltersView] initial data ready", {
-        totalMs: Math.round(loadEndTime - initialLoadStartRef.current),
+      logMilestone("Filters ready", Math.round(loadEndTime - initialLoadStartRef.current), {
         omopClasses: omopData.classes.length,
         attributeClasses: attributeData.classes.length,
-        omopError: omopData.errorMessage || "",
-        attributeError: attributeData.errorMessage || "",
+        omopError: omopData.errorMessage || undefined,
+        attributeError: attributeData.errorMessage || undefined,
       });
     }
   }, [
@@ -3067,11 +3069,7 @@ function FiltersView() {
     });
 
     if (countRequests.length > 0 && SHOULD_LOG_FILTERS_PERF) {
-      // eslint-disable-next-line no-console
-      console.log("[FiltersView] queued row-level count requests", {
-        requestCount: countRequests.length,
-        hasSelections,
-      });
+      logMilestone("Row counts queued", null, { requests: countRequests.length });
     }
 
     if (countRequests.length === 0) {
@@ -3089,43 +3087,111 @@ function FiltersView() {
       const nextCountsByRowKey = { ...staticCountsByRowKey };
       const nextPatientIdsByRowKey = { ...staticPatientIdsByRowKey };
 
-      await Promise.all(
-        countRequests.map(async ({ rowKey, rowRequestFilters, fallbackCount, includePatientIds }) => {
-          try {
-            const cacheKey = toRowCountCacheKey(rowRequestFilters, includePatientIds);
-            const cachedResult = rowCountResultCacheRef.current.get(cacheKey);
-            const normalizedCountPayload =
-              cachedResult ||
-              normalizeCountResponse(
-                await fetchDeepPheFilterCount({
-                  filters: rowRequestFilters,
-                  includePatientIds,
-                })
-              );
+      // Separate cached rows from those that need a network request.
+      const cachedResults = [];
+      const uncachedRequests = [];
+      for (const request of countRequests) {
+        const { rowRequestFilters, includePatientIds } = request;
+        const cacheKey = toRowCountCacheKey(rowRequestFilters, includePatientIds);
+        const cached = rowCountResultCacheRef.current.get(cacheKey);
+        if (cached) {
+          cachedResults.push({ request, payload: cached });
+        } else {
+          uncachedRequests.push({ request, cacheKey });
+        }
+      }
 
-            if (!cachedResult) {
+      // Apply cached results immediately.
+      for (const { request, payload } of cachedResults) {
+        const { rowKey, fallbackCount, includePatientIds } = request;
+        const resolvedCount = payload.count;
+        nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
+          ? Math.max(0, Math.round(resolvedCount))
+          : fallbackCount;
+        if (includePatientIds) {
+          const resolvedPatientIds = normalizeInstanceValues(payload.patientIds);
+          if (resolvedPatientIds.length > 0) {
+            nextPatientIdsByRowKey[rowKey] = resolvedPatientIds;
+          }
+        }
+      }
+
+      // Fetch uncached rows: attempt batch endpoint first, fall back to
+      // a concurrency-limited pool of individual requests if batch fails.
+      if (uncachedRequests.length > 0) {
+        let batchFailed = false;
+        let batchResults = null;
+
+        try {
+          const batchQueries = uncachedRequests.map(({ request }) => ({
+            filters: request.rowRequestFilters,
+            includePatientIds: request.includePatientIds,
+          }));
+          batchResults = await fetchDeepPheFilterCountBatch(batchQueries);
+        } catch {
+          batchFailed = true;
+        }
+
+        if (!batchFailed && Array.isArray(batchResults)) {
+          // Process batch results positionally.
+          batchResults.forEach((result, index) => {
+            const { request, cacheKey } = uncachedRequests[index];
+            const { rowKey, fallbackCount, includePatientIds } = request;
+            try {
+              const normalizedCountPayload = normalizeCountResponse(result);
               if (rowCountResultCacheRef.current.size >= 2000) {
                 rowCountResultCacheRef.current.clear();
               }
               rowCountResultCacheRef.current.set(cacheKey, normalizedCountPayload);
+              const resolvedCount = normalizedCountPayload.count;
+              nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
+                ? Math.max(0, Math.round(resolvedCount))
+                : fallbackCount;
+              if (includePatientIds) {
+                const resolvedPatientIds = normalizeInstanceValues(normalizedCountPayload.patientIds);
+                if (resolvedPatientIds.length > 0) {
+                  nextPatientIdsByRowKey[rowKey] = resolvedPatientIds;
+                }
+              }
+            } catch {
+              nextCountsByRowKey[rowKey] = fallbackCount;
             }
-
-            const resolvedCount = normalizedCountPayload.count;
-            nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
-              ? Math.max(0, Math.round(resolvedCount))
-              : fallbackCount;
-
-            if (includePatientIds) {
-              const resolvedPatientIds = normalizeInstanceValues(normalizedCountPayload.patientIds);
-              if (resolvedPatientIds.length > 0) {
-                nextPatientIdsByRowKey[rowKey] = resolvedPatientIds;
+          });
+        } else {
+          // Batch unavailable — fall back to concurrency-limited individual requests.
+          const CONCURRENCY = 8;
+          let index = 0;
+          const runNext = async () => {
+            while (index < uncachedRequests.length) {
+              const current = uncachedRequests[index++];
+              const { request, cacheKey } = current;
+              const { rowKey, rowRequestFilters, fallbackCount, includePatientIds } = request;
+              try {
+                const normalizedCountPayload = normalizeCountResponse(
+                  await fetchDeepPheFilterCount({ filters: rowRequestFilters, includePatientIds })
+                );
+                if (rowCountResultCacheRef.current.size >= 2000) {
+                  rowCountResultCacheRef.current.clear();
+                }
+                rowCountResultCacheRef.current.set(cacheKey, normalizedCountPayload);
+                const resolvedCount = normalizedCountPayload.count;
+                nextCountsByRowKey[rowKey] = Number.isFinite(resolvedCount)
+                  ? Math.max(0, Math.round(resolvedCount))
+                  : fallbackCount;
+                if (includePatientIds) {
+                  const resolvedPatientIds = normalizeInstanceValues(normalizedCountPayload.patientIds);
+                  if (resolvedPatientIds.length > 0) {
+                    nextPatientIdsByRowKey[rowKey] = resolvedPatientIds;
+                  }
+                }
+              } catch {
+                nextCountsByRowKey[rowKey] = fallbackCount;
               }
             }
-          } catch {
-            nextCountsByRowKey[rowKey] = fallbackCount;
-          }
-        })
-      );
+          };
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, uncachedRequests.length) }, runNext));
+        }
+      }
 
       if (isActive) {
         setIncludedCountByRowKey(nextCountsByRowKey);
@@ -3152,15 +3218,11 @@ function FiltersView() {
         });
         markInitialIncludedCountsReady();
         if (SHOULD_LOG_FILTERS_PERF) {
-          // eslint-disable-next-line no-console
-          console.log("[FiltersView] row-level counts complete", {
-            requestCount: countRequests.length,
-            totalMs: Math.round(
-              ((typeof performance !== "undefined" && typeof performance.now === "function"
-                ? performance.now()
-                : Date.now()) - includedCountsStartTime) * 100
-            ) / 100,
-          });
+          logMilestone("Row counts ready", Math.round(
+            ((typeof performance !== "undefined" && typeof performance.now === "function"
+              ? performance.now()
+              : Date.now()) - includedCountsStartTime) * 100
+          ) / 100, { requests: countRequests.length });
         }
       }
     };
@@ -3358,6 +3420,7 @@ function FiltersView() {
       setCountError("");
       setIsCountLoading(false);
       setCurrentPatientGridPage(0);
+      patientGridPageCacheRef.current = new Map();
       setPatientGridPageCache(new Map());
       setPatientGridPageError("");
       setIsPatientGridPageLoading(false);
@@ -3370,6 +3433,7 @@ function FiltersView() {
     setCountError("");
     setCountResult(null);
     setCurrentPatientGridPage(0);
+    patientGridPageCacheRef.current = new Map();
     setPatientGridPageCache(new Map());
     setPatientGridPageError("");
     setIsPatientGridPageLoading(false);
@@ -3415,8 +3479,7 @@ function FiltersView() {
         }
         endSpan(filterSpan, "ok", successMeta);
         if (SHOULD_LOG_FILTERS_PERF) {
-          // eslint-disable-next-line no-console
-          console.log("[FiltersView] filter query complete", successMeta);
+          logMilestone("Filter query", successMeta.totalMs, { count: successMeta.resultCount });
         }
         setCountResult(nextResult);
       } catch (error) {
@@ -3641,6 +3704,7 @@ function FiltersView() {
 
   useEffect(() => {
     setCurrentPatientGridPage(0);
+    patientGridPageCacheRef.current = new Map();
     setPatientGridPageCache(new Map());
     setPatientGridPageError("");
     setIsPatientGridPageLoading(false);
@@ -3675,7 +3739,7 @@ function FiltersView() {
       };
     }
 
-    if (patientGridPageCache.has(currentPatientGridPage)) {
+    if (patientGridPageCacheRef.current.has(currentPatientGridPage)) {
       setIsPatientGridPageLoading(false);
       setPatientGridPageError("");
       return () => {
@@ -3723,23 +3787,21 @@ function FiltersView() {
           return;
         }
 
+        patientGridPageCacheRef.current.set(currentPatientGridPage, pageRows);
         setPatientGridPageCache((previousCache) => {
           const nextCache = new Map(previousCache);
           nextCache.set(currentPatientGridPage, pageRows);
           return nextCache;
         });
-        setPatientGridPageError("");
         if (SHOULD_LOG_FILTERS_PERF) {
-          // eslint-disable-next-line no-console
-          console.log("[FiltersView] patient grid page loaded", {
-            page: currentPatientGridPage,
-            patientCount: pageRows.length,
+          logMilestone("Patient grid page loaded", Math.round(
+            ((typeof performance !== "undefined" && typeof performance.now === "function"
+              ? performance.now()
+              : Date.now()) - pageLoadStartTime) * 100
+          ) / 100, {
+            page: currentPatientGridPage + 1,
+            patients: pageRows.length,
             fetchMs,
-            totalMs: Math.round(
-              ((typeof performance !== "undefined" && typeof performance.now === "function"
-                ? performance.now()
-                : Date.now()) - pageLoadStartTime) * 100
-            ) / 100,
           });
         }
       } catch (error) {
@@ -3764,12 +3826,12 @@ function FiltersView() {
     cohortSize,
     currentPatientGridPage,
     currentPatientGridPageIds,
-    patientGridPageCache,
     patientGridPageRetryToken,
     shouldShowPatientDetailGrid,
   ]);
 
   const handleRetryPatientSummary = useCallback(() => {
+    patientGridPageCacheRef.current.delete(currentPatientGridPage);
     setPatientGridPageCache((previousCache) => {
       const nextCache = new Map(previousCache);
       nextCache.delete(currentPatientGridPage);

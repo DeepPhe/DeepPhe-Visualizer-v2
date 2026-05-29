@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dphe-data-api"
+		}
+	],
+	"settings": {}
+}

@@ -13,6 +13,7 @@ import ViewColumnIcon from "@mui/icons-material/ViewColumn";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import Masonry from "@mui/lab/Masonry";
 import {
   Box,
   Button,
@@ -489,13 +490,36 @@ function getDetailNameStyle(item) {
   };
 }
 
-function DetailPanel({ row }) {
+function DetailPanel({ row, onPatientOpen }) {
   const theme = useTheme();
   const details = getDetailSections(row?.original?._raw);
+  const patientId = String(row?.original?.patientId || "").trim();
+  const canShowDocumentViewerButton = typeof onPatientOpen === "function" && Boolean(patientId);
+  const detailPanelHeader = (
+    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+        Patient Summary
+      </Typography>
+      {canShowDocumentViewerButton ? (
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={(event) => {
+            event.stopPropagation();
+            onPatientOpen(patientId);
+          }}
+          sx={{ textTransform: "none", fontWeight: 600 }}
+        >
+          Show in Document Viewer
+        </Button>
+      ) : null}
+    </Box>
+  );
 
   if (details.length === 0) {
     return (
       <Box sx={{ px: 2, py: 0.75 }}>
+        <Box sx={{ mb: 0.4 }}>{detailPanelHeader}</Box>
         <Typography variant="body2" color="text.secondary">
           No additional patient details available.
         </Typography>
@@ -536,71 +560,109 @@ function DetailPanel({ row }) {
     <Box
       sx={{
         display: "flex",
-        flexWrap: "wrap",
-        alignItems: "baseline",
-        gap: "4px 12px",
+        flexDirection: "column",
+        alignItems: "stretch",
+        gap: 0.75,
         px: 2,
         py: 0.75,
       }}
     >
-      {details.map((section) => (
-        <Box
-          key={section.key}
-          component="span"
-          sx={{
-            display: "inline-flex",
-            alignItems: "baseline",
-            flexWrap: "wrap",
-            gap: "2px 4px",
-            minWidth: 0,
-            mr: 1.5,
-          }}
-        >
-          <Typography
-            component="span"
-            variant="caption"
+      {detailPanelHeader}
+      <Masonry
+        columns={{ xs: 1, sm: 2, md: 3, lg: 4, xl: 5 }}
+        spacing={1}
+        sx={{
+          m: 0,
+          width: "100%",
+          alignContent: "flex-start",
+        }}
+      >
+        {details.map((section) => (
+          <Box
+            key={section.key}
+            component="div"
             sx={{
-              bgcolor: alpha(accentColor, 0.12),
-              color: accentColor,
-              px: 0.75,
-              py: 0.125,
-              borderRadius: "4px",
-              fontSize: "0.7rem",
-              fontWeight: 700,
-              letterSpacing: "0.03em",
-              textTransform: "uppercase",
-              whiteSpace: "nowrap",
+              display: "flex",
+              flexDirection: "column",
+              gap: 0.55,
+              minWidth: 0,
+              width: "100%",
+              p: 0.75,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 1,
+              bgcolor: alpha(theme.palette.background.paper, 0.72),
             }}
           >
-            {section.label}
-          </Typography>
+            <Typography
+              component="div"
+              variant="caption"
+              sx={{
+                bgcolor: alpha(accentColor, 0.12),
+                color: accentColor,
+                px: 0.75,
+                py: 0.125,
+                borderRadius: "6px",
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                alignSelf: "flex-start",
+              }}
+            >
+              {section.label}
+            </Typography>
 
-          <Box component="span" sx={{ display: "inline-flex", alignItems: "baseline", flexWrap: "wrap", ml: 0.5 }}>
-            {section.items.map((item, itemIndex) => {
-              const itemName = String(item?.name ?? item?.value ?? "").trim() || "Unnamed";
-              const badges = renderDetailItemChips(item)
-                .map((chipNode, chipIndex) => ({
-                  key: chipNode?.key || `${section.key}-${itemIndex}-chip-${chipIndex}`,
-                  label: chipNode?.props?.label,
-                  color: chipNode?.props?.color || "default",
-                }))
-                .filter((badge) => Boolean(String(badge.label || "").trim()));
+            <Box
+              component="div"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 0.35,
+                minWidth: 0,
+              }}
+            >
+              {section.items.map((item, itemIndex) => {
+                const itemName = String(item?.name ?? item?.value ?? "").trim() || "Unnamed";
+                const badges = renderDetailItemChips(item)
+                  .map((chipNode, chipIndex) => ({
+                    key: chipNode?.key || `${section.key}-${itemIndex}-chip-${chipIndex}`,
+                    label: chipNode?.props?.label,
+                    color: chipNode?.props?.color || "default",
+                  }))
+                  .filter((badge) => Boolean(String(badge.label || "").trim()));
 
-              return (
-                <React.Fragment key={`${section.key}-${itemIndex}`}>
+                return (
                   <Box
-                    component="span"
-                    sx={{ display: "inline-flex", alignItems: "center", whiteSpace: "nowrap", minWidth: 0 }}
+                    key={`${section.key}-${itemIndex}`}
+                    component="div"
+                    sx={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      flexWrap: "wrap",
+                      gap: "2px 6px",
+                      minWidth: 0,
+                    }}
                   >
                     <Typography
                       component="span"
                       variant="body2"
                       sx={
                         item?.negated || item?.historic
-                          ? getDetailNameStyle(item)
+                          ? {
+                              ...getDetailNameStyle(item),
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              lineHeight: 1.25,
+                            }
                           : {
                               ...getDetailNameStyle(item),
                               color: alpha(theme.palette.text.primary, 0.85),
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                              lineHeight: 1.25,
                             }
                       }
                     >
@@ -608,7 +670,15 @@ function DetailPanel({ row }) {
                     </Typography>
 
                     {badges.length > 0 ? (
-                      <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, ml: 0.5 }}>
+                      <Box
+                        component="span"
+                        sx={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 0.5,
+                          flexWrap: "wrap",
+                        }}
+                      >
                         {badges.map((badge) => {
                           const badgeColor = badgeColorByChipColor[badge.color] || badgeColorByChipColor.default;
                           return (
@@ -619,9 +689,9 @@ function DetailPanel({ row }) {
                               sx={{
                                 px: 0.5,
                                 py: 0,
-                                borderRadius: "3px",
+                                borderRadius: "9px",
                                 fontSize: "0.65rem",
-                                lineHeight: 1.4,
+                                lineHeight: 1.5,
                                 border: "1px solid",
                                 borderColor: badgeColor.borderColor,
                                 color: badgeColor.color,
@@ -636,26 +706,12 @@ function DetailPanel({ row }) {
                       </Box>
                     ) : null}
                   </Box>
-
-                  {itemIndex < section.items.length - 1 ? (
-                    <Typography
-                      component="span"
-                      sx={{
-                        mx: 0.5,
-                        color: alpha(theme.palette.text.primary, 0.3),
-                        fontSize: "0.85rem",
-                        lineHeight: 1,
-                      }}
-                    >
-                      ·
-                    </Typography>
-                  ) : null}
-                </React.Fragment>
-              );
-            })}
+                );
+              })}
+            </Box>
           </Box>
-        </Box>
-      ))}
+        ))}
+      </Masonry>
     </Box>
   );
 }
@@ -836,7 +892,18 @@ export default function PatientGrid({
   const showCollapsedHeaderSummary = Boolean(collapsible && collapsedHeaderSummary);
 
   const content = (
-    <>
+    <Box
+      sx={
+        embedded
+          ? {
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              minHeight: 0,
+            }
+          : undefined
+      }
+    >
       <Stack
         direction={{ xs: "column", sm: "row" }}
         alignItems={{ xs: "stretch", sm: "center" }}
@@ -1000,13 +1067,20 @@ export default function PatientGrid({
         id={collapsiblePanelId}
         hidden={!shouldRenderGridBody}
         aria-hidden={!shouldRenderGridBody}
-        sx={{ display: shouldRenderGridBody ? "block" : "none" }}
+        sx={{
+          display: shouldRenderGridBody ? (embedded ? "flex" : "block") : "none",
+          flexDirection: embedded ? "column" : undefined,
+          flex: embedded ? "1 1 auto" : undefined,
+          minHeight: embedded ? 0 : undefined,
+        }}
       >
           <TableContainer
             sx={{
               maxHeight: embedded ? "none" : 560,
               overflowX: "auto",
-              overflowY: embedded ? "visible" : "auto",
+              overflowY: "auto",
+              flex: embedded ? "1 1 auto" : undefined,
+              minHeight: embedded ? 0 : undefined,
               border: "1px solid",
               borderColor: "divider",
               borderRadius: 1,
@@ -1174,7 +1248,7 @@ export default function PatientGrid({
                           bgcolor: theme.custom?.rowHoverBg || alpha(theme.palette.primary.main, 0.08),
                         }}
                       >
-                        <DetailPanel row={row} />
+                        <DetailPanel row={row} onPatientOpen={onPatientOpen} />
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -1260,11 +1334,18 @@ export default function PatientGrid({
           </MenuItem>
         )}
       </Menu>
-    </>
+    </Box>
   );
 
   if (embedded) {
-    return <Box data-testid="patient-grid-embedded">{content}</Box>;
+    return (
+      <Box
+        data-testid="patient-grid-embedded"
+        sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}
+      >
+        {content}
+      </Box>
+    );
   }
 
   return (
@@ -1290,9 +1371,11 @@ SortIndicator.propTypes = {
 DetailPanel.propTypes = {
   row: PropTypes.shape({
     original: PropTypes.shape({
+      patientId: PropTypes.string,
       _raw: PropTypes.object,
     }),
   }).isRequired,
+  onPatientOpen: PropTypes.func,
 };
 
 const summaryValueShape = PropTypes.shape({

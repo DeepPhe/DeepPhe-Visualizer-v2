@@ -109,3 +109,52 @@ describe("PatientGrid column sizing", () => {
     unmount();
   });
 });
+
+describe("PatientGrid detail panel actions", () => {
+  it("opens document viewer from expanded patient summary button", async () => {
+    const onPatientOpen = jest.fn();
+    const rowWithDetails = {
+      ...baseRow,
+      patientId: "TEST-ID-OPEN",
+      _raw: {
+        diagnoses: [{ name: "Invasive Breast Carcinoma" }],
+      },
+    };
+
+    const { container, unmount } = renderComponent(
+      <PatientGrid
+        embedded
+        data={[rowWithDetails]}
+        totalCohortCount={1}
+        cohortSize={1}
+        onPatientOpen={onPatientOpen}
+      />
+    );
+
+    const expandButton = container.querySelector('button[aria-label="Expand row details"]');
+    expect(expandButton).not.toBeNull();
+
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    let showInViewerButton = null;
+    await waitFor(() => {
+      showInViewerButton = Array.from(container.querySelectorAll("button")).find((buttonNode) =>
+        String(buttonNode.textContent || "").includes("Show in Document Viewer")
+      );
+      expect(showInViewerButton).not.toBeNull();
+    });
+
+    await act(async () => {
+      showInViewerButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onPatientOpen).toHaveBeenCalledTimes(1);
+    expect(onPatientOpen).toHaveBeenCalledWith("TEST-ID-OPEN");
+
+    unmount();
+  });
+});

@@ -53,6 +53,7 @@ const REDUCED_MOTION_STYLES = (
         "*, *::before, *::after": {
           transitionDuration: "0.01ms !important",
           animationDuration: "0.01ms !important",
+          animationIterationCount: "1 !important",
         },
       },
     }}

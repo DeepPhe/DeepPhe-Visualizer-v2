@@ -7,6 +7,7 @@ let getEvents;
 let clearEvents;
 let downloadAsJson;
 let getSummaryTable;
+let logMilestone;
 
 if (!IS_DEV) {
   startSpan = () => null;
@@ -15,6 +16,7 @@ if (!IS_DEV) {
   clearEvents = () => undefined;
   downloadAsJson = () => undefined;
   getSummaryTable = () => null;
+  logMilestone = () => undefined;
 } else if (process.env.NODE_ENV !== "development") {
   startSpan = () => null;
   endSpan = () => null;
@@ -22,6 +24,7 @@ if (!IS_DEV) {
   clearEvents = () => undefined;
   downloadAsJson = () => undefined;
   getSummaryTable = () => null;
+  logMilestone = () => undefined;
 } else {
   const VALID_TYPES = new Set([
     "api_call",
@@ -143,13 +146,25 @@ if (!IS_DEV) {
 
     addToBuffer(event);
 
+    return event;
+  };
+
+  logMilestone = (label, timingMs, meta = {}) => {
+    const normalizedLabel = String(label || "").trim();
+    if (!normalizedLabel) {
+      return;
+    }
+
+    const ms = Number(timingMs);
+    const durationText = Number.isFinite(ms) ? ` — ${Math.round(ms)}ms` : "";
+    const normalizedMeta = normalizeMeta(meta);
+    const hasMeta = Object.keys(normalizedMeta).length > 0;
+
     // eslint-disable-next-line no-console
     console.log(
-      `[perf:${event.type}] ${event.name} — ${event.duration}ms${event.status !== "ok" ? ` (${event.status})` : ""}`,
-      Object.keys(event.meta).length ? event.meta : undefined
+      `[DeepPhe Perf] ${normalizedLabel}${durationText}`,
+      hasMeta ? normalizedMeta : undefined
     );
-
-    return event;
   };
 
   getEvents = () => _buffer.slice();
@@ -227,4 +242,4 @@ if (!IS_DEV) {
   };
 }
 
-export { startSpan, endSpan, getEvents, clearEvents, downloadAsJson, getSummaryTable };
+export { startSpan, endSpan, getEvents, clearEvents, downloadAsJson, getSummaryTable, logMilestone };

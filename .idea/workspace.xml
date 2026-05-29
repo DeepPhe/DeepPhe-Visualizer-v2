@@ -6,10 +6,16 @@
   <component name="ChangeListManager">
     <list default="true" id="d8eba3e8-c32b-4e6b-abb9-fe2370053215" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/CLAUDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/PatientGrid.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/PatientGrid.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/components/patient/CancerTumorSummaryCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/CancerTumorSummaryCard.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientDemographicsCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientDemographicsCard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientDocumentViewerCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientDocumentViewerCard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/patient/PatientDocumentsCard.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/patient/PatientDocumentsCard.jsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utils/patientView/timelineChartLayout.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils/patientView/timelineChartLayout.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/views/filters.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/filters.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/views/patient.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/views/patient.jsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../dphe-data-api/src/controllers/patient-document-controller.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/src/controllers/patient-document-controller.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../dphe-data-api/src/db/sqlite-client.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/src/db/sqlite-client.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../dphe-data-api/src/routes/patient-document-routes.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/src/routes/patient-document-routes.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../dphe-data-api/test/unit/controllers/patient-document-controller.test.js" beforeDir="false" afterPath="$PROJECT_DIR$/../dphe-data-api/test/unit/controllers/patient-document-controller.test.js" afterDir="false" />
     </list>
@@ -166,7 +172,7 @@
       <workItem from="1776799447640" duration="4913000" />
       <workItem from="1776871259136" duration="8147000" />
       <workItem from="1777318799835" duration="189000" />
-      <workItem from="1777404620370" duration="1832000" />
+      <workItem from="1777404620370" duration="2389000" />
     </task>
     <servers />
   </component>
@@ -178,7 +184,7 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="javascript">
           <url>file://$PROJECT_DIR$/src/views/filters.js</url>
-          <line>160</line>
+          <line>163</line>
           <option name="timeStamp" value="1" />
         </line-breakpoint>
       </breakpoints>

@@ -166,14 +166,6 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
           setErrorsByClass(nextErrorsByClass);
           setIsLoading(false);
 
-          logPerf(errorContext, "load complete", {
-            classes: classList.length,
-            rows: totalRowsProcessed,
-            requestMs: Math.round(requestEndTime - requestStartTime),
-            summarizeMs: Math.round(summarizeEndTime - summarizeStartTime),
-            totalMs: Math.round(summarizeEndTime - loadStartTime),
-            serverTimingMs: Number(summaryResult?.timing?.totalMs) || null,
-          });
           endSpan(span, "ok", {
             classes: classList.length,
             rows: totalRowsProcessed,
