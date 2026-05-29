@@ -2878,20 +2878,13 @@ function FiltersView() {
   const rootError = omopData.errorMessage;
   const attributeRootError = attributeData.errorMessage;
   const conceptRootError = conceptData.errorMessage;
-  const isBaseFilterDataLoading = isLoading || isAttributeLoading || isConceptLoading;
-  const isInitialFilterHydrationLoading =
-    !isBaseFilterDataLoading &&
-    !rootError &&
-    !attributeRootError &&
-    !conceptRootError &&
-    !isInitialIncludedCountsReady;
-  const shouldShowFilterLoadingState =
-    isBaseFilterDataLoading || isInitialFilterHydrationLoading;
-  const canRenderFilterSections =
-    !shouldShowFilterLoadingState &&
-    !rootError &&
-    !attributeRootError &&
-    !conceptRootError;
+  const hasDataErrors = !!(rootError || attributeRootError || conceptRootError);
+  // Show the loading indicator until the first full count pass completes. Once
+  // isInitialIncludedCountsReady is true we keep the sections visible even if
+  // React StrictMode triggers a second useBatchDataLoader run (which briefly
+  // sets isLoading back to true before the second API call finishes).
+  const shouldShowFilterLoadingState = !hasDataErrors && !isInitialIncludedCountsReady;
+  const canRenderFilterSections = !hasDataErrors && isInitialIncludedCountsReady;
   const activeFilters = useMemo(
     () =>
       buildActiveFilters({
