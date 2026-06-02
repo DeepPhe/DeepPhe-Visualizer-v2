@@ -5,7 +5,10 @@ import process from "node:process";
 import { chromium } from "playwright";
 
 const BASE_URL = process.env.APP_URL || "http://localhost:3000";
-const OUTPUT_DIR = path.resolve("output/playwright");
+const SCREENSHOT_ROOT_DIR = process.env.VIZ3_SCREENSHOT_DIR
+  ? path.resolve(process.env.VIZ3_SCREENSHOT_DIR)
+  : path.resolve("..", "Viz3_screenshots");
+const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const REPORT_PATH = path.join(OUTPUT_DIR, "filter-card-bottom-alignment.json");
 const VIEWPORT = { width: 2200, height: 1400 };
 
@@ -30,13 +33,10 @@ async function gotoFilters(page) {
   await page.goto(filtersUrl, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-  await page
-    .getByRole("heading", { name: "Patient Cohort Explorer", exact: true })
-    .first()
-    .waitFor({
-      state: "visible",
-      timeout: 15000,
-    });
+  await page.getByRole("heading", { name: "Patient Cohort Explorer", exact: true }).first().waitFor({
+    state: "visible",
+    timeout: 15000,
+  });
 
   await page.locator(".filter-section-grid .filter-card").first().waitFor({
     state: "visible",
@@ -59,28 +59,22 @@ async function collectSectionMetrics(page) {
     };
 
     return sectionGridNodes.map((sectionGridNode, sectionIndex) => {
-      const sectionHeadingText = String(
-        sectionGridNode.parentElement?.querySelector("h2")?.textContent || ""
-      ).trim();
+      const sectionHeadingText = String(sectionGridNode.parentElement?.querySelector("h2")?.textContent || "").trim();
       const sectionName = sectionHeadingText || `Section ${sectionIndex + 1}`;
 
-      const columnNodes = Array.from(
-        sectionGridNode.querySelectorAll(":scope > .filter-section-column")
-      );
+      const columnNodes = Array.from(sectionGridNode.querySelectorAll(":scope > .filter-section-column"));
       const columns = columnNodes.map((columnNode, columnIndex) => {
         const columnRect = columnNode.getBoundingClientRect();
-        const cards = Array.from(columnNode.querySelectorAll(":scope > .filter-card")).map(
-          (cardNode) => {
-            const cardRect = cardNode.getBoundingClientRect();
-            return {
-              title: getFilterTitleFromCard(cardNode) || "(untitled)",
-              columnIndex,
-              top: round(cardRect.top),
-              bottom: round(cardRect.bottom),
-              height: round(cardRect.height),
-            };
-          }
-        );
+        const cards = Array.from(columnNode.querySelectorAll(":scope > .filter-card")).map((cardNode) => {
+          const cardRect = cardNode.getBoundingClientRect();
+          return {
+            title: getFilterTitleFromCard(cardNode) || "(untitled)",
+            columnIndex,
+            top: round(cardRect.top),
+            bottom: round(cardRect.bottom),
+            height: round(cardRect.height),
+          };
+        });
         const lastCardBottom = cards.length > 0 ? cards[cards.length - 1].bottom : null;
 
         return {
@@ -161,9 +155,7 @@ function printFailureDetails(failingSections) {
         `  - column ${column.columnIndex}: last card bottom ${column.lastCardBottom}px (${column.cardCount} card(s))`
       );
       column.cards.forEach((card) => {
-        console.error(
-          `      • ${card.title}: height ${card.height}px, bottom ${card.bottom}px`
-        );
+        console.error(`      • ${card.title}: height ${card.height}px, bottom ${card.bottom}px`);
       });
     });
   });
@@ -180,8 +172,7 @@ async function run() {
   try {
     await gotoFilters(page);
     const sectionMetrics = await collectSectionMetrics(page);
-    const { checkedSections, skippedSections, failingSections } =
-      buildAlignmentReport(sectionMetrics);
+    const { checkedSections, skippedSections, failingSections } = buildAlignmentReport(sectionMetrics);
 
     const report = {
       generatedAt: new Date().toISOString(),
@@ -198,9 +189,7 @@ async function run() {
     await fs.writeFile(REPORT_PATH, JSON.stringify(report, null, 2));
 
     if (checkedSections.length === 0) {
-      throw new Error(
-        "No sections had at least two non-empty columns. Could not validate bottom alignment."
-      );
+      throw new Error("No sections had at least two non-empty columns. Could not validate bottom alignment.");
     }
 
     if (failingSections.length > 0) {
@@ -210,9 +199,7 @@ async function run() {
       );
     }
 
-    console.log(
-      `Filter card bottom alignment passed for ${checkedSections.length} section(s). Report: ${REPORT_PATH}`
-    );
+    console.log(`Filter card bottom alignment passed for ${checkedSections.length} section(s). Report: ${REPORT_PATH}`);
   } finally {
     await context.close();
     await browser.close();

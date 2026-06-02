@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT_DIR="$ROOT_DIR/output/playwright"
+SCREENSHOT_ROOT_DIR="${VIZ3_SCREENSHOT_DIR:-$ROOT_DIR/../Viz3_screenshots}"
+OUTPUT_DIR="$SCREENSHOT_ROOT_DIR/playwright"
 DOCS_SCREENSHOT_DIR="$ROOT_DIR/docs/assets/screenshots"
 SUMMARY_PATH="$OUTPUT_DIR/capture-summary.json"
 FULL_REPORT_PATH="$ROOT_DIR/docs/full-report.md"
@@ -40,7 +41,7 @@ required_files=(
   "31-accessibility-view.png"
 )
 
-mkdir -p "$DOCS_SCREENSHOT_DIR" "$ROOT_DIR/output/reports"
+mkdir -p "$DOCS_SCREENSHOT_DIR" "$ROOT_DIR/output/reports" "$OUTPUT_DIR"
 
 missing=0
 for file in "${required_files[@]}"; do
@@ -61,11 +62,11 @@ done
 
 cd "$ROOT_DIR"
 
-node <<'NODE'
+SCREENSHOT_OUTPUT_DIR="$OUTPUT_DIR" node <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
 
-const summaryPath = path.join(process.cwd(), "output", "playwright", "capture-summary.json");
+const summaryPath = path.join(process.env.SCREENSHOT_OUTPUT_DIR, "capture-summary.json");
 const reportPath = path.join(process.cwd(), "docs", "full-report.md");
 const startMarker = "<!-- CAPTURE_NOTES_START -->";
 const endMarker = "<!-- CAPTURE_NOTES_END -->";

@@ -1,0 +1,45 @@
+# Keep Codex focused on source code and live app logic.
+
+# Dependencies and caches
+node_modules/
+.pnp
+.pnp.js
+.npm/
+.eslintcache
+
+# Build and test outputs
+build/
+coverage/
+site/
+output/
+screenshots/
+
+# Generated docs and copied fixtures
+docs/
+public/docs/
+public/docs/viz2/
+
+# Large local data and envs
+data/
+.venv-mkdocs/
+
+# Local IDE noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# High-volume project guidance docs
+CODEX_*.md
+CLAUDE.md
+ACCESSIBILITY.md
+CHANGELOG.md
+CONTRIBUTING.md
+QUICKSTART.md
+README.md
+mkdocs.yml
+
+# Large lockfiles and generated maps
+package-lock.json

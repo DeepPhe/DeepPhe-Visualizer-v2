@@ -5,7 +5,10 @@ import process from "node:process";
 import { chromium } from "playwright";
 
 const BASE_URL = process.env.APP_URL || "http://localhost:3000";
-const OUTPUT_DIR = path.resolve("output/playwright");
+const SCREENSHOT_ROOT_DIR = process.env.VIZ3_SCREENSHOT_DIR
+  ? path.resolve(process.env.VIZ3_SCREENSHOT_DIR)
+  : path.resolve("..", "Viz3_screenshots");
+const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const SUMMARY_PATH = path.join(OUTPUT_DIR, "capture-summary.json");
 const VIEWPORT = { width: 2200, height: 1400 };
 const PLACEHOLDER_PNG_BASE64 =
@@ -97,15 +100,13 @@ async function captureLocatorOrFallback(page, locator, name, fallbackFullPage = 
   const target = locator.first();
   await target.scrollIntoViewIfNeeded().catch(() => {});
   await sleep(250);
-  await target
-    .screenshot({ path: filePath(name), timeout: 45000, animations: "disabled" })
-    .catch(async () => {
-      await page.screenshot({
-        path: filePath(name),
-        fullPage: fallbackFullPage,
-        timeout: 45000,
-        animations: "disabled",
-      });
+  await target.screenshot({ path: filePath(name), timeout: 45000, animations: "disabled" }).catch(async () => {
+    await page.screenshot({
+      path: filePath(name),
+      fullPage: fallbackFullPage,
+      timeout: 45000,
+      animations: "disabled",
+    });
     throw new Error("Element screenshot failed; captured fallback viewport");
   });
 }
@@ -128,13 +129,9 @@ async function withCapture(page, config) {
     try {
       await captureViewport(page, config.file, config.fallbackFullPage || false);
     } catch (fallbackError) {
-      const fallbackMessage =
-        fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
       entry.note = `${entry.note} | fallback screenshot failed: ${fallbackMessage}`;
-      await fs.writeFile(
-        filePath(config.file),
-        Buffer.from(PLACEHOLDER_PNG_BASE64, "base64")
-      );
+      await fs.writeFile(filePath(config.file), Buffer.from(PLACEHOLDER_PNG_BASE64, "base64"));
     }
     console.warn(`Fallback used for ${config.file}: ${entry.note}`);
   }
@@ -231,9 +228,7 @@ async function toggleCardHeightStates(page) {
   }
 
   if (sawDefault && sawFit) {
-    summary.runtimeNotes.push(
-      "Card height toggle automation exercised both states: normalized and fit-content."
-    );
+    summary.runtimeNotes.push("Card height toggle automation exercised both states: normalized and fit-content.");
   } else {
     summary.runtimeNotes.push(
       "Card height toggle state coverage was partial due to missing toggle control at runtime."
@@ -268,7 +263,10 @@ async function activateFilterSelection(page) {
       continue;
     }
 
-    await card.first().scrollIntoViewIfNeeded().catch(() => {});
+    await card
+      .first()
+      .scrollIntoViewIfNeeded()
+      .catch(() => {});
     await sleep(200);
 
     const interactive = card.locator("[role='button'][aria-pressed]");
@@ -293,9 +291,7 @@ async function capturePatientDetailsSeries(page) {
   const embeddedDetailsRegion = page.locator("[data-testid='patient-grid-embedded']").first();
   const legacyDetailsHeading = page.getByRole("heading", { name: /Patient Details/i }).first();
   const embeddedDetailsVisible = await waitForLocator(embeddedDetailsRegion, 15000);
-  const legacyDetailsVisible = embeddedDetailsVisible
-    ? false
-    : await waitForLocator(legacyDetailsHeading, 2000);
+  const legacyDetailsVisible = embeddedDetailsVisible ? false : await waitForLocator(legacyDetailsHeading, 2000);
   const detailsVisible = embeddedDetailsVisible || legacyDetailsVisible;
 
   if (!detailsVisible) {
@@ -409,7 +405,7 @@ async function capturePatientDetailsSeries(page) {
         throw new Error("Empty-search state text did not appear");
       }
 
-      await captureLocatorOrFallback(page, detailsCard, "25-patient-details-empty-search.png", false);
+      await captureLocatorOrFallback(page, detailsRegion, "25-patient-details-empty-search.png", false);
       await search.fill("");
     },
   });
@@ -428,9 +424,7 @@ async function captureEmbeddedPatientViewSeries(page) {
   ];
 
   if (!hasExpandButton) {
-    summary.runtimeNotes.push(
-      "EmbeddedPatientView capture skipped: no expandable patient rows found."
-    );
+    summary.runtimeNotes.push("EmbeddedPatientView capture skipped: no expandable patient rows found.");
     for (const entry of missingFiles) {
       await withCapture(page, {
         file: entry.file,
@@ -518,18 +512,12 @@ async function captureEmbeddedPatientViewSeries(page) {
     target: "Patient Summary Card (diagnoses, staging, biomarkers)",
     fallbackFullPage: false,
     run: async () => {
-      const summaryHeading = page
-        .getByRole("heading", { name: "Patient Summary", exact: true })
-        .first();
+      const summaryHeading = page.getByRole("heading", { name: "Patient Summary", exact: true }).first();
       const hasHeading = await waitForLocator(summaryHeading, 5000);
       if (!hasHeading) {
-        throw new Error(
-          "Patient Summary Card heading not visible (patient may have no summary data)"
-        );
+        throw new Error("Patient Summary Card heading not visible (patient may have no summary data)");
       }
-      const summaryCard = summaryHeading.locator(
-        "xpath=ancestor::*[contains(@class,'MuiCard-root')][1]"
-      );
+      const summaryCard = summaryHeading.locator("xpath=ancestor::*[contains(@class,'MuiCard-root')][1]");
       await captureLocatorOrFallback(page, summaryCard, "33-patient-summary-card.png", false);
     },
   });
@@ -698,12 +686,7 @@ async function run() {
     await captureEmbeddedPatientViewSeries(page);
 
     await captureRouteViewport(page, "/debug", "Debug View", "30-debug-view.png");
-    await captureRouteViewport(
-      page,
-      "/accessibility",
-      "Accessibility Statement",
-      "31-accessibility-view.png"
-    );
+    await captureRouteViewport(page, "/accessibility", "Accessibility Statement", "31-accessibility-view.png");
 
     for (const file of SCREENSHOT_ORDER) {
       await fs.access(filePath(file)).catch(() => {
@@ -721,9 +704,7 @@ async function run() {
 
     const missingCount = summary.missingStates.length;
     const total = SCREENSHOT_ORDER.length;
-    console.log(
-      `Capture complete. Screenshots targeted: ${total}. Missing/fallback states: ${missingCount}.`
-    );
+    console.log(`Capture complete. Screenshots targeted: ${total}. Missing/fallback states: ${missingCount}.`);
     console.log(`Summary written to ${SUMMARY_PATH}`);
   } finally {
     await context.close();
@@ -732,9 +713,7 @@ async function run() {
 }
 
 run().catch(async (error) => {
-  summary.runtimeNotes.push(
-    `Fatal capture error: ${error instanceof Error ? error.message : String(error)}`
-  );
+  summary.runtimeNotes.push(`Fatal capture error: ${error instanceof Error ? error.message : String(error)}`);
   await ensureOutput();
   await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
   console.error(error);

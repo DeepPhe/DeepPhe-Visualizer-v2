@@ -6,13 +6,13 @@ This page documents how the automated screenshots in this site are produced. All
 
 ## Prerequisites
 
-| Requirement | Version | Check |
-|---|---|---|
-| Node.js | 18 or higher | `node --version` |
-| npm | 8 or higher | `npm --version` |
-| DeepPhe Visualizer running | port 3000 | `curl -s http://localhost:3000 | grep -c DeepPhe` |
-| DeepPhe Data API running | port 3333 | `curl -s http://localhost:3333/health` |
-| Playwright browsers installed | — | see below |
+| Requirement                   | Version      | Check                                  |
+| ----------------------------- | ------------ | -------------------------------------- | ---------------- |
+| Node.js                       | 18 or higher | `node --version`                       |
+| npm                           | 8 or higher  | `npm --version`                        |
+| DeepPhe Visualizer running    | port 3000    | `curl -s http://localhost:3000         | grep -c DeepPhe` |
+| DeepPhe Data API running      | port 3333    | `curl -s http://localhost:3333/health` |
+| Playwright browsers installed | —            | see below                              |
 
 ### Install Playwright browsers (first time only)
 
@@ -50,7 +50,7 @@ PORT=3333 npm start
 npm run capture:screenshots
 ```
 
-This runs `scripts/capture-screenshots.mjs` headlessly. It opens a 2200×1400 Chromium window, navigates through all documented routes, and writes PNGs to `output/playwright/`.
+This runs `scripts/capture-screenshots.mjs` headlessly. It opens a 2200×1400 Chromium window, navigates through all documented routes, and writes PNGs to `../Viz3_screenshots/playwright/`.
 
 **Custom app URL** (if your dev server is on a different port):
 
@@ -61,7 +61,7 @@ APP_URL=http://localhost:3001 npm run capture:screenshots
 ### Step 3 — Check the output
 
 ```
-output/playwright/
+../Viz3_screenshots/playwright/
   01-home.png
   02-filters-overview.png
   ...
@@ -75,16 +75,16 @@ Open `capture-summary.json` to see which screenshots used fallback paths and why
 
 ## What the script captures
 
-| Range | Subject |
-|---|---|
-| 01 | Home route |
-| 02–03 | Filters overview and Identified Patients panel |
-| 04–07 | Theme selector (open state, Obsidian, Solstice, Vapor) |
-| 08–20 | All filter set sections and individual filter cards |
-| 21 | Active filter selection state |
+| Range | Subject                                                                  |
+| ----- | ------------------------------------------------------------------------ |
+| 01    | Home route                                                               |
+| 02–03 | Filters overview and Identified Patients panel                           |
+| 04–07 | Theme selector (open state, Obsidian, Solstice, Vapor)                   |
+| 08–20 | All filter set sections and individual filter cards                      |
+| 21    | Active filter selection state                                            |
 | 22–25 | Patient details grid (overview, column menu, expanded row, empty search) |
-| 32–33 | Embedded patient view drawer and Patient Summary Card |
-| 30–31 | Debug view and Accessibility Statement |
+| 32–33 | Embedded patient view drawer and Patient Summary Card                    |
+| 30–31 | Debug view and Accessibility Statement                                   |
 
 ### Data-dependent screenshots
 
@@ -94,7 +94,7 @@ Captures **32** and **33** require the backend to return patient data for at lea
 
 ## Building the full docs site
 
-`npm run docs:build` copies screenshots into `docs/assets/screenshots/`, then builds the MkDocs site to `site/`:
+`npm run docs:build` copies screenshots from `../Viz3_screenshots/playwright/` into `docs/assets/screenshots/`, then builds the MkDocs site to `site/`:
 
 ```bash
 npm run docs:build
