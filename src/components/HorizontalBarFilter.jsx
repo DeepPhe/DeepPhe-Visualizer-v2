@@ -370,7 +370,10 @@ export default function HorizontalBarFilter({
   );
   const [sortAnnouncement, setSortAnnouncement] = useState("");
   const chartContainerRef = useRef(null);
+  const scrollFrameRef = useRef(null);
   const [chartWidth, setChartWidth] = useState(FALLBACK_CHART_WIDTH);
+  const [viewportClientHeight, setViewportClientHeight] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
   const [hoveredRowIndex, setHoveredRowIndex] = useState(null);
   const [focusedRowIndex, setFocusedRowIndex] = useState(null);
   const hoverTimerRef = useRef(null);
@@ -394,19 +397,21 @@ export default function HorizontalBarFilter({
       return undefined;
     }
 
-    const updateWidth = (nextWidth) => {
+    const updateSize = (nextWidth, nextHeight) => {
       const resolvedWidth = Number(nextWidth) || element.clientWidth;
+      const resolvedHeight = Number(nextHeight) || element.clientHeight;
       setChartWidth(Math.max(MIN_CHART_WIDTH, Math.floor(resolvedWidth)));
+      setViewportClientHeight(Math.max(0, Math.floor(resolvedHeight)));
     };
 
-    updateWidth(element.clientWidth);
+    updateSize(element.clientWidth, element.clientHeight);
 
     if (typeof ResizeObserver !== "undefined") {
       const resizeObserver = new ResizeObserver((entries) => {
         if (entries.length === 0) {
           return;
         }
-        updateWidth(entries[0].contentRect.width);
+        updateSize(entries[0].contentRect.width, entries[0].contentRect.height);
       });
 
       resizeObserver.observe(element);
@@ -417,7 +422,7 @@ export default function HorizontalBarFilter({
     }
 
     if (typeof window !== "undefined") {
-      const handleResize = () => updateWidth(element.clientWidth);
+      const handleResize = () => updateSize(element.clientWidth, element.clientHeight);
       window.addEventListener("resize", handleResize);
       return () => {
         window.removeEventListener("resize", handleResize);
@@ -446,10 +451,22 @@ export default function HorizontalBarFilter({
       hoverTimerRef.current = null;
     }
   };
+  const clearScrollFrame = () => {
+    if (!scrollFrameRef.current) {
+      return;
+    }
+    if (typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scrollFrameRef.current);
+    } else {
+      clearTimeout(scrollFrameRef.current);
+    }
+    scrollFrameRef.current = null;
+  };
 
   useEffect(
     () => () => {
       clearHoverTimer();
+      clearScrollFrame();
     },
     []
   );
@@ -607,6 +624,44 @@ export default function HorizontalBarFilter({
     : typeof height === "number" && height > 0
       ? height
       : Math.min(calculatedHeight, 420);
+  const resolvedViewportHeight = fillContainer
+    ? viewportClientHeight || Math.min(calculatedHeight, 420)
+    : viewportHeight;
+  const shouldVirtualizeRows =
+    sortedData.length > 30 &&
+    Number.isFinite(resolvedViewportHeight) &&
+    resolvedViewportHeight > 0 &&
+    calculatedHeight > resolvedViewportHeight;
+  const visibleRowRange = useMemo(() => {
+    if (!shouldVirtualizeRows) {
+      return { start: 0, end: sortedData.length };
+    }
+
+    const overscanRows = 4;
+    const firstVisibleRow = Math.floor(
+      Math.max(0, scrollTop - verticalPaddingTop) / Math.max(1, rowHeight)
+    );
+    const visibleRowCount = Math.ceil(resolvedViewportHeight / Math.max(1, rowHeight));
+    const start = Math.max(0, firstVisibleRow - overscanRows);
+    const end = Math.min(sortedData.length, firstVisibleRow + visibleRowCount + overscanRows);
+
+    return { start, end };
+  }, [
+    resolvedViewportHeight,
+    rowHeight,
+    scrollTop,
+    shouldVirtualizeRows,
+    sortedData.length,
+    verticalPaddingTop,
+  ]);
+  const visibleRows = useMemo(
+    () =>
+      sortedData.slice(visibleRowRange.start, visibleRowRange.end).map((row, offset) => ({
+        row,
+        index: visibleRowRange.start + offset,
+      })),
+    [sortedData, visibleRowRange.end, visibleRowRange.start]
+  );
 
   // Theme custom tokens
   const custom = theme.custom || {};
@@ -683,6 +738,24 @@ export default function HorizontalBarFilter({
       onSortDimensionChange(nextDimension);
     }
   };
+  const handleViewportScroll = (event) => {
+    if (!shouldVirtualizeRows) {
+      return;
+    }
+
+    const nextScrollTop = Number(event.currentTarget?.scrollTop) || 0;
+    const schedule =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 0);
+    clearScrollFrame();
+    scrollFrameRef.current = schedule(() => {
+      scrollFrameRef.current = null;
+      setScrollTop((previousScrollTop) =>
+        Math.abs(previousScrollTop - nextScrollTop) > 1 ? nextScrollTop : previousScrollTop
+      );
+    });
+  };
 
   const handleToggleSelection = (label) => {
     if (!isInteractive) {
@@ -757,10 +830,20 @@ export default function HorizontalBarFilter({
   const handlePatientDotClick = (event, patientId) => {
     openPatientSummary(event.currentTarget, patientId, 0, true);
   };
-  const handlePatientDotMouseEnter = (event, patientId) => {
+  const handlePatientDotMouseEnter = (event, patientId, rowIndex = null) => {
+    const normalizedRowIndex = Number(rowIndex);
+    if (Number.isFinite(normalizedRowIndex)) {
+      setHoveredRowIndex(normalizedRowIndex);
+    }
     openPatientSummary(event.currentTarget, patientId, 200, false);
   };
-  const handlePatientDotMouseLeave = () => {
+  const handlePatientDotMouseLeave = (rowIndex = null) => {
+    const normalizedRowIndex = Number(rowIndex);
+    if (Number.isFinite(normalizedRowIndex)) {
+      setHoveredRowIndex((previousIndex) =>
+        previousIndex === normalizedRowIndex ? null : previousIndex
+      );
+    }
     hoverRequestIdRef.current += 1;
     clearHoverTimer();
     setSummaryTooltipState((previousState) => ({
@@ -1070,6 +1153,7 @@ export default function HorizontalBarFilter({
           <Box
             className="horizontal-bar-filter-chart-viewport"
             ref={chartContainerRef}
+            onScroll={handleViewportScroll}
             sx={{
               width: "100%",
               border: `1px solid ${theme.palette.divider}`,
@@ -1096,7 +1180,7 @@ export default function HorizontalBarFilter({
               height={calculatedHeight}
               viewBox={`0 0 ${chartWidth} ${calculatedHeight}`}
             >
-              {sortedData.map((row, index) => {
+              {visibleRows.map(({ row, index }) => {
                 const rowTop = verticalPaddingTop + index * rowHeight;
                 const rowCenterY = rowTop + rowHeight / 2;
                 const barY = rowCenterY - barHeight / 2;
@@ -1139,6 +1223,15 @@ export default function HorizontalBarFilter({
                   hoveredRowIndex === index && !isDisabled && !isSelected;
                 const isFocused =
                   focusedRowIndex === index && isInteractive && !isDisabled;
+                const isPatientDotActive = isSelected || isHovered || isFocused;
+                const patientDotOpacity = isPatientDotActive
+                  ? isSelected
+                    ? 1
+                    : 0.82
+                  : hasSelections
+                    ? 0.22
+                    : 0.52;
+                const patientDotStrokeOpacity = isPatientDotActive ? 0.35 : 0;
 
                 return (
                   <g
@@ -1353,10 +1446,17 @@ export default function HorizontalBarFilter({
                                 cy={rowCenterY}
                                 r={dotRadius}
                                 fill={rowFillColor}
-                                fillOpacity={rowFillOpacity}
+                                fillOpacity={patientDotOpacity}
+                                stroke={rowFillColor}
+                                strokeOpacity={patientDotStrokeOpacity}
+                                strokeWidth={Math.max(1, dotRadius * 0.45)}
                                 data-patient-dot="true"
                                 data-patient-id={patientId}
                                 pointerEvents="none"
+                                style={{
+                                  transition:
+                                    "fill-opacity 120ms ease, stroke-opacity 120ms ease",
+                                }}
                               />
                               <circle
                                 className="horizontal-bar-filter-patient-dot-hitbox"
@@ -1368,8 +1468,10 @@ export default function HorizontalBarFilter({
                                 tabIndex={0}
                                 aria-label={patientDotLabel}
                                 style={{ cursor: "pointer" }}
-                                onMouseEnter={(event) => handlePatientDotMouseEnter(event, patientId)}
-                                onMouseLeave={handlePatientDotMouseLeave}
+                                onMouseEnter={(event) =>
+                                  handlePatientDotMouseEnter(event, patientId, index)
+                                }
+                                onMouseLeave={() => handlePatientDotMouseLeave(index)}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   handlePatientDotClick(event, patientId);
@@ -1381,7 +1483,10 @@ export default function HorizontalBarFilter({
                                     handlePatientDotClick(event, patientId);
                                   }
                                 }}
-                                onBlur={handlePatientDotMouseLeave}
+                                onFocus={() => {
+                                  setHoveredRowIndex(index);
+                                }}
+                                onBlur={() => handlePatientDotMouseLeave(index)}
                               />
                             </g>
                           );

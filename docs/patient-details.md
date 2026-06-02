@@ -55,3 +55,17 @@ Required expanded section labels:
 
 ![Patient Details empty search state](assets/screenshots/25-patient-details-empty-search.png)
 *Figure 25. Empty-result confirmation text: `No patients match your search.`*
+
+## Embedded Patient View
+
+Clicking **Show in Document Viewer** on an expanded patient row opens the embedded patient tab in the floating drawer. The drawer renders the full patient detail experience inline without leaving the filters page.
+
+![Embedded patient view drawer](assets/screenshots/32-embedded-patient-drawer.png)
+*Figure 32. Patient drawer expanded with embedded view: demographics bar, Cancer and Tumor Summary, document timeline, and (when available) Patient Summary Card.*
+
+### Patient Summary Card
+
+The Patient Summary Card appears alongside the Cancer and Tumor Summary when the backend provides structured summary data for the patient. It groups NLP-extracted phenotypes into labelled sections (Diagnoses, Staging, Grading, Biomarkers, Treatments, Procedures, Findings, Behavior). Uncertain or conflicted values carry inline badges.
+
+![Patient Summary Card](assets/screenshots/33-patient-summary-card.png)
+*Figure 33. Patient Summary Card showing clinical concept groups with negated, uncertain, and conflicted value badges.*

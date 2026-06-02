@@ -18,10 +18,7 @@ function HomeView() {
         <strong>DEEPPHE_API_LOCATION:</strong> {DEEPPHE_API_LOCATION}
       </p>
       <p>
-        <Link to="/debug">Open Debug View</Link>
-      </p>
-      <p>
-        <Link to="/filters">Open Filters View</Link>
+        <Link to="/">Open Filters View</Link>
       </p>
       <p>
         <Link to="/accessibility">Accessibility Statement</Link>
@@ -45,9 +42,8 @@ function App() {
       }}
     >
       <Routes>
-        <Route path="/" element={<HomeView />} />
-        <Route path="/debug" element={<DebugView />} />
-        <Route path="/filters" element={<FiltersView />} />
+        <Route path="/" element={<FiltersView />} />
+        <Route path="/debug" element={<HomeView />} />
         <Route path="/accessibility" element={<AccessibilityStatement />} />
         <Route path="/filter-sets-config" element={<FilterSetsConfigView />} />
         <Route path="/patient" element={<PatientView />} />

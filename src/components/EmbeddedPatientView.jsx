@@ -697,9 +697,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             lg: patientSummarySections.length > 0 ? "fit-content(62%) minmax(0, 1fr)" : "minmax(0, 1fr)",
           },
           alignItems: "stretch",
-          flexShrink: { xs: 0, lg: 1 },
+          flex: "0 1 auto",
           minHeight: 0,
-          maxHeight: { xs: "none", lg: 360 },
+          height: { xs: "auto", lg: 360 },
           border: 1,
           borderColor: "divider",
           borderRadius: 1,
@@ -713,6 +713,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           sx={{
             minWidth: 0,
             minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
             justifySelf: { lg: "start" },
             width: { lg: "fit-content" },
             maxWidth: { lg: "100%" },
@@ -736,10 +738,12 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             sx={{
               minWidth: 0,
               minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
               borderTop: { xs: 1, lg: 0 },
               borderLeft: { lg: 1 },
               borderColor: "divider",
-              overflowY: { xs: "visible", lg: "auto" },
             }}
           >
             <PatientSummaryCard sections={patientSummarySections} />

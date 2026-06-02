@@ -44,6 +44,7 @@ import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
+import Masonry from "@mui/lab/Masonry";
 import { Link as RouterLink } from "react-router-dom";
 import { getSummary as getOmopSummary } from "../controllers/omap";
 import { getSummary as getAttributesSummary } from "../controllers/attributes";
@@ -61,6 +62,8 @@ import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
 import {
   FILTER_PANEL_DENSITY_MODE,
   FONT_SCALE_OPTIONS,
+  SLACK_DISTRIBUTION_MODE,
+  STACK_GAP_OPTIONS,
   findClosestFontScaleIndex,
   useFilterPagePreferences,
 } from "../hooks/useFilterPagePreferences";
@@ -73,7 +76,7 @@ import {
   resolveFilterSetsWithExtras,
   resolveFilterSetsForAttributesAndConcepts,
 } from "./filterSets";
-import { buildFilterSectionLayout } from "./filterLayout";
+import { buildFilterSectionLayout, estimateCardHeight } from "./filterLayout";
 import {
   buildChildChartData,
   buildRollupInstanceMap,
@@ -117,6 +120,43 @@ const FILTER_SECTION_LABEL_SX = {
   color: "text.secondary",
   mb: 0.5,
 };
+const FILTER_SET_RENDER_PRIORITY = Object.freeze([
+  "demographics",
+  "cancer-type",
+  "tumor-anatomy",
+  "staging",
+  "pathology",
+  "biomarkers",
+  "treatment",
+  "clinical-status",
+  "uncategorized-omop",
+  "uncategorized-attributes",
+  "uncategorized-concepts",
+]);
+const FILTER_SECTION_LAYOUT_COLUMNS = Object.freeze({
+  compact: { xs: 1, sm: 2, md: 3, lg: 4, xl: 4 },
+  standard: { xs: 1, sm: 1, md: 2, lg: 3, xl: 3 },
+});
+const DEFAULT_FILTER_SET_CARD_COLUMN_CAP = Object.freeze({
+  xs: 1,
+  sm: 1,
+  md: 2,
+  lg: 2,
+  xl: 2,
+});
+const FILTER_SET_CARD_COLUMN_CAP_BY_ID = Object.freeze({
+  demographics: { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
+  "cancer-type": { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  "tumor-anatomy": { xs: 1, sm: 1, md: 2, lg: 3, xl: 3 },
+  staging: { xs: 1, sm: 2, md: 2, lg: 3, xl: 3 },
+  pathology: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  biomarkers: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  treatment: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  "clinical-status": { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  "uncategorized-omop": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
+  "uncategorized-attributes": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
+  "uncategorized-concepts": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
+});
 const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
 const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
 const FILTER_SORT_DIMENSION = {
@@ -238,48 +278,36 @@ function resolveResponsiveColumnCap(
   return xsCap;
 }
 
-function groupFilterSetsByRow(filterSets = []) {
-  const normalizedSets = Array.isArray(filterSets) ? filterSets : [];
-  const rowGroups = [];
-  const DENSE_ROW_WEIGHT_CAP = 6;
-  let activeRowGroup = null;
-  let activePackedWeight = 0;
-  let packedRowIndex = 0;
-
-  normalizedSets.forEach((filterSet, index) => {
-    const fallbackRow = String(filterSet?.id || `row-${index}`).trim() || `row-${index}`;
-    const rowId = String(filterSet?.row || "").trim() || fallbackRow;
-    const hasExplicitRow = rowId !== fallbackRow;
-
-    if (hasExplicitRow) {
-      activePackedWeight = 0;
-      if (!activeRowGroup || activeRowGroup.id !== rowId) {
-        activeRowGroup = { id: rowId, filterSets: [] };
-        rowGroups.push(activeRowGroup);
-      }
-      activeRowGroup.filterSets.push(filterSet);
-      return;
-    }
-
-    const filterCount = Array.isArray(filterSet?.filters) ? filterSet.filters.length : 0;
-    const estimatedWeight = Math.max(1, Math.ceil(filterCount / 2));
-    const canAppendToPackedRow =
-      Boolean(activeRowGroup) &&
-      String(activeRowGroup.id || "").startsWith("dense-") &&
-      activePackedWeight + estimatedWeight <= DENSE_ROW_WEIGHT_CAP;
-
-    if (!canAppendToPackedRow) {
-      activeRowGroup = { id: `dense-${packedRowIndex}`, filterSets: [] };
-      rowGroups.push(activeRowGroup);
-      packedRowIndex += 1;
-      activePackedWeight = 0;
-    }
-
-    activeRowGroup.filterSets.push(filterSet);
-    activePackedWeight += estimatedWeight;
+function getFilterSetCardColumnsByBreakpoint(
+  filterSetId,
+  itemCount = 1,
+  {
+    isSmUp = false,
+    isMdUp = false,
+    isLgUp = false,
+    isXlUp = false,
+  } = {}
+) {
+  const spanConfig =
+    FILTER_SET_CARD_COLUMN_CAP_BY_ID[String(filterSetId || "").trim()] ||
+    DEFAULT_FILTER_SET_CARD_COLUMN_CAP;
+  const cappedItemCount = Math.max(1, Number(itemCount) || 1);
+  const resolvedColumns = resolveResponsiveColumnCap(spanConfig, {
+    isSmUp,
+    isMdUp,
+    isLgUp,
+    isXlUp,
   });
+  return Math.max(1, Math.min(cappedItemCount, resolvedColumns));
+}
 
-  return rowGroups;
+function getFilterSetPriorityIndex(filterSetId) {
+  const normalizedId = String(filterSetId || "").trim();
+  const configuredIndex = FILTER_SET_RENDER_PRIORITY.indexOf(normalizedId);
+  if (configuredIndex >= 0) {
+    return configuredIndex;
+  }
+  return FILTER_SET_RENDER_PRIORITY.length;
 }
 
 function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
@@ -2320,11 +2348,16 @@ function FiltersView() {
     reducedMotion,
     filterPanelDensityMode,
     isCompactDensity,
+    isCompactPlusDensity,
+    stackGapPx,
+    slackDistributionMode,
     changeTheme,
     changeFontScale,
     toggleHighContrast,
     toggleReducedMotion,
     changeFilterPanelDensityMode,
+    changeStackGapPx,
+    changeSlackDistributionMode,
   } = useFilterPagePreferences();
   const [fontFamilyKey] = useState(getInitialFontFamilyKey);
   const [isThemeBuilderOpen, setIsThemeBuilderOpen] = useState(false);
@@ -2386,7 +2419,22 @@ function FiltersView() {
       }),
     [isLgUp, isMdUp, isSmUp, isXlUp]
   );
-  const custom = activeTheme.custom || {};
+  const resolvedFilterSectionLayoutColumns = useMemo(
+    () =>
+      resolveResponsiveColumnCap(
+        isCompactDensity
+          ? FILTER_SECTION_LAYOUT_COLUMNS.compact
+          : FILTER_SECTION_LAYOUT_COLUMNS.standard,
+        {
+          isSmUp,
+          isMdUp,
+          isLgUp,
+          isXlUp,
+        }
+      ),
+    [isCompactDensity, isLgUp, isMdUp, isSmUp, isXlUp]
+  );
+  const custom = useMemo(() => activeTheme.custom || {}, [activeTheme.custom]);
   const initialLoadStartRef = useRef(
     typeof performance !== "undefined" && typeof performance.now === "function"
       ? performance.now()
@@ -2510,6 +2558,12 @@ function FiltersView() {
   const handleFilterPanelDensityModeChange = useCallback((event) => {
     changeFilterPanelDensityMode(String(event?.target?.value || "").trim().toLowerCase());
   }, [changeFilterPanelDensityMode]);
+  const handleStackGapChange = useCallback((event) => {
+    changeStackGapPx(Number(event?.target?.value));
+  }, [changeStackGapPx]);
+  const handleSlackModeChange = useCallback((event) => {
+    changeSlackDistributionMode(String(event?.target?.value || ""));
+  }, [changeSlackDistributionMode]);
   const getOmopSummaryForFilters = useCallback(
     () => getOmopSummary({ includePatientIds: false }),
     []
@@ -2538,7 +2592,7 @@ function FiltersView() {
   const [countResult, setCountResult] = useState(null);
   const [includedCountByRowKey, setIncludedCountByRowKey] = useState({});
   const [includedPatientIdsByRowKey, setIncludedPatientIdsByRowKey] = useState({});
-  const [isInitialIncludedCountsReady, setIsInitialIncludedCountsReady] = useState(false);
+  const [, setIsInitialIncludedCountsReady] = useState(false);
   const includedPatientIdsByRowKeyRef = useRef({});
   const hasCompletedInitialIncludedCountsLoadRef = useRef(false);
   const [countError, setCountError] = useState("");
@@ -2677,20 +2731,70 @@ function FiltersView() {
       }),
     [attributeData.classes, conceptData.classes]
   );
-  const omopFilterSetRows = useMemo(() => groupFilterSetsByRow(omopFilterSets), [omopFilterSets]);
-  const attributeConceptFilterSetRows = useMemo(
-    () => groupFilterSetsByRow(attributeConceptFilterSets),
-    [attributeConceptFilterSets]
+  const omopFilterSetById = useMemo(
+    () => new Map(omopFilterSets.map((filterSet) => [filterSet.id, filterSet])),
+    [omopFilterSets]
   );
   const cohortOverviewInlineAttributeFilterSets = useMemo(() => {
-    const cohortOverviewRow = attributeConceptFilterSetRows.find(
-      (rowGroup) => rowGroup.id === "cohort-overview"
+    return attributeConceptFilterSets.filter(
+      (filterSet) => String(filterSet?.row || "").trim() === "cohort-overview"
     );
-    return Array.isArray(cohortOverviewRow?.filterSets) ? cohortOverviewRow.filterSets : [];
-  }, [attributeConceptFilterSetRows]);
-  const attributeConceptFilterSetRowsExcludingCohortOverview = useMemo(
-    () => attributeConceptFilterSetRows.filter((rowGroup) => rowGroup.id !== "cohort-overview"),
-    [attributeConceptFilterSetRows]
+  }, [attributeConceptFilterSets]);
+  const attributeConceptFilterSetsOutsideCohortOverview = useMemo(
+    () =>
+      attributeConceptFilterSets.filter(
+        (filterSet) => String(filterSet?.row || "").trim() !== "cohort-overview"
+      ),
+    [attributeConceptFilterSets]
+  );
+  const shouldInjectCohortOverviewAttributes = useMemo(
+    () =>
+      Boolean(omopFilterSetById.get("cancer-type")) &&
+      cohortOverviewInlineAttributeFilterSets.length > 0,
+    [cohortOverviewInlineAttributeFilterSets.length, omopFilterSetById]
+  );
+  const filterSectionsForDisplay = useMemo(
+    () => {
+      const nextSections = omopFilterSets.map((filterSet) => ({
+        id: filterSet.id,
+        kind: "omop",
+        filterSet,
+      }));
+
+      const sectionIdsInCohortOverview = new Set(
+        cohortOverviewInlineAttributeFilterSets.map((filterSet) => filterSet.id)
+      );
+      const attributeSections = shouldInjectCohortOverviewAttributes
+        ? attributeConceptFilterSetsOutsideCohortOverview
+        : attributeConceptFilterSets;
+
+      attributeSections.forEach((filterSet) => {
+        if (shouldInjectCohortOverviewAttributes && sectionIdsInCohortOverview.has(filterSet.id)) {
+          return;
+        }
+        nextSections.push({
+          id: filterSet.id,
+          kind: "attributes",
+          filterSet,
+        });
+      });
+
+      return nextSections.sort((leftSection, rightSection) => {
+        const priorityDelta =
+          getFilterSetPriorityIndex(leftSection.id) - getFilterSetPriorityIndex(rightSection.id);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+        return String(leftSection.id || "").localeCompare(String(rightSection.id || ""));
+      });
+    },
+    [
+      attributeConceptFilterSets,
+      attributeConceptFilterSetsOutsideCohortOverview,
+      cohortOverviewInlineAttributeFilterSets,
+      omopFilterSets,
+      shouldInjectCohortOverviewAttributes,
+    ]
   );
   const orderedOmopClasses = useMemo(
     () => omopFilterSets.flatMap((filterSet) => filterSet.filters.map((filter) => filter.key)),
@@ -3321,6 +3425,20 @@ function FiltersView() {
 
     const nextHeights = {};
     entries.forEach(([key, node]) => {
+      // A card carrying data-card-height-override has had its size set by the
+      // layout engine (e.g. compact-plus slack stretch). Re-measuring its DOM
+      // height would capture the forced size, not the natural content height,
+      // causing the layout to oscillate. Freeze the stored height instead.
+      // This check must come before the per-card-column scroll-height path so
+      // it fires even when isPerCardColumnLayout is true.
+      if (node?.hasAttribute?.("data-card-height-override")) {
+        const previousHeight = Number(cardNaturalHeightByKey[key]);
+        if (Number.isFinite(previousHeight) && previousHeight > 0) {
+          nextHeights[key] = previousHeight;
+        }
+        return;
+      }
+
       if (isPerCardColumnLayout) {
         const contentNode = node?.querySelector?.(".filter-card-content");
         const contentScrollHeight = Number(contentNode?.scrollHeight);
@@ -3364,14 +3482,6 @@ function FiltersView() {
           nextHeights[key] = boundedContentHeight;
           return;
         }
-      }
-
-      if (node?.hasAttribute?.("data-card-height-override")) {
-        const previousHeight = Number(cardNaturalHeightByKey[key]);
-        if (Number.isFinite(previousHeight) && previousHeight > 0) {
-          nextHeights[key] = previousHeight;
-        }
-        return;
       }
 
       const rect = node?.getBoundingClientRect?.();
@@ -3504,7 +3614,7 @@ function FiltersView() {
     };
   }, [hasSelections, requestFilters]);
 
-  const timing = countResult?.timing || {};
+  const timing = useMemo(() => countResult?.timing || {}, [countResult?.timing]);
   const isSlowQuery = Number(timing.totalMs || 0) > SLOW_QUERY_THRESHOLD_MS;
   const zeroResultHint = countResult?.count === 0 ? getZeroResultHint(activeFilters, timing.itemCounts) : "";
   const identifiedSummary = useMemo(
@@ -4253,12 +4363,14 @@ function FiltersView() {
     hasNonDefaultConceptSortMode ||
     Boolean(activeFilterModal) ||
     Boolean(String(activeFilterSearchQuery || "").trim());
-  const FILTER_PANEL_SPACING_PX = isCompactDensity ? 8 : 16;
+  const FILTER_PANEL_SPACING_PX = isCompactPlusDensity
+    ? stackGapPx
+    : isCompactDensity ? 8 : 16;
   const FILTER_PANEL_SPACING_UNITS = FILTER_PANEL_SPACING_PX / 8;
-  // Hard cap every filter card at 200px. Anything taller scrolls inside the
+  // Hard cap every filter card. Anything taller scrolls inside the
   // chart viewport (overflowY: auto on .horizontal-bar-filter-chart-viewport)
   // so the page stays scannable even for cards with hundreds of values.
-  const FILTER_CARD_MAX_HEIGHT_PX = 200;
+  const FILTER_CARD_MAX_HEIGHT_PX = isCompactPlusDensity ? 300 : 200;
   const FILTER_SECTION_HEIGHT_CAP_PX = 700;
   const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
   const PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX = 340;
@@ -4266,13 +4378,6 @@ function FiltersView() {
   const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 60 : 120;
   const NATURAL_STACK_GAP_PX = isCompactDensity ? 8 : 24;
   const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
-  // Compact mode uses a narrower per-card column so short-label filters
-  // (T Stage, N Stage, M Stage, Stage, Grade...) don't stretch wider than
-  // their content. Max-col counts are chosen so the widest sections still
-  // fit inside the row width without wrapping.
-  const FILTER_SECTION_CARD_COLUMN_WIDTH_PX = isCompactDensity ? 240 : 280;
-  const FILTER_SECTION_MAX_COLUMNS = isCompactDensity ? 7 : 6;
-  const COHORT_OVERVIEW_MAX_COLUMNS = isCompactDensity ? 4 : 3;
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const numericHeightCap = Number(sectionHeightCap);
     if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
@@ -4311,34 +4416,6 @@ function FiltersView() {
       "& > .filter-section-grid": { maxHeight: "none" },
     };
   };
-  const getFilterSetRowSx = () => ({
-    display: "flex",
-    flexWrap: "wrap",
-    gap: FILTER_PANEL_SPACING_UNITS,
-    alignItems: "flex-start",
-    width: "fit-content",
-    maxWidth: "100%",
-    "& > .filter-set": {
-      flex: "0 0 auto",
-      minWidth: 0,
-      alignSelf: "flex-start",
-    },
-  });
-  const getFilterSetMasonrySx = () => ({
-    // Each row of filter-sets occupies the full width; sections inside size
-    // themselves to their card count via inline style. A grid with
-    // auto-fill/minmax here would slice rows into ~320px cells and crush
-    // multi-section rows down to the cell width, which is the bug we are
-    // explicitly avoiding.
-    display: "flex",
-    flexDirection: "column",
-    gap: FILTER_PANEL_SPACING_UNITS,
-    width: "100%",
-    "& > .filter-set-masonry-item": {
-      minWidth: 0,
-      width: "100%",
-    },
-  });
   const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
     return {
@@ -4375,16 +4452,27 @@ function FiltersView() {
       },
     };
   };
-  const buildSectionLayout = (type, filters, classChartDataByClass) => {
+  const buildSectionLayout = (type, filters, classChartDataByClass, options = {}) => {
+    const { maxColumns: maxColumnsOverride } = options;
     const sectionHeightCap = resolveSectionHeightCapPx();
     const classNames = filters.map((filter) => filter.key);
-    const resolvedSectionMaxColumns = isPerCardColumnLayout
+    const filterByClassName = Object.fromEntries(
+      filters.map((filter) => [filter.key, filter])
+    );
+    const getLayoutMeasureType = (className) =>
+      String(filterByClassName[className]?.type || type || "attributes").toLowerCase();
+    const numericMaxColumnsOverride = Number(maxColumnsOverride);
+    const resolvedLayoutColumnCap =
+      Number.isFinite(numericMaxColumnsOverride) && numericMaxColumnsOverride > 0
+        ? Math.max(1, Math.floor(numericMaxColumnsOverride))
+        : resolvedSectionColumnCap;
+    const resolvedSectionMaxColumns = isPerCardColumnLayout && !isCompactPlusDensity
       ? Math.max(1, classNames.length)
-      : resolvedSectionColumnCap;
+      : resolvedLayoutColumnCap;
     const measuredCardHeightByClass = Object.fromEntries(
       classNames.map((className) => [
         className,
-        cardNaturalHeightByKey[getCardMeasureKey(type, className)],
+        cardNaturalHeightByKey[getCardMeasureKey(getLayoutMeasureType(className), className)],
       ])
     );
     const rowCountByClass = Object.fromEntries(
@@ -4398,18 +4486,34 @@ function FiltersView() {
       classNames,
       rowCountByClass,
       measuredCardHeightByClass,
-      naturalGapPx: NATURAL_STACK_GAP_PX,
+      naturalGapPx: isCompactPlusDensity ? stackGapPx : NATURAL_STACK_GAP_PX,
       maxColumns: resolvedSectionMaxColumns,
       categoryMaxHeight: sectionHeightCap,
       cardBottomMargin: CARD_BOTTOM_MARGIN,
       rowHeightEstimate: ROW_HEIGHT_ESTIMATE,
       cardOverheadEstimate: CARD_OVERHEAD_ESTIMATE,
+      stackableCardMaxHeight: FILTER_CARD_MAX_HEIGHT_PX,
+      allowNonContiguousPacking: isCompactPlusDensity,
+      slackDistributionMode,
     });
+    const { scrollableCardStretchByClass } = sectionLayout;
 
-    if (!isPerCardColumnLayout) {
+    if (!isPerCardColumnLayout || isCompactPlusDensity) {
       return {
         ...sectionLayout,
         sectionHeightCap,
+        // In compact-plus, supply stretch targets for scrollable cards so they
+        // fill column slack up to the section cap. cardMarginBottomByClass is
+        // cleared because Masonry handles column spacing via flex gap.
+        // The measurement hook skips re-measuring cards that carry
+        // data-card-height-override, so natural heights are preserved and the
+        // layout converges within 2 passes.
+        ...(isCompactPlusDensity
+          ? {
+              cardHeightOverrideByClass: scrollableCardStretchByClass,
+              cardMarginBottomByClass: {},
+            }
+          : {}),
       };
     }
 
@@ -4434,46 +4538,44 @@ function FiltersView() {
       sectionHeightCap,
     };
   };
-  const getFilterGridSx = (
-    sectionHeight,
-    columnCapByBreakpoint,
-    sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX
-  ) => {
-    void sectionHeight;
-    void columnCapByBreakpoint;
-    return {
-      "--filter-section-height": toSectionHeightPx(0, sectionHeightCap),
-      "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
-      "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
-      width: "100%",
-      maxWidth: "100%",
-      // True masonry via CSS multi-column. Column count auto-fits to the
-      // available section width; each card keeps its natural height and the
-      // browser balances them across columns. Cards have `break-inside: avoid`
-      // (see getCardSx) so they never split across columns.
-      columnWidth: `${FILTER_SECTION_CARD_COLUMN_WIDTH_PX}px`,
-      columnGap: `${FILTER_PANEL_SPACING_PX}px`,
-      columnFill: "balance",
-      "& > .filter-section-column": {
-        display: "block",
-        width: "100%",
-        minWidth: 0,
-        breakInside: "avoid",
-        pageBreakInside: "avoid",
-        WebkitColumnBreakInside: "avoid",
-        marginBottom: `${FILTER_PANEL_SPACING_PX}px`,
-        boxSizing: "border-box",
-      },
-      "& > .filter-section-column:last-of-type": {
-        marginBottom: 0,
-      },
-    };
+  const getFilterGridSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => ({
+    "--filter-section-height": toSectionHeightPx(0, sectionHeightCap),
+    "--filter-section-height-cap": `${resolveSectionHeightCapPx(sectionHeightCap)}px`,
+    "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(sectionHeightCap)}px`,
+    m: 0,
+    width: "auto",
+    maxWidth: "none",
+    alignContent: "flex-start",
+    "& > .filter-section-column": {
+      display: "block",
+      minWidth: 0,
+      breakInside: "avoid",
+      pageBreakInside: "avoid",
+      WebkitColumnBreakInside: "avoid",
+      boxSizing: "border-box",
+    },
+  });
+  const getFilterGridColumnCount = (filterCount, filterSetId = "") => {
+    const normalizedFilterCount = Math.max(1, Number(filterCount) || 1);
+    const sectionColumnCaps = getFilterSetCardColumnsByBreakpoint(
+      filterSetId,
+      normalizedFilterCount,
+      {
+        isSmUp,
+        isMdUp,
+        isLgUp,
+        isXlUp,
+      }
+    );
+    if (isPerCardColumnLayout && !isCompactPlusDensity) {
+      return sectionColumnCaps;
+    }
+    return Math.min(sectionColumnCaps, Math.max(1, Number(resolvedSectionColumnCap) || 1));
   };
   const getFilterSectionColumnSx = (span = null) => {
     void span;
     return {
       minWidth: 0,
-      width: "100%",
     };
   };
   const getCardSx = (cardIndex = 0) => {
@@ -4503,6 +4605,41 @@ function FiltersView() {
       };
     }
     return base;
+  };
+  const getFilterSetLaneSx = (kind = "attributes") => {
+    const laneColor =
+      kind === "omop"
+        ? activeTheme.palette.primary.main
+        : activeTheme.palette.secondary?.main || activeTheme.palette.primary.main;
+    const laneTintOpacity = activeTheme.palette.mode === "dark" ? 0.05 : 0.025;
+    const laneRuleOpacity = activeTheme.palette.mode === "dark" ? 0.62 : 0.44;
+
+    return {
+      minWidth: 0,
+      position: "relative",
+      pl: isCompactDensity ? 0.75 : 1,
+      pr: isCompactDensity ? 0.25 : 0.5,
+      py: isCompactDensity ? 0.25 : 0.5,
+      borderLeft: "2px solid",
+      borderLeftColor: alpha(laneColor, laneRuleOpacity),
+      background: `linear-gradient(90deg, ${alpha(laneColor, laneTintOpacity)} 0, ${alpha(
+        laneColor,
+        0
+      )} 40px)`,
+      breakInside: "avoid",
+      pageBreakInside: "avoid",
+      WebkitColumnBreakInside: "avoid",
+      boxSizing: "border-box",
+      "& .filter-set > h2": {
+        minHeight: isCompactDensity ? 18 : 22,
+        lineHeight: 1.15,
+        mb: isCompactDensity ? 0.25 : 0.5,
+        color: "text.secondary",
+      },
+      "& .filter-card-open-button": {
+        borderColor: alpha(laneColor, activeTheme.palette.mode === "dark" ? 0.38 : 0.28),
+      },
+    };
   };
   const fontScaleIndex = findClosestFontScaleIndex(fontScale);
   const canDecreaseFontScale = fontScaleIndex > 0;
@@ -4541,22 +4678,26 @@ function FiltersView() {
       } else {
         const classData = attributeDisplayChartDataByClass[className] || [];
         classChartDataByClass[className] =
-          attributeChartDataWithIncludedByClass[className] || classData;
+        attributeChartDataWithIncludedByClass[className] || classData;
       }
     });
+    const layoutColumnCap = getFilterGridColumnCount(renderedFilters.length, filterSet.id);
     const {
+      columnGroups,
       measuredCardHeightByClass,
       cardHeightOverrideByClass,
       cardMarginBottomByClass,
       sectionHeightCap: computedSectionHeightCap,
-    } = buildSectionLayout("attributes", renderedFilters, classChartDataByClass);
+    } = buildSectionLayout("attributes", renderedFilters, classChartDataByClass, {
+      maxColumns: layoutColumnCap,
+    });
     const sectionHeightCap = overrideSectionHeightCap ?? computedSectionHeightCap;
     const filterByClassName = Object.fromEntries(
       renderedFilters.map((filter) => [filter.key, filter])
     );
     const orderedClassNames = renderedFilters.map((filter) => filter.key);
 
-    return orderedClassNames.map((className, classIndex) => {
+    const renderAttributeCard = (className, classIndex) => {
       const filter = filterByClassName[className];
       if (!filter) {
         return null;
@@ -4595,28 +4736,55 @@ function FiltersView() {
           ? resolvedSectionHeightCapPx
           : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
       );
-      const boundedCardHeightOverride = Math.min(
-        resolvedCardHeightCapPx,
-        Math.max(0, Number(cardHeightOverride) || 0)
-      );
-      const shouldApplyCardHeightOverride =
-        boundedCardHeightOverride > 0 && measuredCardHeight > 0;
+      const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
       const cardMarginBottom = Math.max(
         0,
         Number(cardMarginBottomByClass[className]) || 0
       );
       const rowCount = classChartData.length;
+      const estimatedCardHeight = estimateCardHeight(
+        rowCount,
+        ROW_HEIGHT_ESTIMATE,
+        CARD_OVERHEAD_ESTIMATE
+      );
+      const shouldStretchScrollableCard =
+        isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
+      // Only include the stretch override once a real measurement exists.
+      // Before measurement (measuredCardHeight === 0) the override is derived from
+      // estimates and can be hundreds of pixels too large; applying minHeight on
+      // that first pass makes the DOM report the inflated estimate back as the
+      // "natural" height, which then feeds a different layout, causing oscillation.
+      const stretchedCardHeightCapPx = shouldStretchScrollableCard
+        ? Math.min(
+            resolvedSectionHeightCapPx,
+            Math.max(
+              resolvedCardHeightCapPx,
+              measuredCardHeight > 0 ? requestedCardHeightOverride : 0
+            )
+          )
+        : resolvedCardHeightCapPx;
+      const boundedCardHeightOverride = Math.min(
+        stretchedCardHeightCapPx,
+        requestedCardHeightOverride
+      );
+      const canApplyCardHeightOverride =
+        boundedCardHeightOverride > 0 && measuredCardHeight > 0;
+      const shouldApplyCardHeightOverride =
+        canApplyCardHeightOverride &&
+        (!isCompactPlusDensity || shouldStretchScrollableCard);
       const packedSpan = resolvePackedGridSpan({
         displayName: classDisplayName,
         rowCount,
       });
       const cardOuterStyle = {
-        "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
+        "--filter-section-height-cap": `${stretchedCardHeightCapPx}px`,
         "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
-          resolvedCardHeightCapPx
+          stretchedCardHeightCapPx
         )}px`,
-        maxHeight: `${resolvedCardHeightCapPx}px`,
-        ...(shouldApplyCardHeightOverride
+        maxHeight: `${stretchedCardHeightCapPx}px`,
+        ...(shouldStretchScrollableCard
+          ? { minHeight: `${Math.round(stretchedCardHeightCapPx)}px` }
+          : shouldApplyCardHeightOverride
           ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
           : {}),
       };
@@ -4633,7 +4801,7 @@ function FiltersView() {
             ref={setCardMeasureRef(filterType, className)}
             style={cardOuterStyle}
             data-card-margin-bottom={Math.round(cardMarginBottom)}
-            data-card-height-cap={resolvedCardHeightCapPx}
+            data-card-height-cap={stretchedCardHeightCapPx}
             data-card-height-override={
               shouldApplyCardHeightOverride
                 ? Math.round(boundedCardHeightOverride)
@@ -4711,7 +4879,328 @@ function FiltersView() {
           </Paper>
         </Box>
       );
+    };
+
+    const renderedCardsByClassName = new Map(
+      orderedClassNames.map((className, classIndex) => [
+        className,
+        renderAttributeCard(className, classIndex),
+      ])
+    );
+
+    if (isCompactPlusDensity) {
+      return columnGroups.map((group, groupIndex) => (
+        <Box
+          key={`${keyPrefix}:${filterSet.id}:compact-plus-column-${groupIndex}`}
+          className="filter-section-column filter-section-column-group"
+          data-compact-plus-column="true"
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: FILTER_PANEL_SPACING_UNITS,
+            minWidth: 0,
+          }}
+        >
+          {group.map((className) => renderedCardsByClassName.get(className))}
+        </Box>
+      ));
+    }
+
+    return orderedClassNames.map((className) => renderedCardsByClassName.get(className));
+  };
+
+  const renderOmopFilterSet = (
+    filterSet,
+    keyPrefix = "omop",
+    { inlineAttributeFilterSets = [] } = {}
+  ) => {
+    const renderedFilters = filterSet.filters;
+    const sectionHasData = renderedFilters.some((filter) => {
+      const className = filter.key;
+      const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
+      const classData =
+        isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
+          ? ageAtDxDecileChartData
+          : chartDataByClass[className] || [];
+      const classChartData = omopChartDataWithIncludedByClass[className] || classData;
+      return Array.isArray(classChartData) && classChartData.length > 0;
     });
+    const classChartDataByClass = {};
+    renderedFilters.forEach((filter) => {
+      const className = filter.key;
+      const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
+      const classData =
+        isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
+          ? ageAtDxDecileChartData
+          : chartDataByClass[className] || [];
+      classChartDataByClass[className] = omopChartDataWithIncludedByClass[className] || classData;
+    });
+    const omopLayoutColumnCap = getFilterGridColumnCount(renderedFilters.length, filterSet.id);
+    const {
+      columnGroups,
+      measuredCardHeightByClass,
+      cardHeightOverrideByClass,
+      cardMarginBottomByClass,
+      sectionHeight,
+      sectionHeightCap,
+    } = buildSectionLayout("omop", renderedFilters, classChartDataByClass, {
+      maxColumns: omopLayoutColumnCap,
+    });
+    const filterByClassName = Object.fromEntries(renderedFilters.map((filter) => [filter.key, filter]));
+    const orderedClassNames = renderedFilters.map((filter) => filter.key);
+    const shouldStackEthnicityUnderGender =
+      !isCompactPlusDensity &&
+      filterSet.id === "demographics" &&
+      orderedClassNames.includes("GENDER") &&
+      orderedClassNames.includes("ETHNICITY");
+    const injectedAttributeCardCount = inlineAttributeFilterSets.reduce(
+      (sum, attributeFilterSet) => sum + (attributeFilterSet.filters?.length || 0),
+      0
+    );
+    const omopGridItemCount = shouldStackEthnicityUnderGender
+      ? Math.max(1, renderedFilters.length - 1)
+      : Math.max(1, renderedFilters.length);
+    const compactPlusOmopGridItemCount =
+      isCompactPlusDensity
+        ? Math.max(1, columnGroups.length)
+        : omopGridItemCount;
+    const totalGridItemCount = Math.max(1, compactPlusOmopGridItemCount + injectedAttributeCardCount);
+
+    const renderOmopFilterCard = (className, classIndex, cardKeyPrefix = "") => {
+      const filter = filterByClassName[className];
+      if (!filter) {
+        return null;
+      }
+      const classError = omopData.errorsByClass[className] || "";
+      const classChartData = classChartDataByClass[className] || [];
+      const classDisplayName = filter.displayName || getFilterDisplayName("omop", className);
+      const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
+      const onSelectionChangeForClass = handleSelectionChange(
+        setSelectedOmopValuesByClass,
+        className
+      );
+      const sortMode = omopSortModeByClass[className] || getFilterDefaultSortMode("omop", className);
+      const customSortOrder = getCustomSortOrderForDensity("omop", className);
+      const classChartDataForRender = getChartDataForDensity(classChartData, "omop", className);
+      const selectedCount = selectedValuesForClass.length;
+      const cardHeightOverride = cardHeightOverrideByClass[className];
+      const measuredCardHeight = Number(measuredCardHeightByClass[className]) || 0;
+      const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
+      const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
+      const resolvedCardHeightCapPx = Math.min(
+        FILTER_CARD_MAX_HEIGHT_PX,
+        configuredCardHeightCapPx == null
+          ? resolvedSectionHeightCapPx
+          : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
+      );
+      const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
+      const cardMarginBottom = Math.max(0, Number(cardMarginBottomByClass[className]) || 0);
+      const rowCount = classChartData.length;
+      const estimatedCardHeight = estimateCardHeight(
+        rowCount,
+        ROW_HEIGHT_ESTIMATE,
+        CARD_OVERHEAD_ESTIMATE
+      );
+      const shouldStretchScrollableCard =
+        isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
+      const stretchedCardHeightCapPx = shouldStretchScrollableCard
+        ? Math.min(
+            resolvedSectionHeightCapPx,
+            Math.max(
+              resolvedCardHeightCapPx,
+              measuredCardHeight > 0 ? requestedCardHeightOverride : 0
+            )
+          )
+        : resolvedCardHeightCapPx;
+      const boundedCardHeightOverride = Math.min(
+        stretchedCardHeightCapPx,
+        requestedCardHeightOverride
+      );
+      const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
+      const shouldApplyCardHeightOverride =
+        canApplyCardHeightOverride &&
+        (!isCompactPlusDensity || shouldStretchScrollableCard);
+      const cardOuterStyle = {
+        "--filter-section-height-cap": `${stretchedCardHeightCapPx}px`,
+        "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
+          stretchedCardHeightCapPx
+        )}px`,
+        maxHeight: `${stretchedCardHeightCapPx}px`,
+        ...(shouldStretchScrollableCard
+          ? { minHeight: `${Math.round(stretchedCardHeightCapPx)}px` }
+          : shouldApplyCardHeightOverride
+          ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+          : {}),
+      };
+      return (
+        <Paper
+          key={`${cardKeyPrefix}${keyPrefix}:${filterSet.id}:${className}`}
+          elevation={0}
+          className="filter-card"
+          ref={setCardMeasureRef("omop", className)}
+          style={cardOuterStyle}
+          data-card-margin-bottom={Math.round(cardMarginBottom)}
+          data-card-height-cap={stretchedCardHeightCapPx}
+          data-card-height-override={
+            shouldApplyCardHeightOverride ? Math.round(boundedCardHeightOverride) : undefined
+          }
+          sx={getCardSx(classIndex)}
+        >
+          <Box className="filter-card-content" sx={getCardContentAreaSx(sectionHeightCap)}>
+            <Box
+              className="filter-card-body"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+                flex: 1,
+                minHeight: 0,
+              }}
+            >
+              <Button
+                className="filter-card-open-button"
+                type="button"
+                variant={selectedCount > 0 ? "contained" : "outlined"}
+                onClick={() => handleOpenFilterModal("omop", className, classDisplayName)}
+                aria-label={`Open ${classDisplayName} filter`}
+                sx={{
+                  justifyContent: "space-between",
+                  textTransform: "none",
+                  fontWeight: 700,
+                  minHeight: isCompactDensity ? 24 : 32,
+                  py: isCompactDensity ? 0 : 0.25,
+                  px: isCompactDensity ? 0.75 : 1.25,
+                  fontSize: isCompactDensity ? "0.75rem" : undefined,
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    textAlign: "left",
+                    pr: 1,
+                  }}
+                  title={classDisplayName}
+                >
+                  {classDisplayName}
+                </Box>
+                <Box component="span" sx={{ flexShrink: 0 }}>
+                  {selectedCount > 0 ? `${selectedCount} selected` : "Details"}
+                </Box>
+              </Button>
+              {classError ? <Alert severity="error">{classError}</Alert> : null}
+              <HorizontalBarFilter
+                key={`inline:omop:${className}:${sortMode}`}
+                className="filter-card-chart"
+                title={classDisplayName}
+                showTitle={false}
+                allowCollapse={false}
+                showSortDimensionToggle={false}
+                showSortCycleButton={false}
+                fillContainer
+                density={isCompactDensity ? "compact" : "standard"}
+                data={classChartDataForRender}
+                selectedValues={selectedValuesForClass}
+                onSelectionChange={onSelectionChangeForClass}
+                fontScale={fontScale}
+                defaultSort={sortMode}
+                customSortOrder={customSortOrder}
+                inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+                getPatientSummary={getPatientSummary}
+              />
+            </Box>
+          </Box>
+        </Paper>
+      );
+    };
+
+    const omopGridColumns = getFilterGridColumnCount(totalGridItemCount, filterSet.id);
+    const renderedOmopCardsByClassName = new Map(
+      orderedClassNames.map((className, classIndex) => [
+        className,
+        renderOmopFilterCard(className, classIndex),
+      ])
+    );
+    const compactPlusOmopColumns =
+      isCompactPlusDensity
+        ? columnGroups.map((group, groupIndex) => (
+            <Box
+              key={`${keyPrefix}:${filterSet.id}:compact-plus-column-${groupIndex}`}
+              className="filter-section-column filter-section-column-group"
+              data-compact-plus-column="true"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: FILTER_PANEL_SPACING_UNITS,
+                minWidth: 0,
+              }}
+            >
+              {group.map((className) => renderedOmopCardsByClassName.get(className))}
+            </Box>
+          ))
+        : null;
+
+    return (
+      <Stack
+        key={`${keyPrefix}:${filterSet.id}`}
+        spacing={FILTER_PANEL_SPACING_UNITS}
+        className="filter-set"
+        data-section-height-cap={sectionHeightCap}
+        sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
+      >
+        <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
+          {filterSet.label}
+        </Typography>
+        {cohortSize > 0 && sectionHasData ? (
+          <Typography variant="caption" color="text.secondary">
+            Showing filter values for {cohortSize.toLocaleString()} matched patient
+            {cohortSize === 1 ? "" : "s"}
+          </Typography>
+        ) : null}
+        <Masonry
+          className="filter-section-grid"
+          data-column-cap={JSON.stringify(omopGridColumns)}
+          data-section-height-cap={sectionHeightCap}
+          columns={omopGridColumns}
+          spacing={FILTER_PANEL_SPACING_UNITS}
+          sx={getFilterGridSx(sectionHeightCap)}
+        >
+          {compactPlusOmopColumns ||
+            orderedClassNames.map((className, classIndex) => {
+            if (shouldStackEthnicityUnderGender && className === "ETHNICITY") {
+              return null;
+            }
+            const stackedEthnicityCard = shouldStackEthnicityUnderGender && className === "GENDER";
+            return (
+              <Box
+                key={`${keyPrefix}:${filterSet.id}:${className}`}
+                className="filter-section-column"
+                sx={{
+                  ...getFilterSectionColumnSx(1),
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: stackedEthnicityCard ? FILTER_PANEL_SPACING_UNITS : 0,
+                }}
+              >
+                {renderOmopFilterCard(className, classIndex)}
+                {stackedEthnicityCard
+                  ? renderOmopFilterCard("ETHNICITY", classIndex + 0.25, "stacked:")
+                  : null}
+              </Box>
+            );
+          })}
+          {inlineAttributeFilterSets.flatMap((attributeFilterSet) =>
+            renderAttributeFilterCards(attributeFilterSet, `cohort-inline:${filterSet.id}`, {
+              sectionHeightCap,
+            })
+          )}
+        </Masonry>
+      </Stack>
+    );
   };
 
   const renderAttributeFilterSet = (filterSet, keyPrefix = "attributes") => {
@@ -4739,59 +5228,28 @@ function FiltersView() {
       } else {
         const classData = attributeDisplayChartDataByClass[className] || [];
         classChartDataByClass[className] =
-          attributeChartDataWithIncludedByClass[className] || classData;
+        attributeChartDataWithIncludedByClass[className] || classData;
       }
     });
-    const { sectionHeight, sectionHeightCap, baseCardHeightByClass: attrBaseCardHeightByClass } = buildSectionLayout(
+    const attributeGridColumns = getFilterGridColumnCount(
+      renderedFilters.length,
+      filterSet.id
+    );
+    const { sectionHeight, sectionHeightCap } = buildSectionLayout(
       "attributes",
       renderedFilters,
-      classChartDataByClass
+      classChartDataByClass,
+      { maxColumns: attributeGridColumns }
     );
-
-    // Minimum columns so every card can fit without exceeding the tallest
-    // single card's height — maximises density and prevents phantom gaps.
-    const MASONRY_COL_PX = FILTER_SECTION_CARD_COLUMN_WIDTH_PX;
-    const MASONRY_GAP_PX = FILTER_PANEL_SPACING_PX;
-    const MASONRY_MAX_COLS = FILTER_SECTION_MAX_COLUMNS;
-    const attrCappedHeightByKey = {};
-    renderedFilters.forEach((f) => {
-      attrCappedHeightByKey[f.key] = Math.min(
-        FILTER_CARD_MAX_HEIGHT_PX,
-        attrBaseCardHeightByClass[f.key] || CARD_OVERHEAD_ESTIMATE
-      );
-    });
-    const attrTotalHeight =
-      renderedFilters.reduce(
-        (sum, f) => sum + (attrCappedHeightByKey[f.key] || 0),
-        0
-      ) + Math.max(0, renderedFilters.length - 1) * NATURAL_STACK_GAP_PX;
-    const attrMaxHeight = Math.max(
-      1,
-      ...renderedFilters.map((f) => attrCappedHeightByKey[f.key] || 0)
-    );
-    const attrMinCols = renderedFilters.length > 0
-      ? Math.ceil(attrTotalHeight / attrMaxHeight)
-      : 1;
-    const effectiveCols = Math.max(1, Math.min(MASONRY_MAX_COLS, attrMinCols));
-    const contentSizedWidthPx =
-      effectiveCols * (MASONRY_COL_PX + MASONRY_GAP_PX) - MASONRY_GAP_PX;
-    const contentSizedInlineStyle = {
-      flex: "0 0 auto",
-      width: `${contentSizedWidthPx}px`,
-      maxWidth: "100%",
-    };
 
     return (
       <Box
         key={`${keyPrefix}:${filterSet.id}`}
         className="filter-set"
         data-section-height-cap={sectionHeightCap}
-        style={contentSizedInlineStyle}
         sx={{
           ...getFilterSetSx(sectionHeight, sectionHeightCap),
-          breakInside: "avoid",
-          pageBreakInside: "avoid",
-          WebkitColumnBreakInside: "avoid",
+          minWidth: 0,
         }}
       >
         <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
@@ -4803,20 +5261,16 @@ function FiltersView() {
             {cohortSize === 1 ? "" : "s"}
           </Typography>
         ) : null}
-        <Box
+        <Masonry
           className="filter-section-grid"
-          data-column-cap={
-            isPerCardColumnLayout ? Math.max(1, renderedFilters.length) : resolvedSectionColumnCap
-          }
+          data-column-cap={JSON.stringify(attributeGridColumns)}
           data-section-height-cap={sectionHeightCap}
-          sx={getFilterGridSx(
-            sectionHeight,
-            FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
-            sectionHeightCap
-          )}
+          columns={attributeGridColumns}
+          spacing={FILTER_PANEL_SPACING_UNITS}
+          sx={getFilterGridSx(sectionHeightCap)}
         >
           {renderAttributeFilterCards(filterSet, keyPrefix, { sectionHeightCap })}
-        </Box>
+        </Masonry>
       </Box>
     );
   };
@@ -5065,8 +5519,62 @@ function FiltersView() {
                         <MenuItem value={FILTER_PANEL_DENSITY_MODE.COMPACT} sx={{ fontSize: "0.8rem" }}>
                           Compact
                         </MenuItem>
+                        <MenuItem value={FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS} sx={{ fontSize: "0.8rem" }}>
+                          Compact+
+                        </MenuItem>
                       </Select>
                     </FormControl>
+                    {isCompactPlusDensity ? (
+                      <>
+                        <FormControl
+                          size="small"
+                          sx={{ minWidth: 96, height: 32, bgcolor: "background.paper" }}
+                        >
+                          <InputLabel id="stack-gap-label">Stack gap</InputLabel>
+                          <Select
+                            labelId="stack-gap-label"
+                            label="Stack gap"
+                            value={stackGapPx}
+                            onChange={handleStackGapChange}
+                            inputProps={{ "aria-label": "Stack gap between cards" }}
+                            sx={{ height: 32, "& .MuiSelect-select": { py: 0.5 } }}
+                          >
+                            {STACK_GAP_OPTIONS.map((px) => (
+                              <MenuItem key={px} value={px} sx={{ fontSize: "0.8rem" }}>
+                                {px}px
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <FormControl
+                          size="small"
+                          sx={{ minWidth: 132, height: 32, bgcolor: "background.paper" }}
+                        >
+                          <InputLabel id="slack-mode-label">Slack</InputLabel>
+                          <Select
+                            labelId="slack-mode-label"
+                            label="Slack"
+                            value={slackDistributionMode}
+                            onChange={handleSlackModeChange}
+                            inputProps={{ "aria-label": "Slack distribution mode" }}
+                            sx={{ height: 32, "& .MuiSelect-select": { py: 0.5 } }}
+                          >
+                            <MenuItem value={SLACK_DISTRIBUTION_MODE.PROPORTIONAL} sx={{ fontSize: "0.8rem" }}>
+                              Proportional
+                            </MenuItem>
+                            <MenuItem value={SLACK_DISTRIBUTION_MODE.EQUAL} sx={{ fontSize: "0.8rem" }}>
+                              Equal share
+                            </MenuItem>
+                            <MenuItem value={SLACK_DISTRIBUTION_MODE.TALLEST} sx={{ fontSize: "0.8rem" }}>
+                              Tallest takes all
+                            </MenuItem>
+                            <MenuItem value={SLACK_DISTRIBUTION_MODE.NONE} sx={{ fontSize: "0.8rem" }}>
+                              No fill
+                            </MenuItem>
+                          </Select>
+                        </FormControl>
+                      </>
+                    ) : null}
                     <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
                       <PaletteOutlinedIcon
                         fontSize="small"
@@ -5137,353 +5645,54 @@ function FiltersView() {
         {conceptRootError ? <Alert severity="error">{conceptRootError}</Alert> : null}
 
         {canRenderFilterSections ? (
-          <Stack spacing={FILTER_PANEL_SPACING_UNITS}>
-            {omopFilterSets.length > 0 ? (
-              <Box sx={getFilterSetMasonrySx()}>
-                {omopFilterSetRows.map((rowGroup, rowIndex) => (
+          filterSectionsForDisplay.length > 0 ? (
+            <Masonry
+              className="filter-set-layout-masonry"
+              columns={resolvedFilterSectionLayoutColumns}
+              spacing={FILTER_PANEL_SPACING_UNITS}
+              sequential
+              sx={{
+                m: 0,
+                width: "100%",
+                maxWidth: "100%",
+                alignContent: "flex-start",
+                "& > .filter-set-layout-item": {
+                  minWidth: 0,
+                  breakInside: "avoid",
+                  pageBreakInside: "avoid",
+                  WebkitColumnBreakInside: "avoid",
+                },
+              }}
+            >
+              {filterSectionsForDisplay.map(({ id, kind, filterSet }) => {
+                const shouldInjectInlineAttributes =
+                  kind === "omop" &&
+                  filterSet.id === "cancer-type" &&
+                  shouldInjectCohortOverviewAttributes;
+                return (
                   <Box
-                    key={`omop-row:${rowGroup.id}:${rowIndex}`}
-                    className="filter-set-masonry-item filter-set-row"
-                    data-filter-set-row={rowGroup.id}
-                    sx={[
-                      getFilterSetRowSx(),
-                      null,
-                    ]}
-                  >
-                {rowGroup.filterSets.map((filterSet) => {
-                  const sectionHasData = filterSet.filters.some((filter) => {
-                    const className = filter.key;
-                    const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
-                    const classData =
-                      isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
-                        ? ageAtDxDecileChartData
-                        : chartDataByClass[className] || [];
-                    const classChartData =
-                      omopChartDataWithIncludedByClass[className] || classData;
-                    return Array.isArray(classChartData) && classChartData.length > 0;
-                  });
-                  const classChartDataByClass = {};
-                  filterSet.filters.forEach((filter) => {
-                    const className = filter.key;
-                    const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
-                    const classData =
-                      isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
-                        ? ageAtDxDecileChartData
-                        : chartDataByClass[className] || [];
-                    classChartDataByClass[className] =
-                      omopChartDataWithIncludedByClass[className] || classData;
-                  });
-                  const {
-                    measuredCardHeightByClass,
-                    baseCardHeightByClass: omopBaseCardHeightByClass,
-                    cardHeightOverrideByClass,
-                    cardMarginBottomByClass,
-                    sectionHeight,
-                    sectionHeightCap,
-                  } = buildSectionLayout("omop", filterSet.filters, classChartDataByClass);
-                  const filterByClassName = Object.fromEntries(
-                    filterSet.filters.map((filter) => [filter.key, filter])
-                  );
-                  const orderedClassNames = filterSet.filters.map((filter) => filter.key);
-
-                  const shouldInjectCohortOverviewAttributes =
-                    rowGroup.id === "cohort-overview" &&
-                    filterSet.id === "cancer-type" &&
-                    cohortOverviewInlineAttributeFilterSets.length > 0;
-
-                  // For the cohort-overview row, derive effectiveCols from the
-                  // layout engine's columnGroups so the allocated section width
-                  // matches the actual multi-column layout rather than raw card
-                  // count. This eliminates phantom gaps between sections.
-                  const MASONRY_COL_PX = FILTER_SECTION_CARD_COLUMN_WIDTH_PX;
-                  const MASONRY_GAP_PX = FILTER_PANEL_SPACING_PX;
-                  const MASONRY_MAX_COLS = COHORT_OVERVIEW_MAX_COLUMNS;
-                  const injectedAttributeCardCount = shouldInjectCohortOverviewAttributes
-                    ? cohortOverviewInlineAttributeFilterSets.reduce(
-                        (sum, attributeFilterSet) =>
-                          sum + (attributeFilterSet.filters?.length || 0),
-                        0
-                      )
-                    : 0;
-                  // Minimum columns so every card can fit without exceeding
-                  // the tallest single card's height — gives maximum density.
-                  const omopCappedHeightByKey = {};
-                  filterSet.filters.forEach((f) => {
-                    omopCappedHeightByKey[f.key] = Math.min(
-                      FILTER_CARD_MAX_HEIGHT_PX,
-                      omopBaseCardHeightByClass[f.key] || CARD_OVERHEAD_ESTIMATE
-                    );
-                  });
-                  const omopTotalHeight =
-                    filterSet.filters.reduce(
-                      (sum, f) => sum + (omopCappedHeightByKey[f.key] || 0),
-                      0
-                    ) + Math.max(0, filterSet.filters.length - 1) * NATURAL_STACK_GAP_PX;
-                  const omopMaxHeight = Math.max(
-                    1,
-                    ...filterSet.filters.map((f) => omopCappedHeightByKey[f.key] || 0)
-                  );
-                  const omopMinCols = Math.ceil(omopTotalHeight / omopMaxHeight);
-                  const effectiveCols = Math.max(
-                    1,
-                    Math.min(MASONRY_MAX_COLS, omopMinCols + injectedAttributeCardCount)
-                  );
-                  const contentSizedWidthPx =
-                    effectiveCols * (MASONRY_COL_PX + MASONRY_GAP_PX) -
-                    MASONRY_GAP_PX;
-                  // Inline style wins over the parent row's `& > .filter-set`
-                  // sx rule (which would otherwise force 33%/50% flex basis).
-                  const cohortOverviewInlineStyle =
-                    rowGroup.id === "cohort-overview"
-                      ? {
-                          flex: "0 0 auto",
-                          width: `${contentSizedWidthPx}px`,
-                          maxWidth: "100%",
-                        }
-                      : undefined;
-
-                  return (
-                    <React.Fragment key={filterSet.id}>
-                      <Stack
-                        spacing={FILTER_PANEL_SPACING_UNITS}
-                        className="filter-set"
-                        data-section-height-cap={sectionHeightCap}
-                        style={cohortOverviewInlineStyle}
-                        sx={getFilterSetSx(sectionHeight, sectionHeightCap)}
-                      >
-                        <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
-                          {filterSet.label}
-                        </Typography>
-                        {cohortSize > 0 && sectionHasData ? (
-                          <Typography variant="caption" color="text.secondary">
-                            Showing filter values for {cohortSize.toLocaleString()} matched patient
-                            {cohortSize === 1 ? "" : "s"}
-                          </Typography>
-                        ) : null}
-                        <Box
-                          className="filter-section-grid"
-                          data-column-cap={
-                            isPerCardColumnLayout ? Math.max(1, filterSet.filters.length) : resolvedSectionColumnCap
-                          }
-                          data-section-height-cap={sectionHeightCap}
-                          sx={getFilterGridSx(
-                            sectionHeight,
-                            FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
-                            sectionHeightCap
-                          )}
-                        >
-                          {orderedClassNames.map((className, classIndex) => {
-                            const filter = filterByClassName[className];
-                            if (!filter) {
-                              return null;
-                            }
-                            const classError = omopData.errorsByClass[className] || "";
-                            const classChartData = classChartDataByClass[className] || [];
-                            const classDisplayName =
-                              filter.displayName || getFilterDisplayName("omop", className);
-                            const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
-                            const onSelectionChangeForClass = handleSelectionChange(
-                              setSelectedOmopValuesByClass,
-                              className
-                            );
-                            const sortMode =
-                              omopSortModeByClass[className] ||
-                              getFilterDefaultSortMode("omop", className);
-                            const customSortOrder = getCustomSortOrderForDensity(
-                              "omop",
-                              className
-                            );
-                            const classChartDataForRender = getChartDataForDensity(
-                              classChartData,
-                              "omop",
-                              className
-                            );
-                            const selectedCount = selectedValuesForClass.length;
-                            const cardHeightOverride = cardHeightOverrideByClass[className];
-                            const measuredCardHeight =
-                              Number(measuredCardHeightByClass[className]) || 0;
-                            const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-                            const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
-                            const resolvedCardHeightCapPx = Math.min(
-                              FILTER_CARD_MAX_HEIGHT_PX,
-                              configuredCardHeightCapPx == null
-                                ? resolvedSectionHeightCapPx
-                                : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
-                            );
-                            const boundedCardHeightOverride = Math.min(
-                              resolvedCardHeightCapPx,
-                              Math.max(0, Number(cardHeightOverride) || 0)
-                            );
-                            const shouldApplyCardHeightOverride =
-                              boundedCardHeightOverride > 0 && measuredCardHeight > 0;
-                            const cardMarginBottom = Math.max(
-                              0,
-                              Number(cardMarginBottomByClass[className]) || 0
-                            );
-                            const rowCount = Array.isArray(classChartData) ? classChartData.length : 0;
-                            const packedSpan = resolvePackedGridSpan({
-                              displayName: classDisplayName,
-                              rowCount,
-                            });
-                            const cardOuterStyle = {
-                              "--filter-section-height-cap": `${resolvedCardHeightCapPx}px`,
-                              "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(
-                                resolvedCardHeightCapPx
-                              )}px`,
-                              maxHeight: `${resolvedCardHeightCapPx}px`,
-                              ...(shouldApplyCardHeightOverride
-                                ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
-                                : {}),
-                            };
-                            return (
-                              <Box
-                                key={`${filterSet.id}:${className}`}
-                                className="filter-section-column"
-                                sx={getFilterSectionColumnSx(packedSpan)}
-                              >
-                                <Paper
-                                  elevation={0}
-                                  className="filter-card"
-                                  ref={setCardMeasureRef("omop", className)}
-                                  style={cardOuterStyle}
-                                  data-card-margin-bottom={Math.round(cardMarginBottom)}
-                                  data-card-height-cap={resolvedCardHeightCapPx}
-                                  data-card-height-override={
-                                    shouldApplyCardHeightOverride
-                                      ? Math.round(boundedCardHeightOverride)
-                                      : undefined
-                                  }
-                                  sx={{
-                      ...getCardSx(classIndex),
-                    }}
-                                >
-                                  <Box
-                                    className="filter-card-content"
-                                    sx={getCardContentAreaSx(sectionHeightCap)}
-                                  >
-                                    <Box
-                                      className="filter-card-body"
-                                      sx={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: 0,
-                                        flex: 1,
-                                        minHeight: 0,
-                                      }}
-                                    >
-                                      <Button
-                                        className="filter-card-open-button"
-                                        type="button"
-                                        variant={selectedCount > 0 ? "contained" : "outlined"}
-                                        onClick={() =>
-                                          handleOpenFilterModal("omop", className, classDisplayName)
-                                        }
-                                        aria-label={`Open ${classDisplayName} filter`}
-                                        sx={{
-                                          justifyContent: "space-between",
-                                          textTransform: "none",
-                                          fontWeight: 700,
-                                          minHeight: isCompactDensity ? 24 : 32,
-                                          py: isCompactDensity ? 0 : 0.25,
-                                          px: isCompactDensity ? 0.75 : 1.25,
-                                          fontSize: isCompactDensity ? "0.75rem" : undefined,
-                                        }}
-                                      >
-                                        <Box
-                                          component="span"
-                                          sx={{
-                                            flex: 1,
-                                            minWidth: 0,
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                            textAlign: "left",
-                                            pr: 1,
-                                          }}
-                                          title={classDisplayName}
-                                        >
-                                          {classDisplayName}
-                                        </Box>
-                                        <Box component="span" sx={{ flexShrink: 0 }}>
-                                          {selectedCount > 0 ? `${selectedCount} selected` : "Details"}
-                                        </Box>
-                                      </Button>
-                                      {classError ? <Alert severity="error">{classError}</Alert> : null}
-                                      <HorizontalBarFilter
-                                        key={`inline:omop:${className}:${sortMode}`}
-                                        className="filter-card-chart"
-                                        title={classDisplayName}
-                                        showTitle={false}
-                                        allowCollapse={false}
-                                        showSortDimensionToggle={false}
-                                        showSortCycleButton={false}
-                                        fillContainer
-                                        density={isCompactDensity ? "compact" : "standard"}
-                                        data={classChartDataForRender}
-                                        selectedValues={selectedValuesForClass}
-                                        onSelectionChange={onSelectionChangeForClass}
-                                        fontScale={fontScale}
-                                        defaultSort={sortMode}
-                                        customSortOrder={customSortOrder}
-                                        inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                                        getPatientSummary={getPatientSummary}
-                                      />
-                                    </Box>
-                                  </Box>
-                                </Paper>
-                              </Box>
-                            );
-                          })}
-                          {shouldInjectCohortOverviewAttributes
-                            ? cohortOverviewInlineAttributeFilterSets.flatMap(
-                                (attributeFilterSet) =>
-                                  renderAttributeFilterCards(
-                                    attributeFilterSet,
-                                    "cohort-inline",
-                                    { sectionHeightCap }
-                                  )
-                              )
-                            : null}
-                        </Box>
-                      </Stack>
-                    </React.Fragment>
-                  );
-                })}
+	                    key={`${kind}:${id}`}
+	                    className="filter-set-layout-item filter-domain-lane"
+	                    data-filter-set-id={id}
+	                    data-filter-set-kind={kind}
+	                    sx={getFilterSetLaneSx(kind)}
+	                  >
+                    {kind === "omop"
+                      ? renderOmopFilterSet(filterSet, "omop", {
+                          inlineAttributeFilterSets: shouldInjectInlineAttributes
+                            ? cohortOverviewInlineAttributeFilterSets
+                            : [],
+                        })
+                      : renderAttributeFilterSet(filterSet, "attributes")}
                   </Box>
-                ))}
-              </Box>
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                No OMOP classes returned.
-              </Typography>
-            )}
-
-            {attributeConceptFilterSetRowsExcludingCohortOverview.length > 0 ? (
-              <Box sx={getFilterSetMasonrySx()}>
-                {attributeConceptFilterSetRowsExcludingCohortOverview.map((rowGroup, rowIndex) => (
-                  <Box
-                    key={`attributes-row:${rowGroup.id}:${rowIndex}`}
-                    className="filter-set-masonry-item filter-set-row"
-                    data-filter-set-row={rowGroup.id}
-                    sx={[
-                      getFilterSetRowSx(),
-                      rowGroup.filterSets.length > 1
-                        ? { gridColumn: "1 / -1", width: "100%", justifySelf: "stretch" }
-                        : null,
-                    ]}
-                  >
-                    {rowGroup.filterSets.map((filterSet) =>
-                      renderAttributeFilterSet(filterSet)
-                    )}
-                  </Box>
-                ))}
-              </Box>
-            ) : attributeConceptFilterSets.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No Attribute or Concept classes returned.
-              </Typography>
-            ) : null}
-          </Stack>
+                );
+              })}
+            </Masonry>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No filter classes returned.
+            </Typography>
+          )
         ) : null}
         {isPatientGridDockVisible ? (
           <Box

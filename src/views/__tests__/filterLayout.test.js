@@ -283,4 +283,86 @@ describe("filterLayout helpers", () => {
     expect(columnHeights).toEqual([624, 624, 624]);
     expect(layout.sectionHeight).toBe(648);
   });
+
+  it("stacks short Compact+ cards while keeping capped tall cards as solo columns", () => {
+    const layout = buildFilterSectionLayout({
+      classNames: [
+        "Grade",
+        "Disease Grade Qualifier",
+        "Histologic Features",
+        "Pathologic Process",
+      ],
+      measuredCardHeightByClass: {
+        Grade: 228,
+        "Disease Grade Qualifier": 228,
+        "Histologic Features": 300,
+        "Pathologic Process": 241,
+      },
+      rowCountByClass: {
+        Grade: 7,
+        "Disease Grade Qualifier": 7,
+        "Histologic Features": 24,
+        "Pathologic Process": 9,
+      },
+      naturalGapPx: 8,
+      maxColumns: 3,
+      cardBottomMargin: 12,
+      stackableCardMaxHeight: 300,
+      allowNonContiguousPacking: true,
+    });
+
+    expect(layout.columnGroups).toEqual([
+      ["Grade", "Disease Grade Qualifier"],
+      ["Histologic Features"],
+      ["Pathologic Process"],
+    ]);
+    expect(layout.cardHeightOverrideByClass["Histologic Features"]).toBe(464);
+    expect(layout.cardHeightOverrideByClass["Pathologic Process"]).toBe(464);
+  });
+
+  it("LPT distributes equal-height Compact+ cards across bins, balancing by height", () => {
+    const layout = buildFilterSectionLayout({
+      classNames: [
+        "Tissue",
+        "Topography, minor",
+        "Quadrant",
+        "Clockface",
+        "Laterality",
+        "Body Part",
+        "Body Fluid or Substance",
+      ],
+      measuredCardHeightByClass: {
+        Tissue: 300,
+        "Topography, minor": 300,
+        Quadrant: 181,
+        Clockface: 300,
+        Laterality: 101,
+        "Body Part": 300,
+        "Body Fluid or Substance": 121,
+      },
+      rowCountByClass: {
+        Tissue: 18,
+        "Topography, minor": 16,
+        Quadrant: 8,
+        Clockface: 16,
+        Laterality: 3,
+        "Body Part": 22,
+        "Body Fluid or Substance": 4,
+      },
+      naturalGapPx: 8,
+      maxColumns: 3,
+      cardBottomMargin: 12,
+      categoryMaxHeight: 700,
+      stackableCardMaxHeight: 300,
+      allowNonContiguousPacking: true,
+    });
+
+    const bodyPartColumn = layout.columnGroups.find((group) =>
+      group.includes("Body Part")
+    );
+
+    // LPT pairs Body Part (300px) with Tissue (300px) — equal heights fill the
+    // same bin. Natural order within the column is preserved.
+    expect(bodyPartColumn).toEqual(["Tissue", "Body Part"]);
+  });
 });

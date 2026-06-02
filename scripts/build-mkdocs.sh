@@ -34,6 +34,8 @@ required_files=(
   "23-patient-details-column-menu.png"
   "24-patient-details-expanded-row.png"
   "25-patient-details-empty-search.png"
+  "32-embedded-patient-drawer.png"
+  "33-patient-summary-card.png"
   "30-debug-view.png"
   "31-accessibility-view.png"
 )

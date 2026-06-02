@@ -37,6 +37,8 @@ const SCREENSHOT_ORDER = [
   "23-patient-details-column-menu.png",
   "24-patient-details-expanded-row.png",
   "25-patient-details-empty-search.png",
+  "32-embedded-patient-drawer.png",
+  "33-patient-summary-card.png",
   "30-debug-view.png",
   "31-accessibility-view.png",
 ];
@@ -413,6 +415,126 @@ async function capturePatientDetailsSeries(page) {
   });
 }
 
+async function captureEmbeddedPatientViewSeries(page) {
+  // The patient grid drawer should already be visible and expanded from capturePatientDetailsSeries.
+  // Expand a row to reveal "Show in Document Viewer", then open the embedded patient tab.
+
+  const expandButton = page.locator("button[aria-label^='Expand row details']").first();
+  const hasExpandButton = await waitForLocator(expandButton, 6000);
+
+  const missingFiles = [
+    { file: "32-embedded-patient-drawer.png", target: "Embedded patient view (drawer)" },
+    { file: "33-patient-summary-card.png", target: "Patient Summary Card" },
+  ];
+
+  if (!hasExpandButton) {
+    summary.runtimeNotes.push(
+      "EmbeddedPatientView capture skipped: no expandable patient rows found."
+    );
+    for (const entry of missingFiles) {
+      await withCapture(page, {
+        file: entry.file,
+        route: "/filters",
+        target: entry.target,
+        fallbackFullPage: false,
+        run: async () => {
+          throw new Error("No expandable patient rows available.");
+        },
+      });
+    }
+    return;
+  }
+
+  await expandButton.scrollIntoViewIfNeeded().catch(() => {});
+  await expandButton.click();
+  await sleep(600);
+
+  const openButton = page.getByRole("button", { name: "Show in Document Viewer" }).first();
+  const hasOpenButton = await waitForLocator(openButton, 6000);
+
+  if (!hasOpenButton) {
+    summary.runtimeNotes.push(
+      "EmbeddedPatientView capture skipped: 'Show in Document Viewer' button not found after row expand."
+    );
+    for (const entry of missingFiles) {
+      await withCapture(page, {
+        file: entry.file,
+        route: "/filters",
+        target: entry.target,
+        fallbackFullPage: false,
+        run: async () => {
+          throw new Error("'Show in Document Viewer' button was not found.");
+        },
+      });
+    }
+    return;
+  }
+
+  await openButton.click();
+  await sleep(500);
+
+  const drawer = page.locator("[data-testid='patient-grid-drawer']").first();
+  const drawerVisible = await waitForLocator(drawer, 8000);
+
+  if (!drawerVisible) {
+    summary.runtimeNotes.push(
+      "EmbeddedPatientView capture skipped: patient-grid-drawer did not appear after opening patient tab."
+    );
+    for (const entry of missingFiles) {
+      await withCapture(page, {
+        file: entry.file,
+        route: "/filters",
+        target: entry.target,
+        fallbackFullPage: false,
+        run: async () => {
+          throw new Error("patient-grid-drawer not visible after patient tab opened.");
+        },
+      });
+    }
+    return;
+  }
+
+  // Wait for the patient data loading spinner to clear.
+  await drawer
+    .locator("[role='progressbar']")
+    .first()
+    .waitFor({ state: "hidden", timeout: 15000 })
+    .catch(() => {});
+  await sleep(500);
+
+  await withCapture(page, {
+    file: "32-embedded-patient-drawer.png",
+    route: "/filters",
+    target: "Embedded patient view (drawer with patient data)",
+    fallbackFullPage: false,
+    run: async () => {
+      await captureLocatorOrFallback(page, drawer, "32-embedded-patient-drawer.png", false);
+    },
+  });
+
+  await withCapture(page, {
+    file: "33-patient-summary-card.png",
+    route: "/filters",
+    target: "Patient Summary Card (diagnoses, staging, biomarkers)",
+    fallbackFullPage: false,
+    run: async () => {
+      const summaryHeading = page
+        .getByRole("heading", { name: "Patient Summary", exact: true })
+        .first();
+      const hasHeading = await waitForLocator(summaryHeading, 5000);
+      if (!hasHeading) {
+        throw new Error(
+          "Patient Summary Card heading not visible (patient may have no summary data)"
+        );
+      }
+      const summaryCard = summaryHeading.locator(
+        "xpath=ancestor::*[contains(@class,'MuiCard-root')][1]"
+      );
+      await captureLocatorOrFallback(page, summaryCard, "33-patient-summary-card.png", false);
+    },
+  });
+}
+
 async function captureRouteViewport(page, route, heading, file) {
   await gotoRoute(page, route);
   await page.getByRole("heading", { name: heading, exact: true }).first().waitFor({
@@ -573,6 +695,7 @@ async function run() {
     }
 
     await capturePatientDetailsSeries(page);
+    await captureEmbeddedPatientViewSeries(page);
 
     await captureRouteViewport(page, "/debug", "Debug View", "30-debug-view.png");
     await captureRouteViewport(

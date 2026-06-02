@@ -5,12 +5,23 @@ const FONT_SCALE_STORAGE_KEY = "filterPageFontScale";
 const HIGH_CONTRAST_STORAGE_KEY = "filterPageHighContrast";
 const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
 const COMPACT_MODE_STORAGE_KEY = "filterPageCompactMode";
+const STACK_GAP_STORAGE_KEY = "filterPageStackGapPx";
+const SLACK_MODE_STORAGE_KEY = "filterPageSlackMode";
 
 export const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+export const STACK_GAP_OPTIONS = [2, 4, 6, 8, 12, 16];
+
+export const SLACK_DISTRIBUTION_MODE = {
+  PROPORTIONAL: "proportional",
+  EQUAL: "equal",
+  TALLEST: "tallest",
+  NONE: "none",
+};
 
 export const FILTER_PANEL_DENSITY_MODE = {
   STANDARD: "standard",
   COMPACT: "compact",
+  COMPACT_PLUS: "compact-plus",
 };
 
 export function findClosestFontScaleIndex(value) {
@@ -74,15 +85,43 @@ function getInitialBooleanPref(storageKey) {
   return false;
 }
 
+function getInitialStackGapPx() {
+  try {
+    const stored = Number.parseInt(
+      localStorage.getItem(STACK_GAP_STORAGE_KEY) || "",
+      10
+    );
+    if (STACK_GAP_OPTIONS.includes(stored)) return stored;
+  } catch {
+    // localStorage unavailable
+  }
+  return 12;
+}
+
+function getInitialSlackDistributionMode() {
+  try {
+    const stored = localStorage.getItem(SLACK_MODE_STORAGE_KEY);
+    if (Object.values(SLACK_DISTRIBUTION_MODE).includes(stored)) {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return SLACK_DISTRIBUTION_MODE.PROPORTIONAL;
+}
+
 function getInitialFilterPanelDensityMode() {
   try {
     const stored = localStorage.getItem(COMPACT_MODE_STORAGE_KEY);
-    if (stored === "true") return FILTER_PANEL_DENSITY_MODE.COMPACT;
+    if (stored === FILTER_PANEL_DENSITY_MODE.STANDARD) return FILTER_PANEL_DENSITY_MODE.STANDARD;
+    if (stored === FILTER_PANEL_DENSITY_MODE.COMPACT) return FILTER_PANEL_DENSITY_MODE.COMPACT;
+    if (stored === FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS) return FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS;
+    if (stored === "true") return FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS;
     if (stored === "false") return FILTER_PANEL_DENSITY_MODE.STANDARD;
   } catch {
     // localStorage unavailable
   }
-  return FILTER_PANEL_DENSITY_MODE.COMPACT;
+  return FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS;
 }
 
 /**
@@ -101,6 +140,10 @@ export function useFilterPagePreferences() {
   );
   const [filterPanelDensityMode, setFilterPanelDensityMode] = useState(
     getInitialFilterPanelDensityMode
+  );
+  const [stackGapPx, setStackGapPx] = useState(getInitialStackGapPx);
+  const [slackDistributionMode, setSlackDistributionMode] = useState(
+    getInitialSlackDistributionMode
   );
 
   const changeTheme = useCallback((nextKey) => {
@@ -136,17 +179,33 @@ export function useFilterPagePreferences() {
     });
   }, []);
 
+  const changeStackGapPx = useCallback((nextPx) => {
+    const numericPx = Number(nextPx);
+    if (!STACK_GAP_OPTIONS.includes(numericPx)) return;
+    setStackGapPx(numericPx);
+    tryLocalStorage(() =>
+      localStorage.setItem(STACK_GAP_STORAGE_KEY, String(numericPx))
+    );
+  }, []);
+
+  const changeSlackDistributionMode = useCallback((nextMode) => {
+    if (!Object.values(SLACK_DISTRIBUTION_MODE).includes(nextMode)) return;
+    setSlackDistributionMode(nextMode);
+    tryLocalStorage(() =>
+      localStorage.setItem(SLACK_MODE_STORAGE_KEY, nextMode)
+    );
+  }, []);
+
   const changeFilterPanelDensityMode = useCallback((nextMode) => {
     const resolved =
       nextMode === FILTER_PANEL_DENSITY_MODE.STANDARD
         ? FILTER_PANEL_DENSITY_MODE.STANDARD
-        : FILTER_PANEL_DENSITY_MODE.COMPACT;
+        : nextMode === FILTER_PANEL_DENSITY_MODE.COMPACT
+          ? FILTER_PANEL_DENSITY_MODE.COMPACT
+          : FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS;
     setFilterPanelDensityMode(resolved);
     tryLocalStorage(() =>
-      localStorage.setItem(
-        COMPACT_MODE_STORAGE_KEY,
-        String(resolved === FILTER_PANEL_DENSITY_MODE.COMPACT)
-      )
+      localStorage.setItem(COMPACT_MODE_STORAGE_KEY, resolved)
     );
   }, []);
 
@@ -156,11 +215,16 @@ export function useFilterPagePreferences() {
     highContrast,
     reducedMotion,
     filterPanelDensityMode,
-    isCompactDensity: filterPanelDensityMode === FILTER_PANEL_DENSITY_MODE.COMPACT,
+    isCompactDensity: filterPanelDensityMode !== FILTER_PANEL_DENSITY_MODE.STANDARD,
+    isCompactPlusDensity: filterPanelDensityMode === FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS,
+    stackGapPx,
+    slackDistributionMode,
     changeTheme,
     changeFontScale,
     toggleHighContrast,
     toggleReducedMotion,
     changeFilterPanelDensityMode,
+    changeStackGapPx,
+    changeSlackDistributionMode,
   };
 }

@@ -117,6 +117,8 @@ export default function PatientSummaryCard({ sections = [] }) {
         borderRadius: 0,
         display: "flex",
         flexDirection: "column",
+        height: "100%",
+        minHeight: 0,
         overflow: "hidden",
       }}
     >
@@ -135,9 +137,13 @@ export default function PatientSummaryCard({ sections = [] }) {
         </Box>
       ) : (
         <Box
+          data-testid="patient-summary-card-scroll"
           sx={{
             overflowX: "hidden",
-            overflowY: "visible",
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            flex: "1 1 auto",
+            minHeight: 0,
             px: 1,
             py: 0.75,
           }}
