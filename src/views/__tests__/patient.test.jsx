@@ -177,7 +177,9 @@ describe("PatientView", () => {
 
       expect(rendered.container.textContent).toContain("Patient Details");
       expect(rendered.container.textContent).toContain("Patient Document Timeline");
-      expect(rendered.container.textContent).toContain("Document Viewer");
+      // The viewer heading shows the auto-selected document's name, so assert
+      // on the viewer's aria-live announcement instead of a static title.
+      expect(rendered.container.textContent).toContain("Document viewer opened: Doc 1");
       expect(
         rendered.container.querySelector('svg[aria-label="Patient document timeline chart"]')
       ).not.toBeNull();

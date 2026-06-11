@@ -32,7 +32,8 @@ describe("App patient route", () => {
   });
 
   test("home page contains patient navigation link", () => {
-    const rendered = renderAppAtPath("/");
+    // HomeView lives at /debug since FiltersView took over the root route.
+    const rendered = renderAppAtPath("/debug");
 
     try {
       const patientLink = Array.from(rendered.container.querySelectorAll("a")).find((anchor) =>
