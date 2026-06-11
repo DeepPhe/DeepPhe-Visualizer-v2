@@ -18,34 +18,43 @@ describe("filterSets", () => {
     expect(getOrderedClassesByType("attributes")).toEqual([
       "Location",
       "Topography, major",
+      "Organ System",
+      "Histology",
+      "Tissue",
+      "Mass",
+      "Topography, minor",
+      "Quadrant",
+      "Clockface",
+      "Laterality",
+      "Side",
+      "Spatial Qualifier",
       "Stage",
-      "Lymph Involvement",
+      "Disease Stage Qualifier",
       "T Stage",
       "N Stage",
       "M Stage",
-      "Behavior",
+      "Lymph Involvement",
       "Metastatic Site",
+      "Behavior",
       "Grade",
       "Grade_Numeric",
       "Grade_Differentiated",
       "Grade_Tiered",
       "Grade_Gleason",
       "Test Results",
-      "Tissue",
-      "Topography, minor",
-      "Quadrant",
-      "Clockface",
-      "Laterality",
       "HER2/Neu Status",
       "Estrogen Receptor Status",
       "Progesterone Receptor Status",
+      "Receptor Status",
       "Microsatellite Stable",
       "Breast Cancer Type 1 Susceptibility Protein",
       "Breast Cancer Type 2 Susceptibility Protein",
       "Genes",
       "Performance Status",
       "Course",
+      "Comorbidities",
       "Treatments",
+      "Procedures",
       "Diagnostic Procedures",
       "Diagnostic Procedure",
       "Therapeutic Procedures/Surgery",
@@ -62,7 +71,7 @@ describe("filterSets", () => {
 
     expect(resolvedSets.map((set) => set.label)).toEqual([
       "Staging & Disease Extent",
-      "Pathology",
+      "Pathology & Grade",
       "Uncategorized",
     ]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["T Stage", "Behavior"]);
@@ -73,18 +82,24 @@ describe("filterSets", () => {
   it("matches configured classes by normalized key and preserves API class strings", () => {
     const resolvedSets = resolveFilterSetsWithExtras(["grade numeric", "n stage"], "attributes");
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Staging & Disease Extent", "Pathology"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual([
+      "Staging & Disease Extent",
+      "Pathology & Grade",
+    ]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual(["n stage"]);
     expect(resolvedSets[1].filters.map((filter) => filter.key)).toEqual(["grade numeric"]);
   });
 
-  it("maps topography classes with comma delimiters into primary-site and pathology", () => {
+  it("maps topography classes with comma delimiters into primary-site and tumor-anatomy", () => {
     const resolvedSets = resolveFilterSetsWithExtras(
       ["Topography, major", "Topography, minor"],
       "attributes"
     );
 
-    expect(resolvedSets.map((set) => set.label)).toEqual(["Cancer Type & Primary Site", "Pathology"]);
+    expect(resolvedSets.map((set) => set.label)).toEqual([
+      "Cancer Type & Primary Site",
+      "Tumor Anatomy",
+    ]);
     expect(resolvedSets[0].filters.map((filter) => filter.key)).toEqual([
       "Topography, major",
     ]);
