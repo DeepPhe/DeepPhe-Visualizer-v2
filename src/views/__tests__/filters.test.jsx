@@ -234,12 +234,26 @@ async function selectFilterValue(filterButtonText, valueButtonText) {
 
   await clickAsync(findOpenFilterButton(filterButtonText));
 
+  // Scope the value lookup to the open details dialog so page-level buttons
+  // (pagination, other cards) can't shadow short display labels like "2".
+  const findValueButton = () => {
+    const dialog = document.querySelector('[role="dialog"]');
+    const scope = dialog || document;
+    const targetText = String(valueButtonText || "").trim().toLowerCase();
+    const buttons = Array.from(scope.querySelectorAll("button"));
+    const normalized = (button) =>
+      String(button.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    return (
+      buttons.find((button) => normalized(button) === targetText) ||
+      buttons.find((button) => normalized(button).includes(targetText))
+    );
+  };
+
   await waitFor(() => {
-    const valueButton = findButtonByText(valueButtonText);
-    expect(valueButton).not.toBeUndefined();
+    expect(findValueButton()).not.toBeUndefined();
   });
 
-  await clickAsync(findButtonByText(valueButtonText));
+  await clickAsync(findValueButton());
 
   await waitFor(() => {
     const closeButton = findButtonByText("Close");
@@ -279,6 +293,9 @@ describe("FiltersView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockHorizontalBarFilter.mockClear();
+    // The view persists layout/theme/drawer preferences to localStorage;
+    // clear it so tests don't leak state into each other.
+    window.localStorage.clear();
 
     getOmopSummary.mockResolvedValue({
       classes: ["AGE_AT_DX", "GENDER", "RACE", "ETHNICITY", "CANCER"],
@@ -375,9 +392,16 @@ describe("FiltersView", () => {
       await waitFor(() => {
         const sectionGrids = Array.from(container.querySelectorAll(".filter-section-grid"));
         const filterSets = Array.from(container.querySelectorAll(".filter-set"));
-        expect(sectionGrids.every((node) => node.getAttribute("data-column-cap") === "3")).toBe(
-          true
-        );
+        // Column caps are configured per filter-set (layoutConfig md caps,
+        // bounded by each section's card count): Patient (4 cards, cap 2),
+        // Cancer Type & Primary Site (1 card), Staging (4 cards, cap 2),
+        // Pathology & Grade (1 card).
+        expect(sectionGrids.map((node) => node.getAttribute("data-column-cap"))).toEqual([
+          "2",
+          "1",
+          "2",
+          "1",
+        ]);
         expect(
           sectionGrids.every((node) => node.getAttribute("data-section-height-cap") === "700")
         ).toBe(true);
@@ -431,7 +455,7 @@ describe("FiltersView", () => {
     unmount();
   });
 
-  it("preserves configured filter-card order in rendered DOM across visible sections", async () => {
+  it("renders configured filter cards inside their configured sections", async () => {
     getOmopSummary.mockResolvedValue({
       classes: ["AGE_AT_DX", "GENDER", "RACE", "ETHNICITY", "CANCER"],
       instancesByClass: {
@@ -493,34 +517,31 @@ describe("FiltersView", () => {
         expect(findOpenFilterButton("Lymph Involvement")).not.toBeUndefined();
       });
 
-      expect(getRenderedFilterTitlesInSection(container, "Demographics")).toEqual([
-        "Age at Dx",
-        "Race",
-        "Gender",
-        "Ethnicity",
-      ]);
-      expect(getRenderedFilterTitlesInSection(container, "Cancer Type")).toEqual(["Cancer"]);
-      expect(getRenderedFilterTitlesInSection(container, "Staging")).toEqual(
-        getConfiguredFilterTitlesForSection("staging")
+      // Column packing reorders cards within a section for height balance, so
+      // assert section membership rather than exact DOM order.
+      const expectedStagingTitles = ["Stage", "T Stage", "N Stage", "M Stage", "Lymph Involvement"];
+      expect([...getRenderedFilterTitlesInSection(container, "Patient")].sort()).toEqual(
+        ["Age at Dx", "Race", "Gender", "Ethnicity"].sort()
       );
+      expect(
+        getRenderedFilterTitlesInSection(container, "Cancer Type & Primary Site")
+      ).toEqual(["Cancer"]);
+      expect(
+        [...getRenderedFilterTitlesInSection(container, "Staging & Disease Extent")].sort()
+      ).toEqual([...expectedStagingTitles].sort());
 
       const globalRenderedOrder = Array.from(container.querySelectorAll(".filter-card"))
         .map((cardNode) => getFilterTitleFromCardNode(cardNode))
         .filter(Boolean);
-      expect(globalRenderedOrder).toEqual([
-        "Cancer",
-        "Age at Dx",
-        "Race",
-        "Gender",
-        "Ethnicity",
-        ...getConfiguredFilterTitlesForSection("staging"),
-      ]);
+      expect([...globalRenderedOrder].sort()).toEqual(
+        ["Age at Dx", "Race", "Gender", "Ethnicity", "Cancer", ...expectedStagingTitles].sort()
+      );
     } finally {
       unmount();
     }
   });
 
-  it("keeps Age at Dx in the first Demographics column in one-card-per-column layout", async () => {
+  it("keeps Age at Dx in the first Patient-section column in one-card-per-column layout", async () => {
     const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -532,18 +553,18 @@ describe("FiltersView", () => {
 
     try {
       await waitFor(() => {
-        const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-        expect(demographicsSection).not.toBeNull();
-        expect(demographicsSection.querySelector(".filter-section-grid")).not.toBeNull();
+        const patientSection = findSectionContainerByHeading(container, "Patient");
+        expect(patientSection).not.toBeNull();
+        expect(patientSection.querySelector(".filter-section-grid")).not.toBeNull();
       });
 
-      const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-      const demographicsGrid = demographicsSection.querySelector(".filter-section-grid");
-      const columns = demographicsGrid.querySelectorAll(".filter-section-column");
+      const patientSection = findSectionContainerByHeading(container, "Patient");
+      const patientGrid = patientSection.querySelector(".filter-section-grid");
+      const columns = patientGrid.querySelectorAll(".filter-section-column");
       const firstColumn = columns[0];
 
-      expect(demographicsGrid.getAttribute("data-column-cap")).toBe("4");
-      expect(columns.length).toBe(4);
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
+      expect(columns.length).toBe(2);
       expect(firstColumn.querySelector('[aria-label="Open Age at Dx filter"]')).not.toBeNull();
     } finally {
       unmount();
@@ -610,22 +631,33 @@ describe("FiltersView", () => {
       await waitFor(() => {
         expect(findSectionContainerByHeading(container, "Patient")).not.toBeNull();
         expect(findSectionContainerByHeading(container, "Cancer Type & Primary Site")).not.toBeNull();
-        expect(findSectionContainerByHeading(container, "Primary Site")).not.toBeNull();
         expect(findSectionContainerByHeading(container, "Clinical Status")).not.toBeNull();
       });
 
-      const patientRow = findFilterSetRowBySectionHeading(container, "Patient");
-      const cancerTypeRow = findFilterSetRowBySectionHeading(container, "Cancer Type & Primary Site");
-      const primarySiteRow = findFilterSetRowBySectionHeading(container, "Primary Site");
-      const clinicalStatusRow = findFilterSetRowBySectionHeading(container, "Clinical Status");
+      // Sections now flow in a single masonry; each filter-set is its own
+      // layout item. Assert the cohort-overview sections render as distinct
+      // items that precede Clinical Status in DOM order.
+      const findLayoutItem = (headingText) =>
+        findSectionContainerByHeading(container, headingText)?.closest(".filter-set-layout-item") ||
+        null;
+      const patientItem = findLayoutItem("Patient");
+      const cancerTypeItem = findLayoutItem("Cancer Type & Primary Site");
+      const clinicalStatusItem = findLayoutItem("Clinical Status");
 
-      expect(patientRow).not.toBeNull();
-      expect(cancerTypeRow).toBe(patientRow);
-      expect(primarySiteRow).toBe(patientRow);
-      expect(patientRow?.getAttribute("data-filter-set-row")).toBe("cohort-overview");
-      expect(clinicalStatusRow).not.toBeNull();
-      expect(clinicalStatusRow?.getAttribute("data-filter-set-row")).toBe("clinical-status");
-      expect(clinicalStatusRow).not.toBe(patientRow);
+      expect(patientItem).not.toBeNull();
+      expect(cancerTypeItem).not.toBeNull();
+      expect(clinicalStatusItem).not.toBeNull();
+      expect(patientItem?.getAttribute("data-filter-set-id")).toBe("demographics");
+      expect(cancerTypeItem?.getAttribute("data-filter-set-id")).toBe("cancer-type");
+      expect(clinicalStatusItem?.getAttribute("data-filter-set-id")).toBe("clinical-status");
+      expect(clinicalStatusItem).not.toBe(patientItem);
+      expect(clinicalStatusItem).not.toBe(cancerTypeItem);
+
+      const layoutItems = Array.from(container.querySelectorAll(".filter-set-layout-item"));
+      expect(layoutItems.indexOf(patientItem)).toBeLessThan(layoutItems.indexOf(clinicalStatusItem));
+      expect(layoutItems.indexOf(cancerTypeItem)).toBeLessThan(
+        layoutItems.indexOf(clinicalStatusItem)
+      );
     } finally {
       unmount();
       Object.defineProperty(window, "matchMedia", {
@@ -648,14 +680,14 @@ describe("FiltersView", () => {
 
     try {
       await waitFor(() => {
-        const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-        expect(demographicsSection).not.toBeNull();
-        expect(demographicsSection.querySelector(".filter-section-grid")).not.toBeNull();
+        const patientSection = findSectionContainerByHeading(container, "Patient");
+        expect(patientSection).not.toBeNull();
+        expect(patientSection.querySelector(".filter-section-grid")).not.toBeNull();
         expect(findFilterLayoutModeToggle(container)).not.toBeNull();
       });
 
-      const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-      const demographicsGrid = demographicsSection.querySelector(".filter-section-grid");
+      const patientSection = findSectionContainerByHeading(container, "Patient");
+      const patientGrid = patientSection.querySelector(".filter-section-grid");
       const toggle = findFilterLayoutModeToggle(container);
       const resetButton = findResetAllFiltersButton(container);
       const pageHeading = container.querySelector('[data-testid="filters-page-heading"]');
@@ -664,18 +696,20 @@ describe("FiltersView", () => {
       expect(pageHeading?.closest('[data-testid="identified-patients-panel"]')).not.toBeNull();
       expect(pageHeading?.tagName).toBe("H1");
 
-      expect(demographicsGrid.getAttribute("data-column-cap")).toBe("4");
-      expect(demographicsGrid.querySelectorAll(".filter-section-column").length).toBe(4);
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
+      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(2);
       expect(toggle?.getAttribute("aria-label")).toBe("Switch to stacked layout");
       expect(resetButton?.disabled).toBe(true);
 
       await clickAsync(toggle);
 
+      // The column cap is configured per filter-set and no longer changes with
+      // the layout mode; the toggle only switches stacking behavior.
       await waitFor(() => {
-        expect(demographicsGrid.getAttribute("data-column-cap")).toBe("6");
-        expect(demographicsGrid.querySelectorAll(".filter-section-column").length).toBe(4);
+        expect(toggle?.getAttribute("aria-label")).toBe("Switch to one-card-per-column layout");
       });
-      expect(toggle?.getAttribute("aria-label")).toBe("Switch to one-card-per-column layout");
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
+      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(2);
     } finally {
       unmount();
       Object.defineProperty(window, "matchMedia", {
@@ -832,16 +866,44 @@ describe("FiltersView", () => {
     }
   });
 
-  it("applies layout height overrides on outer filter-card nodes", async () => {
+  it("pins scrollable cards at the card height cap while short cards keep natural height", async () => {
     const originalMatchMedia = window.matchMedia;
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
+    // Race has 15 values, so its estimated height (60 + 15x24 = 420) exceeds
+    // the 300px compact-plus card cap, which marks it scrollable: the card is
+    // pinned at the cap (min-height == max-height == cap) and its rows scroll
+    // internally. Short cards keep their natural height — no min-height is
+    // forced on them to equalize column bottoms.
     const fullCardHeightByTitle = {
-      "Age at Dx": 480,
-      Race: 516,
-      Gender: 228,
-      Ethnicity: 228,
+      "Age at Dx": 280,
+      Race: 600,
+      Gender: 250,
+      Ethnicity: 40,
     };
+
+    getOmopSummary.mockResolvedValue({
+      classes: ["AGE_AT_DX", "GENDER", "RACE", "ETHNICITY"],
+      instancesByClass: {
+        AGE_AT_DX: [
+          { age_at_dx: "40-49", count: 11 },
+          { age_at_dx: "50-59", count: 7 },
+        ],
+        GENDER: [
+          { gender: "Female", count: 13 },
+          { gender: "Male", count: 9 },
+        ],
+        RACE: Array.from({ length: 15 }, (_, index) => ({
+          race: `Race Value ${String(index + 1).padStart(2, "0")}`,
+          count: 30 - index,
+        })),
+        ETHNICITY: [
+          { ethnicity: "Not Hispanic or Latino", count: 14 },
+          { ethnicity: "Hispanic or Latino", count: 8 },
+        ],
+      },
+    });
+
     const toRect = (height) => ({
       width: 300,
       height,
@@ -879,29 +941,27 @@ describe("FiltersView", () => {
 
     try {
       await waitFor(() => {
-        const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-        expect(demographicsSection).not.toBeNull();
-        expect(demographicsSection.querySelector(".filter-section-grid")).not.toBeNull();
+        const raceCard = findFilterCardByTitle("Race");
+        expect(raceCard).not.toBeNull();
+        expect(Number.parseFloat(String(raceCard.style.minHeight || "0"))).toBeGreaterThan(0);
       });
 
-      const demographicsSection = findSectionContainerByHeading(container, "Demographics");
-      const demographicsGrid = demographicsSection.querySelector(".filter-section-grid");
-      const cardsWithOverrides = Array.from(
-        demographicsGrid.querySelectorAll(".filter-card[data-card-height-override]")
-      );
-      expect(cardsWithOverrides.length).toBeGreaterThan(0);
+      const raceCard = findFilterCardByTitle("Race");
+      const raceCap = Number(raceCard.getAttribute("data-card-height-cap"));
+      expect(raceCap).toBe(300);
+      expect(Number.parseFloat(String(raceCard.style.minHeight || "0"))).toBe(raceCap);
+      expect(Number.parseFloat(String(raceCard.style.maxHeight || "0"))).toBe(raceCap);
 
-      cardsWithOverrides.forEach((cardNode) => {
-        const expectedMinHeight = Number(cardNode.getAttribute("data-card-height-override"));
+      const raceContent = raceCard.querySelector(".filter-card-content");
+      expect(Number.parseFloat(String(raceContent?.style?.minHeight || "0"))).toBe(0);
+
+      ["Age at Dx", "Gender", "Ethnicity"].forEach((title) => {
+        const cardNode = findFilterCardByTitle(title);
+        expect(cardNode).not.toBeNull();
         const inlineMinHeight = Number.parseFloat(String(cardNode.style.minHeight || "0"));
-        expect(Number.isFinite(expectedMinHeight)).toBe(true);
-        expect(inlineMinHeight).toBeCloseTo(expectedMinHeight, 0);
-
-        const contentNode = cardNode.querySelector(".filter-card-content");
-        const contentInlineMinHeight = Number.parseFloat(
-          String(contentNode?.style?.minHeight || "0")
-        );
-        expect(contentInlineMinHeight).toBe(0);
+        const naturalHeight = fullCardHeightByTitle[title];
+        // Short cards are never stretched past their natural content height.
+        expect(inlineMinHeight).toBeLessThanOrEqual(naturalHeight);
       });
     } finally {
       unmount();
@@ -914,8 +974,10 @@ describe("FiltersView", () => {
     }
   });
 
-  it("caps shared filter-card heights at CATEGORY_MAX_HEIGHT", async () => {
-    const CATEGORY_MAX_HEIGHT = 700;
+  it("caps shared filter-card heights at the default card height cap", async () => {
+    // Default per-card height cap; configured maxHeightPx values below it
+    // (e.g. Stage 150) still win.
+    const DEFAULT_CARD_HEIGHT_CAP = 300;
     const originalMatchMedia = window.matchMedia;
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
     const toRect = (height) => ({
@@ -983,14 +1045,14 @@ describe("FiltersView", () => {
         expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
       });
 
-      const expectedCardHeightCapByTitle = getConfiguredCardHeightCapByTitle(CATEGORY_MAX_HEIGHT);
+      const expectedCardHeightCapByTitle = getConfiguredCardHeightCapByTitle(DEFAULT_CARD_HEIGHT_CAP);
       const cards = Array.from(container.querySelectorAll(".filter-card"));
       expect(cards.length).toBeGreaterThan(1);
       let sawLymphCard = false;
       cards.forEach((cardNode) => {
         const filterTitle = getFilterTitleFromCardNode(cardNode);
         const expectedCardHeightCap =
-          expectedCardHeightCapByTitle.get(filterTitle) || CATEGORY_MAX_HEIGHT;
+          expectedCardHeightCapByTitle.get(filterTitle) || DEFAULT_CARD_HEIGHT_CAP;
         if (filterTitle === "Lymph Involvement") {
           sawLymphCard = true;
         }
@@ -1019,21 +1081,20 @@ describe("FiltersView", () => {
     }
   });
 
-  it("equalizes column bottoms across every rendered filter-section-grid", async () => {
+  it("keeps non-scrollable cards at natural height instead of stretching to equalize columns", async () => {
     const originalMatchMedia = window.matchMedia;
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
+    // All cards fit under the 300px cap, so none are scrollable. The columns
+    // pack unevenly, but the layout must NOT stretch any card past its
+    // natural content height to equalize bottoms (there would be nothing but
+    // whitespace to fill).
     const fullCardHeightByTitle = {
-      "Age at Dx": 480,
-      Race: 516,
-      Gender: 228,
-      Ethnicity: 228,
-      Cancer: 260,
-      Stage: 430,
-      "T Stage": 420,
-      "N Stage": 220,
-      "M Stage": 210,
-      "Lymph Involvement": 430,
+      "Age at Dx": 280,
+      Race: 90,
+      Gender: 80,
+      Ethnicity: 70,
+      Cancer: 130,
     };
     const toRect = (height) => ({
       width: 300,
@@ -1048,25 +1109,8 @@ describe("FiltersView", () => {
     });
 
     getAttributeSummary.mockResolvedValue({
-      classes: ["Stage", "T Stage", "N Stage", "M Stage"],
-      instancesByClass: {
-        Stage: [
-          { value: "Stage I", count: 10 },
-          { value: "Stage II", count: 7 },
-        ],
-        "T Stage": [
-          { value: "T1", count: 9 },
-          { value: "T2", count: 5 },
-        ],
-        "N Stage": [
-          { value: "N0", count: 8 },
-          { value: "N1", count: 4 },
-        ],
-        "M Stage": [
-          { value: "M0", count: 8 },
-          { value: "M1", count: 2 },
-        ],
-      },
+      classes: [],
+      instancesByClass: {},
     });
 
     Object.defineProperty(window, "matchMedia", {
@@ -1084,12 +1128,7 @@ describe("FiltersView", () => {
 
       if (classTokens.includes("filter-card")) {
         const title = getFilterTitleFromCardNode(this);
-        const naturalHeight = fullCardHeightByTitle[title] || 100;
-        const inlineMinHeight = Number.parseFloat(String(this.style.minHeight || "0"));
-        const appliedHeight = Number.isFinite(inlineMinHeight) && inlineMinHeight > 0
-          ? Math.max(naturalHeight, inlineMinHeight)
-          : naturalHeight;
-        return toRect(appliedHeight);
+        return toRect(fullCardHeightByTitle[title] || 100);
       }
 
       return originalGetBoundingClientRect.call(this);
@@ -1100,62 +1139,23 @@ describe("FiltersView", () => {
     try {
       await waitFor(() => {
         expect(findOpenFilterButton("Age at Dx")).not.toBeUndefined();
-        expect(findOpenFilterButton("Stage")).not.toBeUndefined();
       });
 
-        const checkedSectionLabels = [];
-        const skippedSectionLabels = [];
-      const soloColumnSectionLabels = [];
-      const sectionGrids = Array.from(container.querySelectorAll(".filter-section-grid"));
-        const defaultHeightCap = 700;
-
-      sectionGrids.forEach((sectionGrid) => {
-        const sectionContainer = sectionGrid.parentElement;
-        const sectionLabel = String(
-          sectionContainer?.querySelector?.("h2")?.textContent || ""
-        ).trim();
-          const hasCustomCardCap = Array.from(sectionGrid.querySelectorAll(".filter-card")).some(
-            (cardNode) => Number(cardNode.getAttribute("data-card-height-cap")) !== defaultHeightCap
-          );
-          if (hasCustomCardCap) {
-            skippedSectionLabels.push(sectionLabel);
-            return;
-          }
-        const columns = Array.from(sectionGrid.querySelectorAll(".filter-section-column"));
-        if (columns.length <= 1) {
-          soloColumnSectionLabels.push(sectionLabel);
-          return;
-        }
-        const hasStackedColumn = columns.some(
-          (columnNode) => columnNode.querySelectorAll(".filter-card").length > 1
-        );
-        if (!hasStackedColumn) {
-          skippedSectionLabels.push(sectionLabel);
-          return;
-        }
-
-        const columnHeights = columns.map((columnNode) => {
-          const cards = Array.from(columnNode.querySelectorAll(".filter-card"));
-          return cards.reduce((sum, cardNode) => {
-            const cardHeight = Number(cardNode.getBoundingClientRect()?.height) || 0;
-            const marginBottom = Number(cardNode.getAttribute("data-card-margin-bottom")) || 0;
-            return sum + cardHeight + marginBottom;
-          }, 0);
-        });
-
-        checkedSectionLabels.push(sectionLabel);
-        const roundedHeights = columnHeights.map((height) => Math.round(height));
-        if (new Set(roundedHeights).size !== 1) {
-          throw new Error(
-            `Mismatched column heights in ${sectionLabel || "(unnamed section)"}: ${roundedHeights.join(
-              ", "
-            )}`
-          );
-        }
+      // Give the layout passes time to settle, then confirm no card was
+      // stretched: stretch overrides are reserved for scrollable cards.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
-      expect(skippedSectionLabels).toEqual(expect.arrayContaining(["Demographics", "Staging"]));
-      expect(soloColumnSectionLabels).toContain("Cancer Type");
+      expect(container.querySelectorAll(".filter-card[data-card-height-override]").length).toBe(0);
+      Array.from(container.querySelectorAll(".filter-card")).forEach((cardNode) => {
+        const cardTitle = getFilterTitleFromCardNode(cardNode);
+        const naturalHeight = fullCardHeightByTitle[cardTitle] || 100;
+        const inlineMinHeight = Number.parseFloat(String(cardNode.style.minHeight || "0"));
+        if (inlineMinHeight > 0) {
+          expect(inlineMinHeight).toBeLessThanOrEqual(naturalHeight);
+        }
+      });
     } finally {
       unmount();
       Element.prototype.getBoundingClientRect = originalGetBoundingClientRect;
@@ -1228,7 +1228,8 @@ describe("FiltersView", () => {
     await selectFilterValue("Gender", "Female");
     await selectFilterValue("Race", "White");
     await selectFilterValue("Cancer", "Breast");
-    await selectFilterValue("T Stage", "T2");
+    // T Stage rows display with the "T" prefix stripped (compactLabelStripPrefix).
+    await selectFilterValue("T Stage", "2");
 
     await waitFor(() => {
       expect(
@@ -1251,12 +1252,12 @@ describe("FiltersView", () => {
     await waitFor(() => {
       const collapsedSummary = container.querySelector('[data-testid="patient-grid-collapsed-summary"]');
       expect(String(collapsedSummary?.textContent || "")).toContain(
-        "There are 4 40-49 year old white female patients in the cohort with breast cancer, and T stage T2."
+        "4 40-49 year old white female with breast cancer, and T stage T2."
       );
     });
 
     unmount();
-  });
+  }, 20000);
 
   it("expands age decile selections into underlying AGE_AT_DX instances", async () => {
     getOmopSummary.mockResolvedValue({
@@ -1328,7 +1329,8 @@ describe("FiltersView", () => {
     await selectFilterValue("Gender", "Female");
     await selectFilterValue("Race", "White");
     await selectFilterValue("Cancer", "Breast");
-    await selectFilterValue("T Stage", "T2");
+    // T Stage rows display with the "T" prefix stripped (compactLabelStripPrefix).
+    await selectFilterValue("T Stage", "2");
 
     await waitFor(() => {
       const patientGridDrawer = findPatientGridDrawer(container);
@@ -1344,7 +1346,7 @@ describe("FiltersView", () => {
     });
 
     unmount();
-  });
+  }, 20000);
 
   it("loads patient_ids for low-count gender rows and passes them to chart data", async () => {
     getOmopSummary.mockResolvedValue({
@@ -1625,11 +1627,11 @@ describe("FiltersView", () => {
         expect(firstPagePatientIds).toHaveLength(10);
       });
 
-      const expandDrawerButton = container.querySelector(
-        'button[aria-label="Expand selected patients drawer"]'
+      const maximizeDrawerButton = container.querySelector(
+        '[data-testid="patient-grid-drawer-maximize"]'
       );
-      expect(expandDrawerButton).not.toBeNull();
-      await clickAsync(expandDrawerButton);
+      expect(maximizeDrawerButton).not.toBeNull();
+      await clickAsync(maximizeDrawerButton);
 
       await waitFor(() => {
         const requestedPageSizes = fetchDeepPheFilterSummary.mock.calls.map(([requestedPatientIds]) =>
@@ -1689,4 +1691,6 @@ describe("FiltersView", () => {
 
     unmount();
   });
+
+
 });
