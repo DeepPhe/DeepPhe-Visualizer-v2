@@ -50,15 +50,40 @@ export function buildTallestAlignedLayout(
     }
     return getBaseHeight(className);
   };
+  // The card's "natural uncapped" height — how much vertical space it would
+  // occupy if no stackable cap or column constraint applied. Used to bound
+  // slack distribution: a card never stretches past this, because beyond it
+  // there is no content to fill, only whitespace.
+  const getDesiredHeight = (className) => {
+    const desired = Math.max(0, Number(desiredCardHeightByClass[className]) || 0);
+    return desired > 0 ? desired : getEffectiveHeight(className);
+  };
   const resolvedStackableCardMaxHeight =
     toPositiveNumber(stackableCardMaxHeight) || DEFAULT_STACKABLE_CARD_MAX_HEIGHT;
   const scrollableCardByClass =
     options?.scrollableCardByClass && typeof options.scrollableCardByClass === "object"
       ? options.scrollableCardByClass
       : {};
+  const desiredCardHeightByClass =
+    options?.desiredCardHeightByClass && typeof options.desiredCardHeightByClass === "object"
+      ? options.desiredCardHeightByClass
+      : {};
   const packingHeightCap =
     toPositiveNumber(options?.categoryMaxHeight) || Number.POSITIVE_INFINITY;
   const allowNonContiguousPacking = Boolean(options?.allowNonContiguousPacking);
+  const rowCountByClass =
+    options?.rowCountByClass && typeof options.rowCountByClass === "object"
+      ? options.rowCountByClass
+      : {};
+  // Cards with more than this many rows get their own dedicated column.
+  // Reasoning: a filter with 30+ values is its own scannable reading lane —
+  // stacking it under another card makes the column unwieldy and forces tall
+  // scroll regions. Giving it a column keeps both the long list and the rest
+  // of the section ergonomic. Infinity disables the behaviour.
+  const oversizedRowThreshold =
+    Number.isFinite(options?.oversizedRowThreshold) && options.oversizedRowThreshold > 0
+      ? options.oversizedRowThreshold
+      : Number.POSITIVE_INFINITY;
   const slackDistributionMode =
     typeof options?.slackDistributionMode === "string"
       ? options.slackDistributionMode
@@ -84,43 +109,122 @@ export function buildTallestAlignedLayout(
 
   let activeColumnGroups;
 
-  if (allowNonContiguousPacking) {
+  // The oversized-card rule (dedicate a column to any card with rowCount above
+  // the threshold) only fires inside the LPT branch. If the caller didn't
+  // request LPT but oversized cards exist, force the LPT branch — otherwise
+  // long lists stay stacked under shorter siblings, which the rule explicitly
+  // wants to avoid. The DP branch can still be selected when there are no
+  // oversized cards and the caller passed allowNonContiguousPacking:false.
+  const hasOversizedCards = normalizedClassNames.some(
+    (c) => (Number(rowCountByClass[c]) || 0) > oversizedRowThreshold
+  );
+  const useNonContiguousPacking = allowNonContiguousPacking || hasOversizedCards;
+
+  if (useNonContiguousPacking) {
     const k = resolvedMaxColumns;
-    const items = normalizedClassNames.map((className) => ({
-      className,
-      height: getEffectiveHeight(className),
-    }));
-    // Sort descending by height. Stable secondary by natural order.
-    items.sort((a, b) => {
-      if (Math.abs(a.height - b.height) > LAYOUT_EPSILON) {
-        return b.height - a.height;
-      }
-      return (
-        normalizedClassNames.indexOf(a.className) -
-        normalizedClassNames.indexOf(b.className)
-      );
-    });
-    const bins = Array.from({ length: k }, () => ({
-      items: [],
-      height: 0,
-    }));
-    items.forEach((item) => {
-      // Place in shortest bin. Tie break on lowest bin index so left
-      // columns fill first.
-      let bestBin = bins[0];
-      for (let i = 1; i < bins.length; i += 1) {
-        if (bins[i].height < bestBin.height - LAYOUT_EPSILON) {
-          bestBin = bins[i];
+
+    // Phase 1: every oversized card gets its own column (capped at k columns
+    // total). When more oversized cards exist than columns, the tallest by
+    // rowCount get dedicated and the rest fall through to LPT with regulars.
+    // Rationale: when the user marks a card as "long enough for its own
+    // column," that's a stronger UX signal than preserving a slot for shorter
+    // cards. Regulars will be LPT-merged into the dedicated columns below if
+    // there's no spare column left.
+    const oversizedClasses = normalizedClassNames
+      .filter((c) => (Number(rowCountByClass[c]) || 0) > oversizedRowThreshold)
+      .sort((a, b) => {
+        const rowDelta = (Number(rowCountByClass[b]) || 0) - (Number(rowCountByClass[a]) || 0);
+        if (rowDelta !== 0) return rowDelta;
+        return normalizedClassNames.indexOf(a) - normalizedClassNames.indexOf(b);
+      });
+    const regularClasses = normalizedClassNames.filter(
+      (c) => (Number(rowCountByClass[c]) || 0) <= oversizedRowThreshold
+    );
+    const reservedColumnCount = Math.min(oversizedClasses.length, k);
+    const dedicatedColumns = oversizedClasses
+      .slice(0, reservedColumnCount)
+      .map((c) => [c]);
+    const overflowOversized = oversizedClasses.slice(reservedColumnCount);
+    const remainingForLpt = [...overflowOversized, ...regularClasses];
+    const remainingColumnCap = Math.max(0, k - reservedColumnCount);
+
+    // Phase 2: pack the rest. Two scenarios:
+    //   a) Spare columns exist → LPT remainders into fresh columns.
+    //   b) No spare columns → LPT remainders INTO the dedicated columns
+    //      themselves so no card is dropped. The dedicated card still leads
+    //      its column visually (we keep natural reading order within columns
+    //      afterwards), but it may share with shorter regulars.
+    let regularColumns = [];
+    if (remainingColumnCap > 0 && remainingForLpt.length > 0) {
+      const items = remainingForLpt.map((className) => ({
+        className,
+        height: getEffectiveHeight(className),
+      }));
+      items.sort((a, b) => {
+        if (Math.abs(a.height - b.height) > LAYOUT_EPSILON) {
+          return b.height - a.height;
         }
-      }
-      bestBin.items.push(item.className);
-      bestBin.height += item.height + (bestBin.items.length > 1
-        ? resolvedNaturalGap
-        : 0);
-    });
-    activeColumnGroups = bins
-      .filter((bin) => bin.items.length > 0)
-      .map((bin) => bin.items);
+        return (
+          normalizedClassNames.indexOf(a.className) -
+          normalizedClassNames.indexOf(b.className)
+        );
+      });
+      const bins = Array.from({ length: remainingColumnCap }, () => ({
+        items: [],
+        height: 0,
+      }));
+      items.forEach((item) => {
+        let bestBin = bins[0];
+        for (let i = 1; i < bins.length; i += 1) {
+          if (bins[i].height < bestBin.height - LAYOUT_EPSILON) {
+            bestBin = bins[i];
+          }
+        }
+        bestBin.items.push(item.className);
+        bestBin.height += item.height + (bestBin.items.length > 1
+          ? resolvedNaturalGap
+          : 0);
+      });
+      regularColumns = bins
+        .filter((bin) => bin.items.length > 0)
+        .map((bin) => bin.items);
+    } else if (remainingForLpt.length > 0) {
+      // All k columns are already dedicated. LPT remainders into the existing
+      // dedicated bins so we don't drop any card.
+      const bins = dedicatedColumns.map((column) => ({
+        items: column,
+        height: getEffectiveHeight(column[0]),
+      }));
+      const items = remainingForLpt.map((className) => ({
+        className,
+        height: getEffectiveHeight(className),
+      }));
+      items.sort((a, b) => {
+        if (Math.abs(a.height - b.height) > LAYOUT_EPSILON) {
+          return b.height - a.height;
+        }
+        return (
+          normalizedClassNames.indexOf(a.className) -
+          normalizedClassNames.indexOf(b.className)
+        );
+      });
+      items.forEach((item) => {
+        let bestBin = bins[0];
+        for (let i = 1; i < bins.length; i += 1) {
+          if (bins[i].height < bestBin.height - LAYOUT_EPSILON) {
+            bestBin = bins[i];
+          }
+        }
+        bestBin.items.push(item.className);
+        bestBin.height += item.height + resolvedNaturalGap;
+      });
+      // dedicatedColumns already references the bins[].items arrays — mutated
+      // in place by the forEach above.
+    }
+
+    activeColumnGroups = [...dedicatedColumns, ...regularColumns].filter(
+      (group) => group.length > 0
+    );
 
     const orderIndexByClassName = new Map(
       normalizedClassNames.map((className, index) => [className, index])
@@ -261,35 +365,52 @@ export function buildTallestAlignedLayout(
       (c) => scrollableCardByClass[c] && getEffectiveHeight(c) > 0
     );
     if (scrollableInGroup.length === 0 || slack <= LAYOUT_EPSILON) return;
+    // Each card has a desired height (its natural uncapped size). A card only
+    // benefits from stretch up to its desired height — beyond that the extra
+    // pixels are dead whitespace inside the card. So we cap every allocation
+    // at `desired - current`. Cards already at or beyond their desired height
+    // are excluded entirely; if no card has unmet desire, the column's slack
+    // is intentionally left unallocated and the column ends at its natural
+    // bottom (cleaner Masonry result than padding random cards with whitespace).
+    const wantsByClass = {};
+    const eligible = [];
+    scrollableInGroup.forEach((c) => {
+      const want = Math.max(0, getDesiredHeight(c) - getEffectiveHeight(c));
+      wantsByClass[c] = want;
+      if (want > LAYOUT_EPSILON) eligible.push(c);
+    });
+    if (eligible.length === 0) return;
     switch (slackDistributionMode) {
       case "none":
         return;
       case "equal": {
-        const share = slack / scrollableInGroup.length;
-        scrollableInGroup.forEach((c) => {
-          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + share;
+        const share = slack / eligible.length;
+        eligible.forEach((c) => {
+          const give = Math.min(share, wantsByClass[c]);
+          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + give;
         });
         return;
       }
       case "tallest": {
-        const tallest = scrollableInGroup.reduce(
+        const tallest = eligible.reduce(
           (best, c) =>
             getEffectiveHeight(c) > getEffectiveHeight(best) ? c : best,
-          scrollableInGroup[0]
+          eligible[0]
         );
-        scrollableCardStretchByClass[tallest] =
-          getEffectiveHeight(tallest) + slack;
+        const give = Math.min(slack, wantsByClass[tallest]);
+        scrollableCardStretchByClass[tallest] = getEffectiveHeight(tallest) + give;
         return;
       }
       case "proportional":
       default: {
-        const totalWeight = scrollableInGroup.reduce(
+        const totalWeight = eligible.reduce(
           (sum, c) => sum + getEffectiveHeight(c),
           0
         );
-        scrollableInGroup.forEach((c) => {
+        eligible.forEach((c) => {
           const share = (getEffectiveHeight(c) / totalWeight) * slack;
-          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + share;
+          const give = Math.min(share, wantsByClass[c]);
+          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + give;
         });
       }
     }
@@ -346,6 +467,7 @@ export function buildFilterSectionLayout({
   classNames,
   baseCardHeightByClass: inputBaseCardHeightByClass = {},
   measuredCardHeightByClass: inputMeasuredCardHeightByClass = {},
+  desiredCardHeightByClass: inputDesiredCardHeightByClass = {},
   rowCountByClass = {},
   naturalGapPx = 24,
   maxColumns = 3,
@@ -356,11 +478,13 @@ export function buildFilterSectionLayout({
   stackableCardMaxHeight = DEFAULT_STACKABLE_CARD_MAX_HEIGHT,
   allowNonContiguousPacking = false,
   slackDistributionMode = "proportional",
+  oversizedRowThreshold = Number.POSITIVE_INFINITY,
 } = {}) {
   const normalizedClassNames = Array.isArray(classNames) ? classNames : [];
   const measuredCardHeightByClass = {};
   const baseCardHeightByClass = {};
   const scrollableCardByClass = {};
+  const desiredCardHeightByClass = {};
 
   normalizedClassNames.forEach((className) => {
     const measuredHeight = toPositiveNumber(inputMeasuredCardHeightByClass[className]);
@@ -383,6 +507,14 @@ export function buildFilterSectionLayout({
         : configuredBaseHeight > 0
           ? configuredBaseHeight
           : estimatedHeight;
+    // Desired (natural uncapped) height: prefer the DOM-measured content
+    // height when the caller provides one — that's the chart's actual desired
+    // size given current data, and it's the only signal that reflects real
+    // row heights, header padding, and the data the chart is actually drawing.
+    // Fall back to the row-count estimate before any measurement exists.
+    const observedDesired = toPositiveNumber(inputDesiredCardHeightByClass[className]);
+    desiredCardHeightByClass[className] =
+      observedDesired > 0 ? observedDesired : estimatedHeight;
   });
 
   const {
@@ -403,7 +535,10 @@ export function buildFilterSectionLayout({
       allowNonContiguousPacking,
       categoryMaxHeight,
       scrollableCardByClass,
+      desiredCardHeightByClass,
       slackDistributionMode,
+      rowCountByClass,
+      oversizedRowThreshold,
     }
   );
 

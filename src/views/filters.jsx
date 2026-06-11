@@ -2388,6 +2388,13 @@ function FiltersView() {
   const [filterLayoutMode, setFilterLayoutMode] = useState(FILTER_LAYOUT_MODE.PER_CARD_COLUMN);
   const isPerCardColumnLayout = filterLayoutMode === FILTER_LAYOUT_MODE.PER_CARD_COLUMN;
   const [cardNaturalHeightByKey, setCardNaturalHeightByKey] = useState({});
+  // Unbounded natural content height per card — the chart's actual desired
+  // height before the per-card height cap is applied. Used by the compact-plus
+  // slack stretch to cap how far a card grows, so it never expands past its
+  // own content (the cause of the "stretched card with whitespace below the
+  // last row" bug). Stays in sync with cardNaturalHeightByKey: written in the
+  // same useLayoutEffect, frozen by the same data-card-height-override guard.
+  const [cardDesiredHeightByKey, setCardDesiredHeightByKey] = useState({});
   const cardMeasureRefs = useRef({});
   const patientSummaryCacheRef = useRef(new Map());
   const rowCountResultCacheRef = useRef(new Map());
@@ -3150,13 +3157,71 @@ function FiltersView() {
     }
 
     const nextHeights = {};
+    const nextDesiredHeights = {};
     entries.forEach(([key, node]) => {
-      // A card carrying data-card-height-override has had its size set by the
-      // layout engine (e.g. compact-plus slack stretch). Re-measuring its DOM
-      // height would capture the forced size, not the natural content height,
-      // causing the layout to oscillate. Freeze the stored height instead.
-      // This check must come before the per-card-column scroll-height path so
-      // it fires even when isPerCardColumnLayout is true.
+      // Capture the chart's true natural content height before any cap is
+      // applied. The SVG's height attribute is intrinsic — it's computed by
+      // HorizontalBarFilter from row count × row height + padding, independent
+      // of container size. So we ALWAYS recompute desired here, even when the
+      // card has data-card-height-override set. (Freezing desired risks
+      // propagating a stale-and-inflated initial measurement forever.)
+      // The per-card-column natural height freeze below stays — that one IS
+      // container-sensitive and needs the freeze to avoid oscillation.
+      const contentNode = node?.querySelector?.(".filter-card-content");
+      const contentScrollHeight = Number(contentNode?.scrollHeight);
+      const chartViewportNode = node?.querySelector?.(".horizontal-bar-filter-chart-viewport");
+      const chartViewportClientHeight = Number(chartViewportNode?.clientHeight);
+      const chartSvgNode = node?.querySelector?.(".horizontal-bar-filter-svg");
+      const chartSvgHeight = Number(chartSvgNode?.getAttribute?.("height"));
+      const computedStyles = typeof window !== "undefined" ? window.getComputedStyle(node) : null;
+      const chartHeightCapValue = String(
+        computedStyles?.getPropertyValue?.("--filter-card-chart-height-cap") || ""
+      ).trim();
+      const chartHeightCapPx = Number.parseFloat(chartHeightCapValue);
+      const targetViewportHeight =
+        Number.isFinite(chartSvgHeight) && chartSvgHeight > 0
+          ? Number.isFinite(chartHeightCapPx) && chartHeightCapPx > 0
+            ? Math.min(chartSvgHeight, chartHeightCapPx)
+            : chartSvgHeight
+          : 0;
+      const chartHiddenOverflowHeight =
+        Number.isFinite(targetViewportHeight) &&
+        targetViewportHeight > 0 &&
+        Number.isFinite(chartViewportClientHeight) &&
+        chartViewportClientHeight > 0
+          ? Math.max(0, targetViewportHeight - chartViewportClientHeight)
+          : 0;
+      const adjustedContentHeight =
+        Number.isFinite(contentScrollHeight) && contentScrollHeight > 0
+          ? contentScrollHeight + chartHiddenOverflowHeight
+          : 0;
+      // Desired height for the slack-stretch ceiling: use the chart SVG's true
+      // intrinsic height (numRows * rowHeight + padding, as the chart itself
+      // computes it) plus the card chrome (button + body padding above the
+      // chart). This is the authoritative source — the SVG height attribute is
+      // set by HorizontalBarFilter from its own data, unaffected by the card's
+      // outer cap. We deliberately do NOT use chartHeightCapPx here, because
+      // when desired > cap, that's exactly the case where we want to stretch.
+      // Falls back to adjustedContentHeight when SVG metrics aren't available.
+      const cardClientHeight = Number(node?.clientHeight) || 0;
+      const cardChromeHeight =
+        cardClientHeight > 0 && chartViewportClientHeight > 0
+          ? Math.max(0, cardClientHeight - chartViewportClientHeight)
+          : 0;
+      const desiredHeight =
+        Number.isFinite(chartSvgHeight) && chartSvgHeight > 0
+          ? chartSvgHeight + cardChromeHeight
+          : adjustedContentHeight;
+      if (desiredHeight > 0) {
+        nextDesiredHeights[key] = desiredHeight;
+      }
+
+      // Natural-height freeze: when the card has an explicit override, its
+      // DOM-measured outer height reflects the forced size, not the natural
+      // content size. Reusing it as the layout's "current effective height"
+      // would oscillate (stretch sets size → measure reports stretched →
+      // layout treats stretched as natural → recomputes differently → loop).
+      // So preserve the previously stored natural height. Desired stays fresh.
       if (node?.hasAttribute?.("data-card-height-override")) {
         const previousHeight = Number(cardNaturalHeightByKey[key]);
         if (Number.isFinite(previousHeight) && previousHeight > 0) {
@@ -3166,34 +3231,6 @@ function FiltersView() {
       }
 
       if (isPerCardColumnLayout) {
-        const contentNode = node?.querySelector?.(".filter-card-content");
-        const contentScrollHeight = Number(contentNode?.scrollHeight);
-        const chartViewportNode = node?.querySelector?.(".horizontal-bar-filter-chart-viewport");
-        const chartViewportClientHeight = Number(chartViewportNode?.clientHeight);
-        const chartSvgNode = node?.querySelector?.(".horizontal-bar-filter-svg");
-        const chartSvgHeight = Number(chartSvgNode?.getAttribute?.("height"));
-        const computedStyles = typeof window !== "undefined" ? window.getComputedStyle(node) : null;
-        const chartHeightCapValue = String(
-          computedStyles?.getPropertyValue?.("--filter-card-chart-height-cap") || ""
-        ).trim();
-        const chartHeightCapPx = Number.parseFloat(chartHeightCapValue);
-        const targetViewportHeight =
-          Number.isFinite(chartSvgHeight) && chartSvgHeight > 0
-            ? Number.isFinite(chartHeightCapPx) && chartHeightCapPx > 0
-              ? Math.min(chartSvgHeight, chartHeightCapPx)
-              : chartSvgHeight
-            : 0;
-        const chartHiddenOverflowHeight =
-          Number.isFinite(targetViewportHeight) &&
-          targetViewportHeight > 0 &&
-          Number.isFinite(chartViewportClientHeight) &&
-          chartViewportClientHeight > 0
-            ? Math.max(0, targetViewportHeight - chartViewportClientHeight)
-            : 0;
-        const adjustedContentHeight =
-          Number.isFinite(contentScrollHeight) && contentScrollHeight > 0
-            ? contentScrollHeight + chartHiddenOverflowHeight
-            : 0;
         const cardHeightCap = Number(node?.getAttribute?.("data-card-height-cap"));
         const boundedContentHeight =
           Number.isFinite(adjustedContentHeight) && adjustedContentHeight > 0
@@ -3231,6 +3268,25 @@ function FiltersView() {
         }
       }
       return nextHeights;
+    });
+
+    setCardDesiredHeightByKey((previousDesired) => {
+      const previousEntries = Object.entries(previousDesired);
+      const nextEntries = Object.entries(nextDesiredHeights);
+      if (previousEntries.length === nextEntries.length) {
+        let hasDiff = false;
+        for (const [key, value] of nextEntries) {
+          const previousValue = Number(previousDesired[key]);
+          if (!Number.isFinite(previousValue) || Math.abs(previousValue - value) > 1) {
+            hasDiff = true;
+            break;
+          }
+        }
+        if (!hasDiff) {
+          return previousDesired;
+        }
+      }
+      return nextDesiredHeights;
     });
 
     return undefined;
@@ -4053,6 +4109,14 @@ function FiltersView() {
   const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 60 : 120;
   const NATURAL_STACK_GAP_PX = isCompactDensity ? 8 : 24;
   const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
+  // Cards with more than this many rows claim their own dedicated column
+  // before LPT packs the rest. Set to 10 because in standard/compact density
+  // any card past ~10 rows overflows its own per-card cap (200/300px depending
+  // on density) and starts requiring internal scroll — the ergonomic line
+  // where sharing a column with another card becomes awkward. The threshold
+  // uses the chart's data-array length (currently charted values), not the
+  // underlying vocabulary size.
+  const OVERSIZED_ROW_THRESHOLD = 10;
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const numericHeightCap = Number(sectionHeightCap);
     if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
@@ -4083,14 +4147,18 @@ function FiltersView() {
       "& > .filter-section-grid": { maxHeight: "none" },
     };
   };
-  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
+  const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX, { fillHeight = false } = {}) => {
     const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
     return {
       display: "flex",
       flexDirection: "column",
       gap: 0,
       minHeight: 0,
-      height: "auto",
+      // fillHeight: when the outer Paper has an explicit height set (compact-plus
+      // slack stretch), "100%" resolves to that height so the flex column can
+      // grow and the chart viewport fills the card. Otherwise "auto" so the card
+      // collapses to its natural content height.
+      height: fillHeight ? "100%" : "auto",
       maxHeight: "var(--filter-section-height-cap)",
       overflowY: "hidden",
       overflowX: "hidden",
@@ -4105,7 +4173,16 @@ function FiltersView() {
       "& .filter-card-chart": {
         flex: 1,
         minHeight: 0,
-        maxHeight: `min(44vh, ${resolveCardChartHeightCapPx(resolvedSectionHeightCapPx)}px)`,
+        // When fillHeight is set (compact-plus slack stretch active), the
+        // Paper's own height already bounds the card to stretchedCardHeightCapPx,
+        // and .filter-card-content fills it via height:100%. The 44vh/chart-cap
+        // ceiling is redundant in that case and would leave dead white space
+        // below the chart. Drop it so the chart can grow to fill the column.
+        ...(fillHeight
+          ? {}
+          : {
+              maxHeight: `min(44vh, ${resolveCardChartHeightCapPx(resolvedSectionHeightCapPx)}px)`,
+            }),
         overflowY: "hidden",
         overflowX: "hidden",
       },
@@ -4131,8 +4208,24 @@ function FiltersView() {
       Number.isFinite(numericMaxColumnsOverride) && numericMaxColumnsOverride > 0
         ? Math.max(1, Math.floor(numericMaxColumnsOverride))
         : resolvedSectionColumnCap;
-    const resolvedSectionMaxColumns =
-      isPerCardColumnLayout && !isCompactPlusDensity ? Math.max(1, classNames.length) : resolvedLayoutColumnCap;
+    // Detect oversized cards early so we can bump maxColumns: each oversized
+    // card wants its own column, so allow up to filter-count columns when at
+    // least one qualifies (otherwise the LPT's reservedColumnCount stays
+    // bounded by the breakpoint cap and oversized cards have to share).
+    const earlyRowCountByClass = Object.fromEntries(
+      classNames.map((className) => {
+        const classChartData = classChartDataByClass[className];
+        return [className, Array.isArray(classChartData) ? classChartData.length : 0];
+      })
+    );
+    const sectionHasOversizedCards = classNames.some(
+      (className) => (Number(earlyRowCountByClass[className]) || 0) > OVERSIZED_ROW_THRESHOLD
+    );
+    const resolvedSectionMaxColumns = sectionHasOversizedCards
+      ? Math.max(resolvedLayoutColumnCap, classNames.length)
+      : isPerCardColumnLayout && !isCompactPlusDensity
+        ? Math.max(1, classNames.length)
+        : resolvedLayoutColumnCap;
     const measuredCardHeightByClass = Object.fromEntries(
       classNames.map((className) => [
         className,
@@ -4145,11 +4238,22 @@ function FiltersView() {
         return [className, Array.isArray(classChartData) ? classChartData.length : 0];
       })
     );
+    // Per-card uncapped natural content height observed in the DOM. When the
+    // measurement isn't available yet (first render), this is omitted and the
+    // layout falls back to the row-count estimate. Once measured, it's the
+    // authoritative ceiling on slack stretch — a card never grows past it.
+    const desiredCardHeightByClass = Object.fromEntries(
+      classNames.map((className) => [
+        className,
+        cardDesiredHeightByKey[getCardMeasureKey(getLayoutMeasureType(className), className)] || 0,
+      ])
+    );
 
     const sectionLayout = buildFilterSectionLayout({
       classNames,
       rowCountByClass,
       measuredCardHeightByClass,
+      desiredCardHeightByClass,
       naturalGapPx: isCompactPlusDensity ? stackGapPx : NATURAL_STACK_GAP_PX,
       maxColumns: resolvedSectionMaxColumns,
       categoryMaxHeight: sectionHeightCap,
@@ -4159,13 +4263,30 @@ function FiltersView() {
       stackableCardMaxHeight: FILTER_CARD_MAX_HEIGHT_PX,
       allowNonContiguousPacking: isCompactPlusDensity,
       slackDistributionMode,
+      // Cards with more than 25 rows claim their own column in any density.
+      // A 25+ row list is "a browseable lane" regardless of density mode — the
+      // ergonomic argument doesn't depend on whether layout uses LPT or DP.
+      // (filterLayout.js forces the LPT path when oversized cards exist so the
+      // dedicated-column reservation can fire even in non-compact-plus modes.)
+      oversizedRowThreshold: OVERSIZED_ROW_THRESHOLD,
     });
     const { scrollableCardStretchByClass } = sectionLayout;
+    // If any card in this section is "oversized" (more rows than threshold),
+    // honour the LPT-produced columnGroups (which dedicate columns to those
+    // cards) instead of the per-card-column fallback that throws columnGroups
+    // away. Renderers consume `useColumnWrappers` to switch from individual
+    // cards in Masonry to column-wrapper Boxes (the compact-plus rendering
+    // shape) — that's the only way Masonry will respect our column reservation.
+    const hasOversizedCards = classNames.some(
+      (className) => (Number(rowCountByClass[className]) || 0) > OVERSIZED_ROW_THRESHOLD
+    );
+    const useColumnWrappers = isCompactPlusDensity || hasOversizedCards;
 
-    if (!isPerCardColumnLayout || isCompactPlusDensity) {
+    if (!isPerCardColumnLayout || useColumnWrappers) {
       return {
         ...sectionLayout,
         sectionHeightCap,
+        useColumnWrappers,
         // In compact-plus, supply stretch targets for scrollable cards so they
         // fill column slack up to the section cap. cardMarginBottomByClass is
         // cleared because Masonry handles column spacing via flex gap.
@@ -4198,6 +4319,7 @@ function FiltersView() {
       cardMarginBottomByClass: perCardMarginBottomByClass,
       sectionHeight: perCardSectionHeight,
       sectionHeightCap,
+      useColumnWrappers: false,
     };
   };
   const getFilterGridSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => ({
@@ -4341,6 +4463,7 @@ function FiltersView() {
       cardHeightOverrideByClass,
       cardMarginBottomByClass,
       sectionHeightCap: computedSectionHeightCap,
+      useColumnWrappers,
     } = buildSectionLayout("attributes", renderedFilters, classChartDataByClass, {
       maxColumns: layoutColumnCap,
     });
@@ -4388,16 +4511,15 @@ function FiltersView() {
       const rowCount = classChartData.length;
       const estimatedCardHeight = estimateCardHeight(rowCount, ROW_HEIGHT_ESTIMATE, CARD_OVERHEAD_ESTIMATE);
       const shouldStretchScrollableCard = isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
-      // Only include the stretch override once a real measurement exists.
-      // Before measurement (measuredCardHeight === 0) the override is derived from
-      // estimates and can be hundreds of pixels too large; applying minHeight on
-      // that first pass makes the DOM report the inflated estimate back as the
-      // "natural" height, which then feeds a different layout, causing oscillation.
+      // Stretched cards grow to natural desired height — see renderOmopFilterCard
+      // for the equivalent reasoning. Pre-measurement (measuredCardHeight === 0)
+      // we still gate via the measured>0 ternary below to avoid oscillation.
+      // Math.min(resolvedSectionHeightCapPx, ...) wrapper deliberately removed:
+      // oversized cards are permitted to exceed the section cap up to their
+      // full natural content height (requestedCardHeightOverride is already
+      // capped at the chart's intrinsic size by distributeSlack).
       const stretchedCardHeightCapPx = shouldStretchScrollableCard
-        ? Math.min(
-            resolvedSectionHeightCapPx,
-            Math.max(resolvedCardHeightCapPx, measuredCardHeight > 0 ? requestedCardHeightOverride : 0)
-          )
+        ? Math.max(resolvedCardHeightCapPx, measuredCardHeight > 0 ? requestedCardHeightOverride : 0)
         : resolvedCardHeightCapPx;
       const boundedCardHeightOverride = Math.min(stretchedCardHeightCapPx, requestedCardHeightOverride);
       const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
@@ -4415,6 +4537,11 @@ function FiltersView() {
           ? { minHeight: `${Math.round(stretchedCardHeightCapPx)}px` }
           : shouldApplyCardHeightOverride
           ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+          : {}),
+        // Explicit height (not just min/max) is required so that children using
+        // height:100% can resolve against a definite size and fill the card.
+        ...(shouldApplyCardHeightOverride
+          ? { height: `${Math.round(boundedCardHeightOverride)}px` }
           : {}),
       };
 
@@ -4447,7 +4574,7 @@ function FiltersView() {
             cardHeightCapPx={stretchedCardHeightCapPx}
             cardHeightOverride={shouldApplyCardHeightOverride ? Math.round(boundedCardHeightOverride) : undefined}
             cardSx={getCardSx(classIndex)}
-            contentAreaSx={getCardContentAreaSx(sectionHeightCap)}
+            contentAreaSx={getCardContentAreaSx(sectionHeightCap, { fillHeight: shouldApplyCardHeightOverride })}
             isCompactDensity={isCompactDensity}
           />
         </Box>
@@ -4458,7 +4585,7 @@ function FiltersView() {
       orderedClassNames.map((className, classIndex) => [className, renderAttributeCard(className, classIndex)])
     );
 
-    if (isCompactPlusDensity) {
+    if (useColumnWrappers) {
       return columnGroups.map((group, groupIndex) => (
         <Box
           key={`${keyPrefix}:${filterSet.id}:compact-plus-column-${groupIndex}`}
@@ -4467,8 +4594,17 @@ function FiltersView() {
           sx={{
             display: "flex",
             flexDirection: "column",
-            gap: FILTER_PANEL_SPACING_UNITS,
             minWidth: 0,
+            // Explicit marginBottom on every child except the last works more
+            // reliably than flex `gap` here because Paper carries
+            // display:inline-block (see getCardSx). Flex `gap` between
+            // inline-block flex items renders inconsistently across browsers,
+            // which is what was making gaps "not always show up." A direct
+            // margin sidesteps that. Wrapper Boxes (for attribute cards) and
+            // bare Papers (for OMOP cards) are both covered by `& > *`.
+            "& > *:not(:last-child)": {
+              marginBottom: `${FILTER_PANEL_SPACING_PX}px`,
+            },
           }}
         >
           {group.map((className) => renderedCardsByClassName.get(className))}
@@ -4509,6 +4645,7 @@ function FiltersView() {
       cardMarginBottomByClass,
       sectionHeight,
       sectionHeightCap,
+      useColumnWrappers,
     } = buildSectionLayout("omop", renderedFilters, classChartDataByClass, {
       maxColumns: omopLayoutColumnCap,
     });
@@ -4526,7 +4663,7 @@ function FiltersView() {
     const omopGridItemCount = shouldStackEthnicityUnderGender
       ? Math.max(1, renderedFilters.length - 1)
       : Math.max(1, renderedFilters.length);
-    const compactPlusOmopGridItemCount = isCompactPlusDensity ? Math.max(1, columnGroups.length) : omopGridItemCount;
+    const compactPlusOmopGridItemCount = useColumnWrappers ? Math.max(1, columnGroups.length) : omopGridItemCount;
     const totalGridItemCount = Math.max(1, compactPlusOmopGridItemCount + injectedAttributeCardCount);
 
     const renderOmopFilterCard = (className, classIndex, cardKeyPrefix = "") => {
@@ -4558,11 +4695,13 @@ function FiltersView() {
       const rowCount = classChartData.length;
       const estimatedCardHeight = estimateCardHeight(rowCount, ROW_HEIGHT_ESTIMATE, CARD_OVERHEAD_ESTIMATE);
       const shouldStretchScrollableCard = isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
+      // Stretched cards grow to their natural desired height (requestedCardHeightOverride
+      // is already capped at the chart's natural content height by distributeSlack).
+      // Deliberately no longer bound by resolvedSectionHeightCapPx — oversized
+      // cards have permission to expand the section to fit their full content
+      // so users don't have to scroll inside the card to see the last few rows.
       const stretchedCardHeightCapPx = shouldStretchScrollableCard
-        ? Math.min(
-            resolvedSectionHeightCapPx,
-            Math.max(resolvedCardHeightCapPx, measuredCardHeight > 0 ? requestedCardHeightOverride : 0)
-          )
+        ? Math.max(resolvedCardHeightCapPx, measuredCardHeight > 0 ? requestedCardHeightOverride : 0)
         : resolvedCardHeightCapPx;
       const boundedCardHeightOverride = Math.min(stretchedCardHeightCapPx, requestedCardHeightOverride);
       const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
@@ -4576,6 +4715,9 @@ function FiltersView() {
           ? { minHeight: `${Math.round(stretchedCardHeightCapPx)}px` }
           : shouldApplyCardHeightOverride
           ? { minHeight: `${Math.round(boundedCardHeightOverride)}px` }
+          : {}),
+        ...(shouldApplyCardHeightOverride
+          ? { height: `${Math.round(boundedCardHeightOverride)}px` }
           : {}),
       };
       return (
@@ -4602,17 +4744,25 @@ function FiltersView() {
           cardHeightCapPx={stretchedCardHeightCapPx}
           cardHeightOverride={shouldApplyCardHeightOverride ? Math.round(boundedCardHeightOverride) : undefined}
           cardSx={getCardSx(classIndex)}
-          contentAreaSx={getCardContentAreaSx(sectionHeightCap)}
+          contentAreaSx={getCardContentAreaSx(sectionHeightCap, { fillHeight: shouldApplyCardHeightOverride })}
           isCompactDensity={isCompactDensity}
         />
       );
     };
 
-    const omopGridColumns = getFilterGridColumnCount(totalGridItemCount, filterSet.id);
+    // When column wrappers are active, prefer the number of column groups the
+    // layout produced (one per dedicated/LPT column) over the breakpoint cap.
+    // Otherwise oversized sections get squeezed into too few columns and the
+    // dedicated-column rule visibly fails. We still take the max with the
+    // breakpoint-derived count so sections with few items don't shrink.
+    const baseOmopGridColumns = getFilterGridColumnCount(totalGridItemCount, filterSet.id);
+    const omopGridColumns = useColumnWrappers
+      ? Math.max(baseOmopGridColumns, columnGroups.length)
+      : baseOmopGridColumns;
     const renderedOmopCardsByClassName = new Map(
       orderedClassNames.map((className, classIndex) => [className, renderOmopFilterCard(className, classIndex)])
     );
-    const compactPlusOmopColumns = isCompactPlusDensity
+    const compactPlusOmopColumns = useColumnWrappers
       ? columnGroups.map((group, groupIndex) => (
           <Box
             key={`${keyPrefix}:${filterSet.id}:compact-plus-column-${groupIndex}`}
@@ -4621,8 +4771,12 @@ function FiltersView() {
             sx={{
               display: "flex",
               flexDirection: "column",
-              gap: FILTER_PANEL_SPACING_UNITS,
               minWidth: 0,
+              // Explicit marginBottom is more reliable than flex `gap` for
+              // Paper children that carry display:inline-block.
+              "& > *:not(:last-child)": {
+                marginBottom: `${FILTER_PANEL_SPACING_PX}px`,
+              },
             }}
           >
             {group.map((className) => renderedOmopCardsByClassName.get(className))}
