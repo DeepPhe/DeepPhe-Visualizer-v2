@@ -41,18 +41,27 @@ jest.mock("../../controllers/attributes", () => ({
   getSummary: jest.fn(),
 }));
 
+jest.mock("../../controllers/concepts", () => ({
+  getSummary: jest.fn(),
+}));
+
 jest.mock("../../clients/deepphe-data-api", () => ({
   fetchDeepPheFilterCount: jest.fn(),
+  fetchDeepPheFilterCountBatch: jest.fn(),
   fetchDeepPheFilterSummary: jest.fn(),
+  fetchPatientDocuments: jest.fn(),
 }));
 
 import FiltersView from "../filters";
 import { FILTER_SETS } from "../filterSets";
 import { getSummary as getOmopSummary } from "../../controllers/omap";
 import { getSummary as getAttributeSummary } from "../../controllers/attributes";
+import { getSummary as getConceptsSummary } from "../../controllers/concepts";
 import {
   fetchDeepPheFilterCount,
+  fetchDeepPheFilterCountBatch,
   fetchDeepPheFilterSummary,
+  fetchPatientDocuments,
 } from "../../clients/deepphe-data-api";
 
 function renderComponent(element) {
@@ -335,6 +344,14 @@ describe("FiltersView", () => {
       },
     });
     fetchDeepPheFilterSummary.mockResolvedValue([]);
+    getConceptsSummary.mockResolvedValue({
+      classes: [],
+      instancesByClass: {},
+    });
+    // Reject so the view falls back to individual fetchDeepPheFilterCount
+    // calls, which the hasFilterRequest assertions inspect.
+    fetchDeepPheFilterCountBatch.mockRejectedValue(new Error("batch endpoint unavailable in tests"));
+    fetchPatientDocuments.mockResolvedValue([]);
   });
 
   it("renders shared filter card classes while applying a responsive column cap", async () => {
