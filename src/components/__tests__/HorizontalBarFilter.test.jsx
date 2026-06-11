@@ -1,7 +1,3 @@
-      expect(onSortModeChange).toHaveBeenLastCalledWith("alpha-asc");
-    await clickAsync(labelSortButton);
-    const labelSortButton = container.querySelector('button[aria-label^="Sort by label"]');
-    expect(labelSortButton).not.toBeNull();
 /* eslint-disable testing-library/no-unnecessary-act */
 /* eslint-disable testing-library/no-container */
 import React from "react";
@@ -288,7 +284,9 @@ describe("HorizontalBarFilter patient dots", () => {
       />
     );
 
-    const targetDot = container.querySelector('circle[data-patient-id="PATIENT_BRAVO"]');
+    const targetDot = container.querySelector(
+      'circle.horizontal-bar-filter-patient-dot-hitbox[aria-label^="Patient PATIENT_BRAVO"]'
+    );
     expect(targetDot).not.toBeNull();
 
     await clickAsync(targetDot);
@@ -333,7 +331,9 @@ describe("HorizontalBarFilter patient dots", () => {
       />
     );
 
-    const targetDot = container.querySelector('circle[data-patient-id="PATIENT_OMEGA"]');
+    const targetDot = container.querySelector(
+      'circle.horizontal-bar-filter-patient-dot-hitbox[aria-label^="Patient PATIENT_OMEGA"]'
+    );
     expect(targetDot).not.toBeNull();
 
     await clickAsync(targetDot);
@@ -392,18 +392,23 @@ describe("HorizontalBarFilter patient dots", () => {
         showSortDimensionToggle
         showSortCycleButton={false}
         onSortModeChange={onSortModeChange}
-      expect(onSortModeChange).toHaveBeenCalledWith("alpha-asc");
-      expect(getRowLabelOrder(container, ["A", "B"])).toEqual(["A", "B"]);
+      />
     );
+
+    expect(onSortModeChange).toHaveBeenCalledWith("alpha-asc");
+    expect(getRowLabelOrder(container, ["A", "B"])).toEqual(["A", "B"]);
 
     const countSortButton = container.querySelector('button[aria-label^="Sort by count"]');
     expect(countSortButton).not.toBeNull();
-    });
     await clickAsync(countSortButton);
-    const labelSortButton = container.querySelector('button[aria-label^="Sort by label"]');
-    expect(labelSortButton).not.toBeNull();
+
+    await waitFor(() => {
       expect(onSortModeChange).toHaveBeenLastCalledWith("value-desc");
       expect(getRowLabelOrder(container, ["A", "B"])).toEqual(["B", "A"]);
+    });
+
+    const labelSortButton = container.querySelector('button[aria-label^="Sort by label"]');
+    expect(labelSortButton).not.toBeNull();
     await clickAsync(labelSortButton);
 
     await waitFor(() => {
