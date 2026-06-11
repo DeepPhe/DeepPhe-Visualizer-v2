@@ -8,8 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Cohort Explorer filters view (`/`) with configurable filter sets, modal
+  filter details, compact/compact-plus density modes, theme builder, and a
+  Selected Patients bottom drawer with pagination, CSV export, and
+  window-style minimize/maximize controls
+- Patient view (`/patient`) with demographics, cancer/tumor summary, document
+  timeline chart, and a document viewer with concept overlays
+- Embedded patient view inside the filter drawer (open patients as tabs)
+- Concept (NLP phenotype) filters wired through a new concepts controller
+- Batch filter-count endpoint support with per-row count caching and a
+  concurrency-limited fallback to individual requests
+- Tallest-aligned filter section layout with dedicated columns for long
+  filters, scrollable card caps, and slack distribution bounded by content
+  height (`filterLayout.js`)
+- Performance tracker spans and milestones (`utils/perfTracker.js`)
+- Documentation pipeline: MkDocs site, screenshot capture, and PDF export
+  scripts (`npm run docs:review`)
+- Read-only piper files server (`server.js` + `src/piper-server/config.js`)
 - Comprehensive unit testing infrastructure
 - GitHub Actions CI/CD pipeline
+
+### Changed
+- Filter sets restructured: "Pathology" became "Pathology & Grade", new
+  "Tumor Anatomy" set, Cancer Type and Primary Site merged into one section
+- Patient view reworked into a denser three-panel layout
+- Filter visibility now gated on data load to remove the loading flash
+
+### Fixed
+- Test suite restored to green (161 tests across 22 suites): repaired a
+  corrupted `useDataLoader` test file, unparseable `HorizontalBarFilter`
+  tests, and stale expectations across the FiltersView, filterSets, patient,
+  and route suites
+- Generated artifacts (`site/`, `output/`, `.idea/`) untracked from git
 
 ## [0.1.0] - 2026-03-17
 

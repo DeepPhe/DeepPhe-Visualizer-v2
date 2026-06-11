@@ -58,8 +58,6 @@ export function buildTallestAlignedLayout(
     const desired = Math.max(0, Number(desiredCardHeightByClass[className]) || 0);
     return desired > 0 ? desired : getEffectiveHeight(className);
   };
-  const resolvedStackableCardMaxHeight =
-    toPositiveNumber(stackableCardMaxHeight) || DEFAULT_STACKABLE_CARD_MAX_HEIGHT;
   const scrollableCardByClass =
     options?.scrollableCardByClass && typeof options.scrollableCardByClass === "object"
       ? options.scrollableCardByClass
@@ -68,8 +66,6 @@ export function buildTallestAlignedLayout(
     options?.desiredCardHeightByClass && typeof options.desiredCardHeightByClass === "object"
       ? options.desiredCardHeightByClass
       : {};
-  const packingHeightCap =
-    toPositiveNumber(options?.categoryMaxHeight) || Number.POSITIVE_INFINITY;
   const allowNonContiguousPacking = Boolean(options?.allowNonContiguousPacking);
   const rowCountByClass =
     options?.rowCountByClass && typeof options.rowCountByClass === "object"

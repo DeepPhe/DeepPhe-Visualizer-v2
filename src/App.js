@@ -1,7 +1,6 @@
 import React from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { DEEPPHE_API_LOCATION } from "./config";
-import DebugView from "./views/debug";
 import FiltersView from "./views/filters";
 import AccessibilityStatement from "./views/AccessibilityStatement";
 import FilterSetsConfigView from "./views/FilterSetsConfigView";
