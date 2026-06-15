@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useId } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState, useId } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -328,7 +328,7 @@ function sortHierarchicalRows(rows, sortMode, customSortIndexMap = null) {
   });
 }
 
-export default function HorizontalBarFilter({
+function HorizontalBarFilter({
   title = "",
   data = [],
   selectedValues = [],
@@ -1606,3 +1606,10 @@ HorizontalBarFilter.propTypes = {
   density: PropTypes.oneOf(["standard", "compact"]),
   className: PropTypes.string,
 };
+
+// Memoized so the chart's SVG layout/draw is skipped when its props are
+// unchanged. The filters view renders one of these per filter class; without
+// memoization, any state change in FiltersView re-rendered every chart. For
+// this to be effective the parent must pass stable prop identities (callbacks
+// and array props), which FiltersView now does.
+export default memo(HorizontalBarFilter);

@@ -21,7 +21,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { ThemeProvider, alpha, createTheme, darken, getContrastRatio, lighten } from "@mui/material/styles";
+import { ThemeProvider, alpha, createTheme } from "@mui/material/styles";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import Masonry from "@mui/lab/Masonry";
@@ -51,14 +51,9 @@ import {
   persistThemeColorOverridesByTheme,
   toColorInputHexValue,
 } from "./filters/themeColorOverrides";
-import { getAgeDecileLabel, normalizeClassName } from "../utils/dataProcessing";
-import { toDisplayName } from "../utils/displayNames";
+import { normalizeClassName } from "../utils/dataProcessing";
 import { endSpan, logMilestone, startSpan } from "../utils/perfTracker";
-import {
-  FILTER_ENTRY_BY_TYPE_CLASS,
-  resolveFilterSetsWithExtras,
-  resolveFilterSetsForAttributesAndConcepts,
-} from "./filterSets";
+import { resolveFilterSetsWithExtras, resolveFilterSetsForAttributesAndConcepts } from "./filterSets";
 import { buildFilterSectionLayout, estimateCardHeight } from "./filterLayout";
 import FilterSectionCard from "./filters/FilterSectionCard";
 import FiltersToolbar from "./filters/FiltersToolbar";
@@ -76,74 +71,77 @@ import {
   buildChildChartData,
   buildRollupInstanceMap,
   buildRolledUpChartData,
-  hasRollup,
   isExpandable,
-  resolveRollupSelections,
 } from "./rollup";
+import {
+  AGE_AT_DX_CLASS,
+  AGE_SELECTION_MODE,
+  DEFAULT_FILTER_VALUE_SORT_MODE,
+  FILTER_SORT_DIMENSION,
+  FILTER_SORT_DIRECTION,
+  buildAgeDecileChartData,
+  buildAgeDecileInstanceMap,
+  filterRowsByQuery,
+  getFilterCustomSortOrder,
+  getFilterDefaultSortMode,
+  getFilterDisplayName,
+  getFilterMaxHeightPx,
+  getSortDimensionFromMode,
+  getSortDirectionFromMode,
+  isAttributeRollupClass,
+  normalizeChartSortMode,
+  normalizeInstanceValues,
+  prettifyClassName,
+  toChartData,
+  toDisplayInstanceValue,
+  toSortMode,
+  withCompactCustomSortOrder,
+  withCompactFilterLabels,
+} from "./filters/filterDefinitions";
+import { buildIdentifiedSummary, formatSelectionText } from "./filters/cohortNarrative";
+import {
+  buildActiveFilters,
+  getFilterRowKey,
+  getRowInstancesForClass,
+  isSameFilterClass,
+  resolveRequestFilters,
+  syncExpandedParentsByClass,
+  syncSelectionByClass,
+  toFilterItem,
+} from "./filters/filterRequest";
+import {
+  buildPatientSummaryFromFilterSummary,
+  formatItemCount,
+  formatMs,
+  getZeroResultHint,
+  normalizeCountResponse,
+  normalizePatientIds,
+  resolveDocumentCountFromPayload,
+  transformSummaryToGridRow,
+} from "./filters/patientSummaryNormalization";
+import {
+  FONT_FAMILY_OPTIONS,
+  applyHighContrast,
+  getInitialFontFamilyKey,
+  getScaledCustomThemeValues,
+} from "./filters/filterAppearance";
+
+// Shared frozen empty array used as a stable fallback for per-card selection
+// values. A fresh `[]` fallback would give each memoized card a new prop
+// identity every render, defeating React.memo on HorizontalBarFilter.
+const EMPTY_SELECTION = Object.freeze([]);
 
 const SLOW_QUERY_THRESHOLD_MS = 100;
 const PATIENT_GRID_DEFAULT_PAGE_SIZE = 10;
 const PATIENT_GRID_MAXIMIZED_PAGE_SIZE = 40;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
-const AGE_AT_DX_CLASS = "AGE_AT_DX";
-const AGE_SELECTION_MODE = {
-  DECILE: "decile",
-};
-const OMOP_CLASS_DISPLAY_NAME_MAP = {
-  AGE_AT_DX: "Age at Dx",
-  ETHNICITY: "Ethnicity",
-  GENDER: "Gender",
-  RACE: "Race",
-  CANCER: "Cancer",
-};
 const FILTER_LAYOUT_MODE = {
   STACKED: "stacked",
   PER_CARD_COLUMN: "per-card-column",
 };
-const FILTER_VALUE_SORT_MODES = ["value-desc", "value-asc", "alpha-asc", "alpha-desc"];
-const DEFAULT_FILTER_VALUE_SORT_MODE = "alpha-asc";
-const FILTER_SORT_DIMENSION = {
-  COUNT: "count",
-  LABEL: "label",
-};
-const FILTER_SORT_DIRECTION = {
-  ASC: "asc",
-  DESC: "desc",
-};
-
-const FONT_FAMILY_STORAGE_KEY = "filterPageFontFamily";
-const FONT_FAMILY_OPTIONS = [
-  { key: "wcag-sans", label: "WCAG Sans", stack: 'Inter, Roboto, "Open Sans", sans-serif' },
-  { key: "theme-default", label: "Theme Default", stack: null },
-  {
-    key: "system-sans",
-    label: "System Sans",
-    stack: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-  },
-  { key: "inter", label: "Inter", stack: '"Inter", sans-serif' },
-  { key: "monospace", label: "Monospace", stack: MONOSPACE_STACK },
-  { key: "serif", label: "Serif", stack: 'Georgia, "Times New Roman", Times, serif' },
-  { key: "open-dyslexic", label: "OpenDyslexic", stack: '"OpenDyslexic", sans-serif' },
-];
 const OPEN_DYSLEXIC_FONT_LINK_ID = "open-dyslexic-font-link";
 const OPEN_DYSLEXIC_FONT_LINK_HREF = "https://fonts.cdnfonts.com/css/opendyslexic";
-const CUSTOM_SIZE_KEYS_TO_SCALE = [
-  "barActiveAccent",
-  "barMinWidth",
-  "barHeight",
-  "focusRingOffset",
-  "chipInactiveBorder",
-  "chipRadius",
-  "iconHoverRadius",
-  "cardPadding",
-  "headerLetterSpacing",
-  "headerFontSize",
-  "patientCountSize",
-];
-
 const SHOULD_LOG_FILTERS_PERF = process.env.NODE_ENV !== "production";
-const CANCER_TYPE_MAP = { B: "Breast", M: "Melanoma", O: "Ovarian Cancer" };
-const GENDER_MAP = { M: "Male", F: "Female", U: "Unknown" };
 const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
   "name",
   "type",
@@ -157,18 +155,6 @@ const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
 
 function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
   return `${includePatientIds ? "withPatientIds" : "withoutPatientIds"}|${JSON.stringify(rowRequestFilters)}`;
-}
-
-function getInitialFontFamilyKey() {
-  try {
-    const stored = localStorage.getItem(FONT_FAMILY_STORAGE_KEY);
-    if (stored && FONT_FAMILY_OPTIONS.some((option) => option.key === stored)) {
-      return stored;
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  return "wcag-sans";
 }
 
 const REDUCED_MOTION_STYLES = (
@@ -196,1685 +182,6 @@ const TOGGLED_REDUCED_MOTION_STYLES = (
     }}
   />
 );
-
-function scaleCssLengthValue(value, multiplier) {
-  if (!Number.isFinite(multiplier) || multiplier === 1) {
-    return value;
-  }
-  if (typeof value === "number") {
-    return Math.round(value * multiplier * 1000) / 1000;
-  }
-  if (typeof value !== "string") {
-    return value;
-  }
-  return value.replace(/(-?\d*\.?\d+)(px|rem|em)\b/g, (_, rawNumber, unit) => {
-    const scaled = Math.round(Number.parseFloat(rawNumber) * multiplier * 1000) / 1000;
-    return `${scaled}${unit}`;
-  });
-}
-
-function getScaledCustomThemeValues(custom = {}, multiplier = 1) {
-  if (!custom || !Number.isFinite(multiplier) || multiplier === 1) {
-    return custom;
-  }
-
-  const nextCustom = { ...custom };
-  CUSTOM_SIZE_KEYS_TO_SCALE.forEach((key) => {
-    if (nextCustom[key] !== undefined) {
-      nextCustom[key] = scaleCssLengthValue(nextCustom[key], multiplier);
-    }
-  });
-  return nextCustom;
-}
-
-function getSolidPaperColor(theme, isDark) {
-  const paperColor = theme?.palette?.background?.paper;
-  if (typeof paperColor === "string") {
-    const normalizedColor = paperColor.trim().toLowerCase();
-    const isTranslucent =
-      normalizedColor.includes("rgba(") || normalizedColor.includes("hsla(") || normalizedColor === "transparent";
-    if (!isTranslucent) {
-      return paperColor;
-    }
-  }
-  return isDark ? "#1E1E2E" : "#FFFFFF";
-}
-
-function getAAASecondaryTextColor(backgroundDefault, isDark) {
-  const fallbackBackground = isDark ? "#101219" : "#FFFFFF";
-  const background = backgroundDefault || fallbackBackground;
-  let color = isDark ? "#D0D8E0" : "#3A3A3A";
-
-  for (let index = 0; index < 10; index += 1) {
-    if (getContrastRatio(color, background) >= 7) {
-      return color;
-    }
-    color = isDark ? lighten(color, 0.08) : darken(color, 0.08);
-  }
-  return color;
-}
-
-function applyHighContrast(theme) {
-  const isDark = theme.palette.mode === "dark";
-  const backgroundDefault = theme.palette.background.default;
-  const boostedTextSecondary = getAAASecondaryTextColor(backgroundDefault, isDark);
-  const solidDivider = isDark ? "#3A3A4A" : "#5A5A5A";
-  const solidPaperBorderColor = isDark ? "#4A4A5A" : "#444444";
-  const solidPaperBackground = getSolidPaperColor(theme, isDark);
-  const custom = theme.custom || {};
-  const focusRingColor = custom.focusRing || theme.palette.primary.light || theme.palette.primary.main;
-
-  return createTheme(theme, {
-    palette: {
-      background: {
-        paper: solidPaperBackground,
-      },
-      text: {
-        secondary: boostedTextSecondary,
-      },
-      divider: solidDivider,
-    },
-    components: {
-      MuiPaper: {
-        styleOverrides: {
-          root: {
-            backgroundColor: solidPaperBackground,
-            backgroundImage: "none",
-            backdropFilter: "none",
-            WebkitBackdropFilter: "none",
-            border: `2px solid ${solidPaperBorderColor}`,
-            boxShadow: "none",
-          },
-        },
-      },
-      MuiButtonBase: {
-        styleOverrides: {
-          root: {
-            "&:focus-visible": {
-              outline: `3px solid ${focusRingColor}`,
-              outlineOffset: custom.focusRingOffset || "2px",
-            },
-          },
-        },
-      },
-      MuiIconButton: {
-        styleOverrides: {
-          root: {
-            "&:focus-visible": {
-              outline: `3px solid ${focusRingColor}`,
-              outlineOffset: custom.focusRingOffset || "2px",
-            },
-          },
-        },
-      },
-    },
-    custom: {
-      ...custom,
-      focusRingWidth: 3,
-      barTrack: isDark ? "#252839" : "#D0D0D0",
-      barActiveGlow: "none",
-      chipActiveGlow: "none",
-      chipInactiveBorder: `2px solid ${solidPaperBorderColor}`,
-      cardBeforePseudo: null,
-      pageBgExtra: null,
-    },
-  });
-}
-
-function normalizeClassLookupKey(value) {
-  return normalizeClassName(value).replace(/[^A-Z0-9]+/g, "");
-}
-
-function prettifyClassName(className, type = "") {
-  const rawValue = String(className || "").trim();
-  if (!rawValue) {
-    return "";
-  }
-
-  const normalizedClass = normalizeClassName(rawValue);
-  if (OMOP_CLASS_DISPLAY_NAME_MAP[normalizedClass]) {
-    return OMOP_CLASS_DISPLAY_NAME_MAP[normalizedClass];
-  }
-
-  const normalizedType = String(type || "")
-    .trim()
-    .toLowerCase();
-  const shouldTitleCase = normalizedType === "omop" || rawValue.includes("_") || rawValue === normalizedClass;
-
-  if (!shouldTitleCase) {
-    return rawValue;
-  }
-
-  return rawValue
-    .toLowerCase()
-    .split(/[_\s]+/)
-    .filter(Boolean)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-    .join(" ");
-}
-
-function getFilterEntry(type, className) {
-  const normalizedType = String(type || "")
-    .trim()
-    .toLowerCase();
-  const rawClassName = String(className || "").trim();
-  if (!normalizedType || !rawClassName) {
-    return null;
-  }
-
-  const exactMatch = FILTER_ENTRY_BY_TYPE_CLASS.get(`${normalizedType}:${rawClassName}`);
-  if (exactMatch) {
-    return exactMatch;
-  }
-
-  const targetLookupKey = normalizeClassLookupKey(rawClassName);
-  for (const filterEntry of FILTER_ENTRY_BY_TYPE_CLASS.values()) {
-    if (filterEntry.type !== normalizedType) {
-      continue;
-    }
-
-    if (normalizeClassLookupKey(filterEntry.key) === targetLookupKey) {
-      return filterEntry;
-    }
-  }
-
-  return null;
-}
-
-function getFilterDisplayName(type, className) {
-  return getFilterEntry(type, className)?.displayName || prettifyClassName(className, type);
-}
-
-function getFilterDefaultSortMode(type, className) {
-  return normalizeChartSortMode(getFilterEntry(type, className)?.defaultSortMode || DEFAULT_FILTER_VALUE_SORT_MODE);
-}
-
-function getFilterCustomSortOrder(type, className) {
-  const configuredOrder = getFilterEntry(type, className)?.customSortOrder;
-  return Array.isArray(configuredOrder) ? configuredOrder : [];
-}
-
-function getFilterCompactLabelStripPrefix(type, className) {
-  const prefix = getFilterEntry(type, className)?.compactLabelStripPrefix;
-  return typeof prefix === "string" && prefix.length > 0 ? prefix : null;
-}
-
-function stripCompactLabelPrefix(rawLabel, prefix) {
-  const label = String(rawLabel || "").trim();
-  const normalizedPrefix = String(prefix || "").trim();
-  if (!label || !normalizedPrefix) {
-    return label;
-  }
-
-  const escapedPrefix = normalizedPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const compactLabel = label.replace(new RegExp(`^${escapedPrefix}\\s*`, "i"), "").trim();
-  return compactLabel || label;
-}
-
-function withCompactFilterLabels(rows, type, className, isCompact) {
-  if (!isCompact || !Array.isArray(rows) || rows.length === 0) {
-    return Array.isArray(rows) ? rows : [];
-  }
-
-  const prefix = getFilterCompactLabelStripPrefix(type, className);
-  if (!prefix) {
-    return rows;
-  }
-
-  return rows.map((row) => {
-    const fallbackLabel = String(row?.displayLabel || row?.label || "").trim();
-    if (!fallbackLabel) {
-      return row;
-    }
-
-    const compactDisplayLabel = stripCompactLabelPrefix(fallbackLabel, prefix);
-    if (!compactDisplayLabel || compactDisplayLabel === fallbackLabel) {
-      return row;
-    }
-
-    return {
-      ...row,
-      displayLabel: compactDisplayLabel,
-    };
-  });
-}
-
-function withCompactCustomSortOrder(sortOrder, type, className, isCompact) {
-  const normalizedSortOrder = Array.isArray(sortOrder) ? sortOrder : [];
-  if (!isCompact || normalizedSortOrder.length === 0) {
-    return normalizedSortOrder;
-  }
-
-  const prefix = getFilterCompactLabelStripPrefix(type, className);
-  if (!prefix) {
-    return normalizedSortOrder;
-  }
-
-  return normalizedSortOrder.map((value) => stripCompactLabelPrefix(value, prefix));
-}
-
-function getFilterMaxHeightPx(type, className) {
-  const numericMaxHeight = Number(getFilterEntry(type, className)?.maxHeightPx);
-  if (!Number.isFinite(numericMaxHeight) || numericMaxHeight <= 0) {
-    return null;
-  }
-
-  return Math.max(1, Math.round(numericMaxHeight));
-}
-
-function isAttributeRollupClass(className) {
-  const configuredFilter = getFilterEntry("attributes", className);
-  if (configuredFilter) {
-    return Boolean(configuredFilter.hasRollup);
-  }
-  return hasRollup(className);
-}
-
-function toDisplayInstanceValue(type, className, value) {
-  const rawValue = String(value || "").trim();
-  if (!rawValue) {
-    return "";
-  }
-
-  const normalizedType = String(type || "")
-    .trim()
-    .toLowerCase();
-  const source =
-    normalizedType === "omop"
-      ? String(className || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[\s_]+/g, "_")
-      : String(className || "").trim();
-
-  const displayValue = toDisplayName(rawValue, source);
-  const normalizedClass = normalizeClassName(className);
-  const isTnmStageClass =
-    normalizedType === "attributes" &&
-    (normalizedClass === "T STAGE" || normalizedClass === "N STAGE" || normalizedClass === "M STAGE");
-
-  if (isTnmStageClass) {
-    return displayValue.replace(/^([cp]?)([TNM])\s+([0-9X].*)$/i, "$1$2$3");
-  }
-
-  return displayValue;
-}
-
-function toChartData(summaryRows, type, className) {
-  if (!Array.isArray(summaryRows)) {
-    return [];
-  }
-
-  const normalizePatientIds = (rawValue) => {
-    if (Array.isArray(rawValue)) {
-      return rawValue;
-    }
-
-    if (typeof rawValue === "string") {
-      return [
-        ...new Set(
-          rawValue
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        ),
-      ];
-    }
-
-    if (rawValue !== undefined && rawValue !== null && rawValue !== "") {
-      return [String(rawValue).trim()].filter(Boolean);
-    }
-
-    return [];
-  };
-
-  return summaryRows
-    .map((row) => {
-      const rawLabel = String(row?.value ?? "").trim();
-      const patientIds = normalizePatientIds(row?.patientIds ?? row?.patient_ids ?? row?.patientId ?? row?.patient_id);
-
-      return {
-        label: rawLabel,
-        displayLabel: toDisplayInstanceValue(type, className, rawLabel),
-        value: Number(row?.count ?? 0),
-        patientIds,
-      };
-    })
-    .filter((row) => row.label.length > 0);
-}
-
-function normalizeInstanceValues(values) {
-  return Array.isArray(values) ? [...new Set(values.map((item) => String(item || "").trim()).filter(Boolean))] : [];
-}
-
-function getAgeDecileSortRank(label) {
-  const rawLabel = String(label || "").trim();
-  if (rawLabel === "90+") {
-    return 90;
-  }
-  const rangeMatch = rawLabel.match(/^(\d+)\s*-\s*\d+$/);
-  if (rangeMatch) {
-    return Number.parseInt(rangeMatch[1], 10);
-  }
-  return Number.MAX_SAFE_INTEGER;
-}
-
-function buildAgeDecileChartData(rows) {
-  const totalsByDecile = new Map();
-
-  (Array.isArray(rows) ? rows : []).forEach((row) => {
-    const decileLabel = getAgeDecileLabel(row?.label);
-    if (!decileLabel) {
-      return;
-    }
-
-    const existingSummary = totalsByDecile.get(decileLabel) || {
-      count: 0,
-      patientIds: new Set(),
-    };
-    const rowCount = Number(row?.value);
-    if (Number.isFinite(rowCount)) {
-      existingSummary.count += rowCount;
-    }
-
-    if (Array.isArray(row?.patientIds)) {
-      row.patientIds.forEach((patientId) => {
-        const normalizedId = String(patientId || "").trim();
-        if (normalizedId) {
-          existingSummary.patientIds.add(normalizedId);
-        }
-      });
-    }
-
-    totalsByDecile.set(decileLabel, existingSummary);
-  });
-
-  return [...totalsByDecile.entries()]
-    .map(([label, summary]) => ({
-      label,
-      displayLabel: label,
-      value: summary.count,
-      patientIds: [...summary.patientIds].sort((leftId, rightId) =>
-        leftId.localeCompare(rightId, undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-      ),
-    }))
-    .filter((row) => Number(row.value) > 0)
-    .sort((leftRow, rightRow) => {
-      const leftRank = getAgeDecileSortRank(leftRow.label);
-      const rightRank = getAgeDecileSortRank(rightRow.label);
-      if (leftRank !== rightRank) {
-        return leftRank - rightRank;
-      }
-      return leftRow.label.localeCompare(rightRow.label, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      });
-    });
-}
-
-function buildAgeDecileInstanceMap(rows) {
-  const valuesByDecile = new Map();
-
-  (Array.isArray(rows) ? rows : []).forEach((row) => {
-    const rawLabel = String(row?.label || "").trim();
-    if (!rawLabel) {
-      return;
-    }
-
-    const decileLabel = getAgeDecileLabel(rawLabel);
-    if (!decileLabel) {
-      return;
-    }
-
-    if (!valuesByDecile.has(decileLabel)) {
-      valuesByDecile.set(decileLabel, new Set());
-    }
-    valuesByDecile.get(decileLabel).add(rawLabel);
-  });
-
-  const nextMap = {};
-  [...valuesByDecile.entries()].forEach(([decileLabel, valueSet]) => {
-    nextMap[decileLabel] = [...valueSet].sort((leftValue, rightValue) =>
-      leftValue.localeCompare(rightValue, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      })
-    );
-  });
-
-  return nextMap;
-}
-
-function formatSelectionText(values) {
-  if (!Array.isArray(values) || values.length === 0) {
-    return "None";
-  }
-  return values.join(", ");
-}
-
-function joinWithConjunction(values, conjunction = "or") {
-  const normalized = Array.isArray(values) ? values.map((value) => String(value || "").trim()).filter(Boolean) : [];
-
-  if (normalized.length === 0) {
-    return "";
-  }
-
-  if (normalized.length === 1) {
-    return normalized[0];
-  }
-
-  if (normalized.length === 2) {
-    return `${normalized[0]} ${conjunction} ${normalized[1]}`;
-  }
-
-  return `${normalized.slice(0, -1).join(", ")}, ${conjunction} ${normalized[normalized.length - 1]}`;
-}
-
-function toNarrativeLabel(value) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return "";
-  }
-
-  if (/^[A-Z0-9+\-−/]+$/.test(text) && text.length <= 6) {
-    return text;
-  }
-
-  return text.toLowerCase();
-}
-
-function joinCohortConditions(conditions) {
-  const normalized = Array.isArray(conditions)
-    ? conditions.map((value) => String(value || "").trim()).filter(Boolean)
-    : [];
-
-  if (normalized.length === 0) {
-    return "";
-  }
-
-  if (normalized.length === 1) {
-    return normalized[0];
-  }
-
-  if (normalized.length === 2) {
-    return `${normalized[0]}, and ${normalized[1]}`;
-  }
-
-  return `${normalized.slice(0, -1).join(", ")}, and ${normalized[normalized.length - 1]}`;
-}
-
-function getDisplayInstances(filter) {
-  if (!filter || !Array.isArray(filter.instances)) {
-    return [];
-  }
-
-  return filter.instances
-    .map((value) => toDisplayInstanceValue(filter.type, filter.class, value))
-    .map((value) => String(value || "").trim())
-    .filter(Boolean);
-}
-
-function formatCancerValue(value) {
-  const rawLabel = String(value || "").trim();
-  if (!rawLabel) {
-    return "";
-  }
-  if (/cancer/i.test(rawLabel)) {
-    return rawLabel;
-  }
-  return `${rawLabel} cancer`;
-}
-
-function formatAgeValues(values) {
-  const normalizedValues = Array.isArray(values)
-    ? values.map((value) => String(value || "").trim()).filter(Boolean)
-    : [];
-
-  if (normalizedValues.length === 0) {
-    return "";
-  }
-
-  const uniqueValues = [...new Set(normalizedValues)];
-  const allWholeNumbers = uniqueValues.every((value) => /^\d+$/.test(value));
-  if (allWholeNumbers) {
-    const numbers = uniqueValues
-      .map((value) => Number.parseInt(value, 10))
-      .filter((value) => Number.isFinite(value))
-      .sort((leftValue, rightValue) => leftValue - rightValue);
-
-    const ranges = [];
-    let rangeStart = numbers[0];
-    let rangeEnd = numbers[0];
-
-    for (let index = 1; index < numbers.length; index += 1) {
-      const value = numbers[index];
-      if (value === rangeEnd + 1) {
-        rangeEnd = value;
-      } else {
-        ranges.push(rangeStart === rangeEnd ? `${rangeStart}` : `${rangeStart}-${rangeEnd}`);
-        rangeStart = value;
-        rangeEnd = value;
-      }
-    }
-    ranges.push(rangeStart === rangeEnd ? `${rangeStart}` : `${rangeStart}-${rangeEnd}`);
-
-    return joinWithConjunction(ranges, "or");
-  }
-
-  const allAgeRanges = uniqueValues.every((value) => /^\d+\s*-\s*\d+$/.test(value));
-  if (allAgeRanges) {
-    return joinWithConjunction(uniqueValues, "or");
-  }
-
-  return joinWithConjunction(uniqueValues, "or");
-}
-
-function buildIdentifiedSummary(filters, count) {
-  const normalizedFilters = Array.isArray(filters) ? filters : [];
-  const numericCount = Number(count);
-
-  if (normalizedFilters.length === 0 || !Number.isFinite(numericCount)) {
-    return "";
-  }
-
-  const safeCount = Math.max(0, Math.round(numericCount));
-  if (safeCount === 0) {
-    return "No patients matched these criteria.";
-  }
-
-  const omopFiltersByClass = {};
-  const attributeFiltersByClass = {};
-
-  normalizedFilters.forEach((filter) => {
-    const filterType = String(filter?.type || "").toLowerCase();
-    const classKey = normalizeClassName(filter?.class);
-    if (!classKey) {
-      return;
-    }
-    if (filterType === "omop") {
-      omopFiltersByClass[classKey] = filter;
-      return;
-    }
-    if (filterType === "attributes") {
-      attributeFiltersByClass[classKey] = filter;
-    }
-  });
-
-  const ageValues = getDisplayInstances(omopFiltersByClass.AGE_AT_DX);
-  const raceValues = getDisplayInstances(omopFiltersByClass.RACE).map((value) => toNarrativeLabel(value));
-  const ethnicityValues = getDisplayInstances(omopFiltersByClass.ETHNICITY).map((value) => toNarrativeLabel(value));
-  const genderValues = getDisplayInstances(omopFiltersByClass.GENDER).map((value) => toNarrativeLabel(value));
-  const cancerValues = getDisplayInstances(omopFiltersByClass.CANCER).map((value) => formatCancerValue(value));
-
-  const subjectDescriptors = [];
-  const conditionClauses = [];
-
-  const ageText = formatAgeValues(ageValues);
-  if (ageText) {
-    subjectDescriptors.push(`${ageText} year old`);
-  }
-
-  const raceText = joinWithConjunction(raceValues, "or");
-  if (raceText) {
-    subjectDescriptors.push(raceText);
-  }
-
-  const genderText = joinWithConjunction(genderValues, "or");
-  if (genderText) {
-    subjectDescriptors.push(genderText);
-  }
-
-  const ethnicityText = joinWithConjunction(ethnicityValues, "or");
-  if (ethnicityText) {
-    conditionClauses.push(`ethnicity ${ethnicityText}`);
-  }
-
-  const cancerText = joinWithConjunction(
-    cancerValues.map((value) => toNarrativeLabel(value)),
-    "or"
-  );
-  if (cancerText) {
-    conditionClauses.push(cancerText);
-  }
-
-  const behaviorValues = getDisplayInstances(attributeFiltersByClass.BEHAVIOR).map((value) => toNarrativeLabel(value));
-  if (behaviorValues.length > 0) {
-    conditionClauses.push(`${joinWithConjunction(behaviorValues, "or")} neoplasm behavior`);
-  }
-
-  const gradeValues = getDisplayInstances(attributeFiltersByClass.GRADE_NUMERIC).map((value) =>
-    toNarrativeLabel(
-      String(value || "")
-        .replace(/^grade[_\s]*(numeric)?\s*/i, "")
-        .trim()
-    )
-  );
-  if (gradeValues.length > 0) {
-    conditionClauses.push(`grade ${joinWithConjunction(gradeValues, "or")}`);
-  }
-
-  const tStageValues = getDisplayInstances(attributeFiltersByClass["T STAGE"]);
-  if (tStageValues.length > 0) {
-    conditionClauses.push(`T stage ${joinWithConjunction(tStageValues, "or")}`);
-  }
-
-  const nStageValues = getDisplayInstances(attributeFiltersByClass["N STAGE"]);
-  if (nStageValues.length > 0) {
-    conditionClauses.push(`N stage ${joinWithConjunction(nStageValues, "or")}`);
-  }
-
-  const mStageValues = getDisplayInstances(attributeFiltersByClass["M STAGE"]);
-  if (mStageValues.length > 0) {
-    conditionClauses.push(`M stage ${joinWithConjunction(mStageValues, "or")}`);
-  }
-
-  const handledAttributeClasses = new Set(["BEHAVIOR", "GRADE_NUMERIC", "T STAGE", "N STAGE", "M STAGE"]);
-  normalizedFilters
-    .filter((filter) => String(filter?.type || "").toLowerCase() === "attributes")
-    .forEach((filter) => {
-      const classKey = normalizeClassName(filter.class);
-      if (!classKey || handledAttributeClasses.has(classKey)) {
-        return;
-      }
-
-      const values = getDisplayInstances(filter).map((value) => toNarrativeLabel(value));
-      if (values.length === 0) {
-        return;
-      }
-
-      const classLabel = prettifyClassName(filter.class, "attributes").toLowerCase();
-      conditionClauses.push(`${classLabel} ${joinWithConjunction(values, "or")}`);
-    });
-
-  const subjectText = subjectDescriptors.length > 0 ? subjectDescriptors.join(" ") : "patients";
-  const conditionsText = joinCohortConditions(conditionClauses);
-
-  if (conditionsText) {
-    return `${safeCount.toLocaleString()} ${subjectText} with ${conditionsText}.`;
-  }
-
-  return `${safeCount.toLocaleString()} ${subjectText} matched the selected filters.`;
-}
-
-function toFilterItem(type, className, values) {
-  const instances = normalizeInstanceValues(values);
-
-  if (instances.length === 0) {
-    return null;
-  }
-
-  return {
-    type,
-    class: className,
-    instances,
-  };
-}
-
-function getFilterClassKey(type, className) {
-  return `${String(type || "")
-    .trim()
-    .toLowerCase()}:${String(className || "").trim()}`;
-}
-
-function getFilterRowKey(type, className, rowLabel) {
-  return `${getFilterClassKey(type, className)}:${String(rowLabel || "").trim()}`;
-}
-
-function isSameFilterClass(filter, type, className) {
-  return getFilterClassKey(filter?.type, filter?.class) === getFilterClassKey(type, className);
-}
-
-function getRowInstancesForClass({
-  type,
-  className,
-  rowLabel,
-  ageAtDxSelectionMode,
-  ageDecileInstanceMap,
-  rollupInstanceMapByClass,
-}) {
-  const normalizedType = String(type || "").toLowerCase();
-  const isAgeAtDxDecileClass =
-    normalizedType === "omop" &&
-    normalizeClassName(className) === AGE_AT_DX_CLASS &&
-    ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE;
-  const isAttributeRollupFilter = normalizedType === "attributes" && isAttributeRollupClass(className);
-
-  if (isAgeAtDxDecileClass) {
-    const mappedInstances = ageDecileInstanceMap?.[rowLabel];
-    if (Array.isArray(mappedInstances) && mappedInstances.length > 0) {
-      return mappedInstances;
-    }
-  }
-
-  if (isAttributeRollupFilter) {
-    return resolveRollupSelections([rowLabel], className, rollupInstanceMapByClass?.[className]);
-  }
-
-  return [rowLabel];
-}
-
-function buildActiveFilters({
-  selectedOmopValuesByClass,
-  omopClasses,
-  selectedAttributeValuesByClass,
-  attributeClasses,
-  selectedConceptValuesByClass,
-  conceptClasses,
-}) {
-  const omopFilters = Array.isArray(omopClasses)
-    ? omopClasses
-        .map((className) => toFilterItem("omop", className, selectedOmopValuesByClass?.[className]))
-        .filter(Boolean)
-    : [];
-  const attributeFilters = Array.isArray(attributeClasses)
-    ? attributeClasses
-        .map((className) => toFilterItem("attributes", className, selectedAttributeValuesByClass?.[className]))
-        .filter(Boolean)
-    : [];
-  const conceptFilters = Array.isArray(conceptClasses)
-    ? conceptClasses
-        .map((className) => toFilterItem("concepts", className, selectedConceptValuesByClass?.[className]))
-        .filter(Boolean)
-    : [];
-
-  return [...omopFilters, ...attributeFilters, ...conceptFilters];
-}
-
-function resolveRequestFilters({ filters, ageAtDxSelectionMode, ageDecileInstanceMap, rollupInstanceMapByClass }) {
-  if (!Array.isArray(filters)) {
-    return [];
-  }
-
-  return filters
-    .map((filter) => {
-      const normalizedFilterType = String(filter?.type || "").toLowerCase();
-      const isAgeAtDxFilter = normalizedFilterType === "omop" && normalizeClassName(filter?.class) === AGE_AT_DX_CLASS;
-      const isAttributeRollupFilter = normalizedFilterType === "attributes" && isAttributeRollupClass(filter?.class);
-
-      if (!isAgeAtDxFilter && !isAttributeRollupFilter) {
-        return {
-          type: filter.type,
-          class: filter.class,
-          instances: normalizeInstanceValues(filter.instances),
-        };
-      }
-
-      if (isAgeAtDxFilter && ageAtDxSelectionMode !== AGE_SELECTION_MODE.DECILE) {
-        return {
-          type: filter.type,
-          class: filter.class,
-          instances: normalizeInstanceValues(filter.instances),
-        };
-      }
-
-      let expandedInstances = normalizeInstanceValues(filter.instances);
-
-      if (isAgeAtDxFilter && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE) {
-        expandedInstances = normalizeInstanceValues(
-          expandedInstances.flatMap((selectedValue) => {
-            const mappedInstances = ageDecileInstanceMap?.[selectedValue];
-            if (Array.isArray(mappedInstances) && mappedInstances.length > 0) {
-              return mappedInstances;
-            }
-            return [selectedValue];
-          })
-        );
-      }
-
-      if (isAttributeRollupFilter) {
-        expandedInstances = resolveRollupSelections(
-          expandedInstances,
-          filter.class,
-          rollupInstanceMapByClass?.[filter.class]
-        );
-      }
-
-      expandedInstances = normalizeInstanceValues(expandedInstances).sort((leftValue, rightValue) =>
-        leftValue.localeCompare(rightValue, undefined, {
-          numeric: true,
-          sensitivity: "base",
-        })
-      );
-
-      return {
-        type: filter.type,
-        class: filter.class,
-        instances: expandedInstances,
-      };
-    })
-    .filter((filter) => filter.instances.length > 0);
-}
-
-function syncSelectionByClass(previousSelections, classes) {
-  const nextSelections = {};
-
-  classes.forEach((className) => {
-    const existingValues = Array.isArray(previousSelections?.[className]) ? previousSelections[className] : [];
-    nextSelections[className] = [...new Set(existingValues.map((value) => String(value).trim()).filter(Boolean))];
-  });
-
-  return nextSelections;
-}
-
-function syncExpandedParentsByClass(previousState, classes, rolledUpChartDataByClass) {
-  const nextState = {};
-
-  classes.forEach((className) => {
-    if (!isAttributeRollupClass(className)) {
-      nextState[className] = [];
-      return;
-    }
-
-    const existingParents = Array.isArray(previousState?.[className]) ? previousState[className] : [];
-    const availableParents = new Set(
-      (rolledUpChartDataByClass?.[className] || []).map((row) => String(row?.label || "").trim()).filter(Boolean)
-    );
-
-    nextState[className] = [
-      ...new Set(existingParents.map((value) => String(value || "").trim()).filter(Boolean)),
-    ].filter((parentKey) => availableParents.has(parentKey));
-  });
-
-  return nextState;
-}
-
-function formatMs(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return "0.0";
-  }
-  return numericValue.toFixed(1);
-}
-
-function formatItemCount(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return "-";
-  }
-  return numericValue.toLocaleString();
-}
-
-function normalizeCountResponse(payload) {
-  const rawCount = payload?.count;
-  let count = Number(rawCount);
-  if (!Number.isFinite(count) && typeof rawCount === "string") {
-    const parsedValue = Number(String(rawCount).replace(/,/g, "").trim());
-    if (Number.isFinite(parsedValue)) {
-      count = parsedValue;
-    }
-  }
-  const rawPatientIds = Array.isArray(payload?.patient_ids)
-    ? payload.patient_ids
-    : Array.isArray(payload?.patientIds)
-    ? payload.patientIds
-    : [];
-  const patientIds = rawPatientIds.map((id) => String(id));
-  const timing = {
-    queryMs: Number(payload?.timing?.queryMs || 0),
-    bitmapMs: Number(payload?.timing?.bitmapMs || 0),
-    resolveMs: Number(payload?.timing?.resolveMs || 0),
-    totalMs: Number(payload?.timing?.totalMs || 0),
-    itemCounts: Array.isArray(payload?.timing?.itemCounts) ? payload.timing.itemCounts : [],
-  };
-
-  return {
-    count: Number.isFinite(count) ? count : 0,
-    patientIds,
-    timing,
-  };
-}
-
-function normalizePatientIds(patientIds = []) {
-  return [...new Set((Array.isArray(patientIds) ? patientIds : []).map((id) => String(id || "").trim()))]
-    .filter(Boolean)
-    .sort((leftId, rightId) => leftId.localeCompare(rightId, undefined, { numeric: true, sensitivity: "base" }));
-}
-
-function normalizeSummaryRecordForGrid(summary) {
-  const parsedSummary =
-    parsePatientSummaryJson(summary?.json_text ?? summary?.jsonText) ||
-    parsePatientSummaryJson(summary?.summary_json ?? summary?.summaryJson) ||
-    parsePatientSummaryJson(summary);
-
-  if (!parsedSummary || typeof parsedSummary !== "object") {
-    return null;
-  }
-
-  const demographics =
-    parsedSummary?.demographics && typeof parsedSummary.demographics === "object"
-      ? parsedSummary.demographics
-      : parsedSummary?.demographic && typeof parsedSummary.demographic === "object"
-      ? parsedSummary.demographic
-      : summary?.demographics && typeof summary.demographics === "object"
-      ? summary.demographics
-      : summary?.demographic && typeof summary.demographic === "object"
-      ? summary.demographic
-      : {};
-
-  const normalizeAttributeValue = (value) => {
-    if (value === undefined || value === null) {
-      return "";
-    }
-
-    if (typeof value === "string" || typeof value === "number") {
-      return String(value).trim();
-    }
-
-    if (typeof value === "object") {
-      const primitiveCandidate =
-        value?.value ??
-        value?.name ??
-        value?.label ??
-        value?.display ??
-        value?.displayLabel ??
-        value?.instance ??
-        value?.instance_label;
-
-      if (primitiveCandidate !== undefined && primitiveCandidate !== null && typeof primitiveCandidate !== "object") {
-        return String(primitiveCandidate).trim();
-      }
-    }
-
-    return "";
-  };
-
-  const collectAttributeValues = (rawValue, accumulator) => {
-    if (rawValue === undefined || rawValue === null) {
-      return;
-    }
-
-    if (Array.isArray(rawValue)) {
-      rawValue.forEach((item) => collectAttributeValues(item, accumulator));
-      return;
-    }
-
-    if (typeof rawValue === "object") {
-      const nestedLists = [rawValue?.instances, rawValue?.values, rawValue?.items, rawValue?.data];
-      nestedLists.forEach((list) => {
-        if (Array.isArray(list)) {
-          list.forEach((item) => collectAttributeValues(item, accumulator));
-        }
-      });
-
-      const normalizedValue = normalizeAttributeValue(rawValue);
-      if (normalizedValue) {
-        accumulator.push(normalizedValue);
-      }
-      return;
-    }
-
-    const normalizedValue = normalizeAttributeValue(rawValue);
-    if (normalizedValue) {
-      accumulator.push(normalizedValue);
-    }
-  };
-
-  const pushAttributeValues = (targetMap, rawClassName, rawValue) => {
-    const classKey = normalizeClassName(rawClassName);
-    if (!classKey) {
-      return;
-    }
-
-    const nextValues = [];
-    collectAttributeValues(rawValue, nextValues);
-    if (nextValues.length === 0) {
-      return;
-    }
-
-    const existingValues = Array.isArray(targetMap[classKey]) ? targetMap[classKey] : [];
-    targetMap[classKey] = [...new Set([...existingValues, ...nextValues])];
-  };
-
-  const attributeValuesByClass = {};
-  const attributeMapSources = [
-    parsedSummary?.attributesByClass,
-    parsedSummary?.attributes_by_class,
-    parsedSummary?.attributeValuesByClass,
-    parsedSummary?.attribute_values_by_class,
-    parsedSummary?.instancesByClass,
-    parsedSummary?.instances_by_class,
-    summary?.attributesByClass,
-    summary?.attributes_by_class,
-    summary?.attributeValuesByClass,
-    summary?.attribute_values_by_class,
-    summary?.instancesByClass,
-    summary?.instances_by_class,
-  ];
-
-  attributeMapSources.forEach((source) => {
-    if (!source || typeof source !== "object" || Array.isArray(source)) {
-      return;
-    }
-
-    Object.entries(source).forEach(([className, values]) => {
-      pushAttributeValues(attributeValuesByClass, className, values);
-    });
-  });
-
-  const attributeListSources = [
-    parsedSummary?.attributes,
-    parsedSummary?.attribute_values,
-    parsedSummary?.attributeValues,
-    summary?.attributes,
-    summary?.attribute_values,
-    summary?.attributeValues,
-  ];
-
-  attributeListSources.forEach((source) => {
-    if (!Array.isArray(source)) {
-      return;
-    }
-
-    source.forEach((item) => {
-      if (!item || typeof item !== "object") {
-        return;
-      }
-
-      const className =
-        item?.class ??
-        item?.className ??
-        item?.groupname ??
-        item?.group_name ??
-        item?.attributeClass ??
-        item?.attribute_class;
-
-      if (!className) {
-        return;
-      }
-
-      const values =
-        item?.instances ??
-        item?.values ??
-        item?.items ??
-        item?.value ??
-        item?.label ??
-        item?.display ??
-        item?.displayLabel ??
-        item?.instance;
-
-      pushAttributeValues(attributeValuesByClass, className, values);
-    });
-  });
-
-  return {
-    ...parsedSummary,
-    patient_id: String(
-      parsedSummary?.patient_id ?? parsedSummary?.patientId ?? summary?.patient_id ?? summary?.patientId ?? ""
-    ).trim(),
-    demographics,
-    diagnoses: Array.isArray(parsedSummary?.diagnoses) ? parsedSummary.diagnoses : [],
-    staging: Array.isArray(parsedSummary?.staging) ? parsedSummary.staging : [],
-    grading: Array.isArray(parsedSummary?.grading) ? parsedSummary.grading : [],
-    biomarkers: Array.isArray(parsedSummary?.biomarkers) ? parsedSummary.biomarkers : [],
-    procedures: Array.isArray(parsedSummary?.procedures) ? parsedSummary.procedures : [],
-    treatments: Array.isArray(parsedSummary?.treatments) ? parsedSummary.treatments : [],
-    findings: Array.isArray(parsedSummary?.findings) ? parsedSummary.findings : [],
-    behavior: Array.isArray(parsedSummary?.behavior) ? parsedSummary.behavior : [],
-    attributeValuesByClass,
-  };
-}
-
-function transformSummaryToGridRow(summary) {
-  const normalizedSummary = normalizeSummaryRecordForGrid(summary);
-  const demographics = normalizedSummary?.demographics || {};
-  const staging = Array.isArray(normalizedSummary?.staging) ? normalizedSummary.staging : [];
-  const gradingFromNlp = (Array.isArray(normalizedSummary?.grading) ? normalizedSummary.grading : [])[0];
-  const normalizeGradeLabel = (value) =>
-    String(value || "")
-      .replace(/^grade[_\s]*(numeric)?\s*/i, "")
-      .trim();
-  const getFirstNonEmptyGrade = (rawValues) => {
-    const values = Array.isArray(rawValues) ? rawValues : [rawValues];
-    for (const value of values) {
-      if (value === undefined || value === null) {
-        continue;
-      }
-      if (Array.isArray(value)) {
-        const nestedValue = getFirstNonEmptyGrade(value);
-        if (nestedValue) {
-          return nestedValue;
-        }
-        continue;
-      }
-      if (typeof value === "object") {
-        const nestedObjectValue = getFirstNonEmptyGrade([
-          value?.name,
-          value?.value,
-          value?.label,
-          value?.display,
-          value?.displayLabel,
-        ]);
-        if (nestedObjectValue) {
-          return nestedObjectValue;
-        }
-        continue;
-      }
-
-      const normalizedValue = normalizeGradeLabel(value);
-      if (normalizedValue) {
-        return normalizedValue;
-      }
-    }
-    return "";
-  };
-  const gradingFromAttributes = getFirstNonEmptyGrade([
-    normalizedSummary?.attributeValuesByClass?.GRADE_NUMERIC,
-    normalizedSummary?.GRADE_NUMERIC,
-    normalizedSummary?.grade_numeric,
-    normalizedSummary?.gradeNumeric,
-    summary?.GRADE_NUMERIC,
-    summary?.grade_numeric,
-    summary?.gradeNumeric,
-  ]);
-  const grading = getFirstNonEmptyGrade([gradingFromNlp?.name, gradingFromNlp?.value, gradingFromAttributes]) || "—";
-  const diagnoses = Array.isArray(normalizedSummary?.diagnoses) ? normalizedSummary.diagnoses : [];
-  const STAGE_GROUP_RANK = {
-    0: 0,
-    IA: 1,
-    IB: 2,
-    IC: 3,
-    IIA: 4,
-    IIB: 5,
-    IIC: 6,
-    IIIA: 7,
-    IIIB: 8,
-    IIIC: 9,
-    IIID: 10,
-    IV: 11,
-    IVA: 12,
-    IVB: 13,
-    IVC: 14,
-  };
-  const CANCER_KEYWORDS =
-    /carcinoma|melanoma|neoplasm|lymphoma|leukemia|sarcoma|tumou?r|cancer|adenocarcinoma|myeloma|mesothelioma|glioma|blastoma|dcis|in\ssitu/i;
-
-  const normalizeStageName = (value) => String(value || "").trim();
-  const getStageNames = (rows) =>
-    (Array.isArray(rows) ? rows : []).map((entry) => normalizeStageName(entry?.name ?? entry?.value)).filter(Boolean);
-  const getTnmScore = (value, prefix) => {
-    const normalized = normalizeStageName(value).replace(/\s+/g, "");
-    const upperPrefix = String(prefix || "").toUpperCase();
-    if (!normalized.toUpperCase().startsWith(upperPrefix)) {
-      return Number.NEGATIVE_INFINITY;
-    }
-
-    const remainder = normalized.slice(upperPrefix.length);
-    if (!remainder) {
-      return -1;
-    }
-
-    if (/^X/i.test(remainder)) {
-      return -1;
-    }
-    if (/^is/i.test(remainder)) {
-      return 0.2;
-    }
-    if (/^mi/i.test(remainder)) {
-      return 0.3;
-    }
-
-    const numberMatch = remainder.match(/^(\d+)/);
-    const base = numberMatch ? Number.parseInt(numberMatch[1], 10) : 0;
-    const suffix = numberMatch ? remainder.slice(numberMatch[1].length) : remainder;
-    const letter = suffix.match(/^([A-D])/i)?.[1]?.toUpperCase();
-    const letterBoost = letter ? (letter.charCodeAt(0) - 64) / 10 : 0;
-
-    return base + letterBoost;
-  };
-  const pickHighestByScore = (names, prefix) => {
-    let bestName = "";
-    let bestScore = Number.NEGATIVE_INFINITY;
-
-    names.forEach((name) => {
-      const score = getTnmScore(name, prefix);
-      if (score > bestScore) {
-        bestScore = score;
-        bestName = name;
-      }
-    });
-
-    return { name: bestName, score: bestScore };
-  };
-  const pickDisplayStage = (rows) => {
-    const names = getStageNames(rows);
-    if (names.length === 0) {
-      return { label: "—", rank: Number.NEGATIVE_INFINITY };
-    }
-
-    const overallGroups = names.filter((name) => /^Stage\s+/i.test(name));
-    if (overallGroups.length > 0) {
-      const bestGroup = overallGroups.reduce((best, current) => {
-        const bestKey = best.replace(/^Stage\s+/i, "").toUpperCase();
-        const currentKey = current.replace(/^Stage\s+/i, "").toUpperCase();
-        const bestRank = STAGE_GROUP_RANK[bestKey] ?? -1;
-        const currentRank = STAGE_GROUP_RANK[currentKey] ?? -1;
-        return currentRank > bestRank ? current : best;
-      });
-      const bestKey = bestGroup.replace(/^Stage\s+/i, "").toUpperCase();
-
-      return {
-        label: bestGroup,
-        rank: 1000 + (STAGE_GROUP_RANK[bestKey] ?? -1),
-      };
-    }
-
-    const pathologicT = pickHighestByScore(
-      names.filter((name) => /^pT/i.test(name)),
-      "pT"
-    );
-    if (pathologicT.name) {
-      return { label: pathologicT.name, rank: 800 + pathologicT.score };
-    }
-
-    const clinicalT = pickHighestByScore(
-      names.filter((name) => /^T\d/i.test(name) && !/^pT/i.test(name)),
-      "T"
-    );
-    if (clinicalT.name) {
-      return { label: clinicalT.name, rank: 700 + clinicalT.score };
-    }
-
-    const nStage = pickHighestByScore(
-      names.filter((name) => /^N/i.test(name)),
-      "N"
-    );
-    if (nStage.name) {
-      return { label: nStage.name, rank: 600 + nStage.score };
-    }
-
-    const mStage = pickHighestByScore(
-      names.filter((name) => /^M/i.test(name)),
-      "M"
-    );
-    if (mStage.name) {
-      return { label: mStage.name, rank: 500 + mStage.score };
-    }
-
-    return { label: names[0], rank: 0 };
-  };
-  const pickActiveDx = (items) => {
-    if (!Array.isArray(items) || items.length === 0) {
-      return null;
-    }
-
-    const nonNegated = items.filter((item) => !item?.negated);
-    if (nonNegated.length === 0) {
-      return null;
-    }
-
-    const tier1 = nonNegated.find(
-      (item) =>
-        !item?.historic &&
-        (String(item?.source || "").toLowerCase() === "cancer" || String(item?.source || "").toLowerCase() === "tumor")
-    );
-    if (tier1) {
-      return tier1;
-    }
-
-    const tier2 = nonNegated.find((item) => !item?.historic && CANCER_KEYWORDS.test(String(item?.name || "")));
-    if (tier2) {
-      return tier2;
-    }
-
-    const tier3 = nonNegated.find((item) => ["cancer", "tumor"].includes(String(item?.source || "").toLowerCase()));
-    if (tier3) {
-      return tier3;
-    }
-
-    const tier4 = nonNegated.find((item) => CANCER_KEYWORDS.test(String(item?.name || "")));
-    if (tier4) {
-      return tier4;
-    }
-
-    return nonNegated[0] || null;
-  };
-  const stageSelection = pickDisplayStage(staging);
-  const activeDxEntry = pickActiveDx(diagnoses);
-  const activeDxName = String(activeDxEntry?.name || "").trim() || "—";
-  const activeDxHistoric = Boolean(activeDxEntry?.historic);
-  const activeDxUncertain = Boolean(activeDxEntry?.uncertain);
-  const activeDxDisplayText =
-    activeDxName === "—"
-      ? "—"
-      : `${activeDxName}${activeDxHistoric ? " (historic)" : ""}${activeDxUncertain ? " (uncertain)" : ""}`;
-  const rawAge = demographics?.age_at_dx;
-  const parsedAge = rawAge != null && rawAge !== "" && String(rawAge) !== "0" ? Number(rawAge) : null;
-  const ageAtDx = parsedAge != null && Number.isFinite(parsedAge) && parsedAge > 0 ? parsedAge : null;
-
-  const normalizeCancerType = (value) => {
-    const rawCancerType = String(value || "").trim();
-    if (!rawCancerType) {
-      return "";
-    }
-
-    const normalizedCode = rawCancerType.toUpperCase();
-    return CANCER_TYPE_MAP[normalizedCode] || rawCancerType;
-  };
-
-  const inferCancerTypeFromDiagnoses = (items) => {
-    const diagnosisNames = (Array.isArray(items) ? items : [])
-      .map((item) =>
-        String(item?.name || "")
-          .trim()
-          .toLowerCase()
-      )
-      .filter(Boolean);
-
-    if (diagnosisNames.some((name) => name.includes("melanoma"))) {
-      return "Melanoma";
-    }
-    if (diagnosisNames.some((name) => name.includes("ovar"))) {
-      return "Ovarian Cancer";
-    }
-    if (diagnosisNames.some((name) => name.includes("breast"))) {
-      return "Breast";
-    }
-
-    return "";
-  };
-
-  const resolvedCancerType =
-    normalizeCancerType(
-      demographics?.cancer_type ??
-        demographics?.cancerType ??
-        demographics?.cancer ??
-        normalizedSummary?.cancer_type ??
-        normalizedSummary?.cancerType ??
-        normalizedSummary?.cancer
-    ) || inferCancerTypeFromDiagnoses(diagnoses);
-
-  const summarizeArray = (items, cap = 3, excludeItem = null) => {
-    if (!Array.isArray(items)) {
-      return { display: "—", full: "" };
-    }
-
-    const nonNegatedNames = items
-      .filter((item) => !item?.negated)
-      .filter((item) => (excludeItem ? item !== excludeItem : true))
-      .map((item) => String(item?.name || "").trim())
-      .filter(Boolean);
-
-    if (nonNegatedNames.length === 0) {
-      return { display: "—", full: "" };
-    }
-
-    const full = nonNegatedNames.join(", ");
-    if (nonNegatedNames.length <= cap) {
-      return { display: full, full };
-    }
-
-    return {
-      display: nonNegatedNames.slice(0, cap).join(", "),
-      overflow: nonNegatedNames.length - cap,
-      full,
-    };
-  };
-
-  return {
-    patientId: String(
-      normalizedSummary?.patient_id ?? normalizedSummary?.patientId ?? summary?.patient_id ?? summary?.patientId ?? ""
-    ).trim(),
-    ageAtDx,
-    gender: GENDER_MAP[demographics?.gender] || demographics?.gender || "Unknown",
-    race: demographics?.race || "Unknown",
-    ethnicity: demographics?.ethnicity || "Unknown",
-    cancerType: resolvedCancerType || "—",
-    stage: stageSelection.label || "—",
-    stageSortRank: stageSelection.rank,
-    grade: String(grading || "—"),
-    activeDx: activeDxDisplayText,
-    activeDxMeta: {
-      name: activeDxName,
-      historic: activeDxHistoric,
-      uncertain: activeDxUncertain,
-    },
-    diagnosesSummary: summarizeArray(normalizedSummary?.diagnoses, 3, activeDxEntry),
-    biomarkersSummary: summarizeArray(normalizedSummary?.biomarkers, 3),
-    treatmentsSummary: summarizeArray(normalizedSummary?.treatments, 2),
-    proceduresSummary: summarizeArray(normalizedSummary?.procedures, 2),
-    findingsSummary: summarizeArray(normalizedSummary?.findings, 2),
-    _raw: normalizedSummary || summary,
-  };
-}
-
-function createEmptyPatientSummary(patientId) {
-  const normalizedPatientId = String(patientId || "").trim();
-  return {
-    patientId: normalizedPatientId,
-    docCount: 0,
-    activeDx: [],
-    negatedDx: [],
-    staging: [],
-    biomarkers: [],
-    procedures: [],
-    treatments: [],
-    activeFindings: [],
-    negatedFindings: [],
-  };
-}
-
-function normalizePatientSummaryRows(payload) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (Array.isArray(payload?.data)) {
-    return payload.data;
-  }
-
-  if (Array.isArray(payload?.summaries)) {
-    return payload.summaries;
-  }
-
-  return [];
-}
-
-function parsePatientSummaryJson(value) {
-  let nextValue = value;
-
-  for (let parsePass = 0; parsePass < 3; parsePass += 1) {
-    if (!nextValue) {
-      return null;
-    }
-
-    if (typeof nextValue === "object") {
-      return nextValue;
-    }
-
-    if (typeof nextValue === "string") {
-      const trimmedValue = nextValue.trim();
-      if (!trimmedValue) {
-        return null;
-      }
-
-      try {
-        nextValue = JSON.parse(trimmedValue);
-        continue;
-      } catch {
-        return null;
-      }
-    }
-
-    return null;
-  }
-
-  return typeof nextValue === "object" && nextValue ? nextValue : null;
-}
-
-function normalizeSummaryList(items, { includeUncertain = false } = {}) {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => {
-      const name = String(item?.name ?? item?.label ?? item?.value ?? "").trim();
-      if (!name) {
-        return null;
-      }
-
-      const docFreq = Number(item?.docFreq ?? item?.doc_freq);
-      const summaryItem = { name };
-      if (includeUncertain) {
-        summaryItem.uncertain = Boolean(item?.uncertain);
-      }
-      if (Number.isFinite(docFreq) && docFreq > 0) {
-        summaryItem.docFreq = docFreq;
-      }
-      return summaryItem;
-    })
-    .filter(Boolean);
-}
-
-function buildPatientSummaryFromFilterSummary(payload, patientId) {
-  const normalizedPatientId = String(patientId || "").trim();
-  const summaryRows = normalizePatientSummaryRows(payload);
-  const matchingRow =
-    summaryRows.find((row) => {
-      const rowPatientId = String(row?.patient_id ?? row?.patientId ?? "").trim();
-      return rowPatientId && rowPatientId === normalizedPatientId;
-    }) || summaryRows[0];
-
-  if (!matchingRow) {
-    return createEmptyPatientSummary(normalizedPatientId);
-  }
-
-  const summaryPayload =
-    parsePatientSummaryJson(matchingRow?.json_text ?? matchingRow?.jsonText) || parsePatientSummaryJson(matchingRow);
-
-  if (!summaryPayload || typeof summaryPayload !== "object") {
-    return createEmptyPatientSummary(normalizedPatientId);
-  }
-
-  const summaryPatientId = String(
-    summaryPayload?.patient_id ??
-      summaryPayload?.patientId ??
-      matchingRow?.patient_id ??
-      matchingRow?.patientId ??
-      normalizedPatientId
-  ).trim();
-
-  const diagnosisItems = Array.isArray(summaryPayload?.diagnoses) ? summaryPayload.diagnoses : [];
-  const findingItems = Array.isArray(summaryPayload?.findings) ? summaryPayload.findings : [];
-  const docCountField = Number(
-    summaryPayload?.doc_count ??
-      summaryPayload?.docCount ??
-      summaryPayload?.document_count ??
-      summaryPayload?.documentCount ??
-      summaryPayload?.note_count ??
-      summaryPayload?.noteCount
-  );
-  const docCountArrayFallback =
-    (Array.isArray(summaryPayload?.documents) && summaryPayload.documents.length) ||
-    (Array.isArray(summaryPayload?.docs) && summaryPayload.docs.length) ||
-    (Array.isArray(summaryPayload?.notes) && summaryPayload.notes.length) ||
-    (Array.isArray(summaryPayload?.note_ids) && summaryPayload.note_ids.length) ||
-    (Array.isArray(summaryPayload?.noteIds) && summaryPayload.noteIds.length) ||
-    (Array.isArray(summaryPayload?.document_ids) && summaryPayload.document_ids.length) ||
-    (Array.isArray(summaryPayload?.documentIds) && summaryPayload.documentIds.length) ||
-    0;
-
-  return {
-    patientId: summaryPatientId || normalizedPatientId,
-    docCount: Number.isFinite(docCountField) && docCountField > 0 ? docCountField : docCountArrayFallback,
-    activeDx: normalizeSummaryList(
-      diagnosisItems.filter((item) => !Boolean(item?.negated)),
-      { includeUncertain: true }
-    ),
-    negatedDx: normalizeSummaryList(diagnosisItems.filter((item) => Boolean(item?.negated))),
-    staging: normalizeSummaryList(summaryPayload?.staging),
-    biomarkers: normalizeSummaryList(summaryPayload?.biomarkers),
-    procedures: normalizeSummaryList(summaryPayload?.procedures),
-    treatments: normalizeSummaryList(summaryPayload?.treatments),
-    activeFindings: normalizeSummaryList(findingItems.filter((item) => !Boolean(item?.negated))),
-    negatedFindings: normalizeSummaryList(findingItems.filter((item) => Boolean(item?.negated))),
-  };
-}
-
-function resolveDocumentCountFromPayload(payload) {
-  if (Array.isArray(payload)) {
-    return payload.length;
-  }
-
-  if (Array.isArray(payload?.documents)) {
-    return payload.documents.length;
-  }
-
-  if (Array.isArray(payload?.data)) {
-    return payload.data.length;
-  }
-
-  const numericCount = Number(payload?.count);
-  if (Number.isFinite(numericCount) && numericCount >= 0) {
-    return numericCount;
-  }
-
-  return 0;
-}
-
-function getZeroResultHint(filters, itemCounts) {
-  if (!Array.isArray(filters) || filters.length === 0) {
-    return "";
-  }
-
-  if (Array.isArray(itemCounts)) {
-    const firstZeroMatchIndex = itemCounts.findIndex((value) => Number(value) === 0);
-    if (firstZeroMatchIndex >= 0 && firstZeroMatchIndex < filters.length) {
-      const filter = filters[firstZeroMatchIndex];
-      return `${prettifyClassName(
-        filter.class,
-        filter.type
-      )} matched 0 patients before intersection. Check spelling and selected values.`;
-    }
-  }
-
-  return "Each filter matches patients independently, but their overlap is 0. Try broadening one filter.";
-}
-
-function normalizeChartSortMode(sortMode) {
-  const normalizedSortMode = String(sortMode || "").trim();
-  if (FILTER_VALUE_SORT_MODES.includes(normalizedSortMode)) {
-    return normalizedSortMode;
-  }
-  return DEFAULT_FILTER_VALUE_SORT_MODE;
-}
-
-function getSortDimensionFromMode(sortMode) {
-  return String(sortMode || "").startsWith("alpha") ? FILTER_SORT_DIMENSION.LABEL : FILTER_SORT_DIMENSION.COUNT;
-}
-
-function getSortDirectionFromMode(sortMode) {
-  return String(sortMode || "").endsWith("asc") ? FILTER_SORT_DIRECTION.ASC : FILTER_SORT_DIRECTION.DESC;
-}
-
-function toSortMode(sortDimension, sortDirection) {
-  const nextDirection =
-    sortDirection === FILTER_SORT_DIRECTION.ASC ? FILTER_SORT_DIRECTION.ASC : FILTER_SORT_DIRECTION.DESC;
-
-  if (sortDimension === FILTER_SORT_DIMENSION.LABEL) {
-    return nextDirection === FILTER_SORT_DIRECTION.ASC ? "alpha-asc" : "alpha-desc";
-  }
-
-  return nextDirection === FILTER_SORT_DIRECTION.ASC ? "value-asc" : "value-desc";
-}
-
-function filterRowsByQuery(data, searchQuery) {
-  const query = String(searchQuery || "")
-    .trim()
-    .toLowerCase();
-  if (!query) {
-    return Array.isArray(data) ? data : [];
-  }
-
-  return (Array.isArray(data) ? data : []).filter((row) => {
-    const displayLabel = String(row?.displayLabel || "")
-      .trim()
-      .toLowerCase();
-    const rawLabel = String(row?.label || "")
-      .trim()
-      .toLowerCase();
-    return displayLabel.includes(query) || rawLabel.includes(query);
-  });
-}
 
 function FiltersView() {
   const {
@@ -2888,14 +1195,42 @@ function FiltersView() {
   }, [orderedConceptClasses]);
 
   const getCardMeasureKey = (type, className) => `${type}:${className}`;
-  const setCardMeasureRef = (type, className) => (node) => {
+  // Stable per-key ref callbacks. Returning a fresh closure on every render
+  // makes React detach (ref(null)) and re-attach the ref each render for every
+  // card, churning cardMeasureRefs and re-running the measurement effect. The
+  // ref deps (cardMeasureRefs) are stable, so caching by key is safe.
+  const cardMeasureRefHandlers = useRef(new Map());
+  const setCardMeasureRef = useCallback((type, className) => {
     const key = getCardMeasureKey(type, className);
-    if (node) {
-      cardMeasureRefs.current[key] = node;
-      return;
+    const cache = cardMeasureRefHandlers.current;
+    if (!cache.has(key)) {
+      cache.set(key, (node) => {
+        if (node) {
+          cardMeasureRefs.current[key] = node;
+          return;
+        }
+        delete cardMeasureRefs.current[key];
+      });
     }
-    delete cardMeasureRefs.current[key];
-  };
+    return cache.get(key);
+  }, []);
+
+  // Returns a referentially stable style/sx object: when a card re-renders with
+  // an identical style payload (same geometry, theme, density) the previously
+  // returned object reference is reused. This keeps the cardOuterStyle / cardSx
+  // / contentAreaSx props of the memoized FilterSectionCard stable so the card
+  // wrapper itself can bail out of re-rendering, not just the chart inside it.
+  const stableStyleCache = useRef(new Map());
+  const stabilizeStyle = useCallback((key, style) => {
+    const cache = stableStyleCache.current;
+    const signature = JSON.stringify(style);
+    const existing = cache.get(key);
+    if (existing && existing.signature === signature) {
+      return existing.style;
+    }
+    cache.set(key, { signature, style });
+    return style;
+  }, []);
 
   useLayoutEffect(() => {
     const entries = Object.entries(cardMeasureRefs.current);
@@ -3598,40 +1933,63 @@ function FiltersView() {
       ),
     [isCompactDensity]
   );
-  const handleSelectionChange = (setter, className) => (nextValues) => {
-    const normalizedValues = Array.isArray(nextValues)
-      ? [...new Set(nextValues.map((value) => String(value || "").trim()).filter(Boolean))]
-      : [];
-    setter((previousSelections) => ({
-      ...previousSelections,
-      [className]: normalizedValues,
-    }));
-  };
-  const handleAttributeParentExpansionChange = (className) => (rowLabel, nextExpanded, row) => {
-    if (!isAttributeRollupClass(className)) {
-      return;
+  // Selection-change handlers are cached per (setter, className) so each filter
+  // card receives a stable callback identity across renders. State setters from
+  // useState are themselves stable, so the cached closures never go stale. This
+  // is what lets the memoized FilterSectionCard / HorizontalBarFilter skip
+  // re-rendering when only an unrelated part of FiltersView state changes.
+  const selectionChangeHandlers = useRef(new Map());
+  const handleSelectionChange = useCallback((setter, className) => {
+    let byClass = selectionChangeHandlers.current.get(setter);
+    if (!byClass) {
+      byClass = new Map();
+      selectionChangeHandlers.current.set(setter, byClass);
     }
-
-    const parentKey = String(row?.label || rowLabel || "").trim();
-    const isRowExpandable = Boolean(row?._expandable || row?.isExpandable);
-    if (!parentKey || !isRowExpandable) {
-      return;
+    if (!byClass.has(className)) {
+      byClass.set(className, (nextValues) => {
+        const normalizedValues = Array.isArray(nextValues)
+          ? [...new Set(nextValues.map((value) => String(value || "").trim()).filter(Boolean))]
+          : [];
+        setter((previousSelections) => ({
+          ...previousSelections,
+          [className]: normalizedValues,
+        }));
+      });
     }
+    return byClass.get(className);
+  }, []);
+  const attributeExpansionHandlers = useRef(new Map());
+  const handleAttributeParentExpansionChange = useCallback((className) => {
+    const cache = attributeExpansionHandlers.current;
+    if (!cache.has(className)) {
+      cache.set(className, (rowLabel, nextExpanded, row) => {
+        if (!isAttributeRollupClass(className)) {
+          return;
+        }
 
-    setExpandedParentsByClass((previousState) => {
-      const existingParents = new Set(previousState?.[className] || []);
-      if (nextExpanded) {
-        existingParents.add(parentKey);
-      } else {
-        existingParents.delete(parentKey);
-      }
+        const parentKey = String(row?.label || rowLabel || "").trim();
+        const isRowExpandable = Boolean(row?._expandable || row?.isExpandable);
+        if (!parentKey || !isRowExpandable) {
+          return;
+        }
 
-      return {
-        ...previousState,
-        [className]: [...existingParents],
-      };
-    });
-  };
+        setExpandedParentsByClass((previousState) => {
+          const existingParents = new Set(previousState?.[className] || []);
+          if (nextExpanded) {
+            existingParents.add(parentKey);
+          } else {
+            existingParents.delete(parentKey);
+          }
+
+          return {
+            ...previousState,
+            [className]: [...existingParents],
+          };
+        });
+      });
+    }
+    return cache.get(className);
+  }, []);
   const setFilterSortMode = useCallback((filterType, className, nextSortMode) => {
     const normalizedType = String(filterType || "").toLowerCase();
     const normalizedSortMode = normalizeChartSortMode(nextSortMode);
@@ -3896,7 +2254,7 @@ function FiltersView() {
   };
   const getCardContentAreaSx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX, { fillHeight = false } = {}) => {
     const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
-    return {
+    return stabilizeStyle(`content:${resolvedSectionHeightCapPx}:${fillHeight}`, {
       display: "flex",
       flexDirection: "column",
       gap: 0,
@@ -3941,7 +2299,7 @@ function FiltersView() {
         overflowY: "auto",
         overflowX: "hidden",
       },
-    };
+    });
   };
   const buildSectionLayout = (type, filters, classChartDataByClass, options = {}) => {
     const { maxColumns: maxColumnsOverride } = options;
@@ -4131,7 +2489,9 @@ function FiltersView() {
         pointerEvents: "none",
       };
     }
-    return base;
+    // cardIndex is intentionally ignored; the style depends only on the theme,
+    // so a single cache key yields one shared stable reference across all cards.
+    return stabilizeStyle("cardsx", base);
   };
   const getFilterSetLaneSx = (kind = "attributes") => {
     const laneColor =
@@ -4231,8 +2591,8 @@ function FiltersView() {
       const classChartData = classChartDataByClass[className] || [];
       const classDisplayName = filter.displayName || getFilterDisplayName(filterType, className);
       const selectedValuesForClass = isConcept
-        ? selectedConceptValuesByClass[className] || []
-        : selectedAttributeValuesByClass[className] || [];
+        ? selectedConceptValuesByClass[className] || EMPTY_SELECTION
+        : selectedAttributeValuesByClass[className] || EMPTY_SELECTION;
       const onSelectionChangeForClass = handleSelectionChange(
         isConcept ? setSelectedConceptValuesByClass : setSelectedAttributeValuesByClass,
         className
@@ -4276,7 +2636,7 @@ function FiltersView() {
         displayName: classDisplayName,
         rowCount,
       });
-      const cardOuterStyle = {
+      const cardOuterStyle = stabilizeStyle(`outer:${filterType}:${className}`, {
         "--filter-section-height-cap": `${stretchedCardHeightCapPx}px`,
         "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(stretchedCardHeightCapPx)}px`,
         maxHeight: `${stretchedCardHeightCapPx}px`,
@@ -4290,7 +2650,7 @@ function FiltersView() {
         ...(shouldApplyCardHeightOverride
           ? { height: `${Math.round(boundedCardHeightOverride)}px` }
           : {}),
-      };
+      });
 
       return (
         <Box
@@ -4421,7 +2781,7 @@ function FiltersView() {
       const classError = omopData.errorsByClass[className] || "";
       const classChartData = classChartDataByClass[className] || [];
       const classDisplayName = filter.displayName || getFilterDisplayName("omop", className);
-      const selectedValuesForClass = selectedOmopValuesByClass[className] || [];
+      const selectedValuesForClass = selectedOmopValuesByClass[className] || EMPTY_SELECTION;
       const onSelectionChangeForClass = handleSelectionChange(setSelectedOmopValuesByClass, className);
       const sortMode = omopSortModeByClass[className] || getFilterDefaultSortMode("omop", className);
       const customSortOrder = getCustomSortOrderForDensity("omop", className);
@@ -4454,7 +2814,7 @@ function FiltersView() {
       const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
       const shouldApplyCardHeightOverride =
         canApplyCardHeightOverride && (!isCompactPlusDensity || shouldStretchScrollableCard);
-      const cardOuterStyle = {
+      const cardOuterStyle = stabilizeStyle(`outer:omop:${className}`, {
         "--filter-section-height-cap": `${stretchedCardHeightCapPx}px`,
         "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(stretchedCardHeightCapPx)}px`,
         maxHeight: `${stretchedCardHeightCapPx}px`,
@@ -4466,7 +2826,7 @@ function FiltersView() {
         ...(shouldApplyCardHeightOverride
           ? { height: `${Math.round(boundedCardHeightOverride)}px` }
           : {}),
-      };
+      });
       return (
         <FilterSectionCard
           key={`${cardKeyPrefix}${keyPrefix}:${filterSet.id}:${className}`}

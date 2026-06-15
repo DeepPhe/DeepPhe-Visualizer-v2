@@ -1,8 +1,8 @@
-import React from "react";
+import React, { memo } from "react";
 import { Alert, Box, Button, Paper } from "@mui/material";
 import HorizontalBarFilter from "../../components/HorizontalBarFilter";
 
-export default function FilterSectionCard({
+function FilterSectionCard({
   classNameKey = "",
   classDisplayName = "",
   classError = "",
@@ -111,3 +111,5 @@ export default function FilterSectionCard({
     </Paper>
   );
 }
+
+export default memo(FilterSectionCard);
