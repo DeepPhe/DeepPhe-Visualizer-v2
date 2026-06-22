@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import { Box, Link as MuiLink } from "@mui/material";
 import { getAnchorId } from "../../utils/dataProcessing";
 
@@ -36,5 +37,11 @@ function SectionJumpLinks({ sectionKey, values, onJump }) {
     </Box>
   );
 }
+
+SectionJumpLinks.propTypes = {
+  sectionKey: PropTypes.string,
+  values: PropTypes.array,
+  onJump: PropTypes.func,
+};
 
 export default SectionJumpLinks;

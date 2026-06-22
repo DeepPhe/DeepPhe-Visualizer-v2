@@ -3,6 +3,7 @@ import {
   buildTallestAlignedLayout,
   estimateCardHeight,
 } from "../filterLayout";
+import { OVERSIZED_MIN_ROWS_BY_DENSITY, getOversizedRowThreshold } from "../filters/layoutConfig";
 
 describe("filterLayout helpers", () => {
   it("estimates card height from row count", () => {
@@ -145,6 +146,59 @@ describe("filterLayout helpers", () => {
     ]);
     const lymphColumn = layout.columnGroups.find((group) => group.includes("Lymph Involvement"));
     expect(lymphColumn).toEqual(["Lymph Involvement"]);
+  });
+
+  it("dedicates a column to a 25-row card even when height-balancing would pair it", () => {
+    // LongList is the SHORTEST card by measured height, so a pure height packer
+    // would pair it with a sibling. Its 25-row count (> threshold 24) overrides
+    // that and forces it into its own column.
+    const layout = buildFilterSectionLayout({
+      classNames: ["LongList", "Short1", "Short2"],
+      rowCountByClass: { LongList: 25, Short1: 4, Short2: 4 },
+      measuredCardHeightByClass: { LongList: 80, Short1: 300, Short2: 300 },
+      naturalGapPx: 24,
+      maxColumns: 2,
+      cardBottomMargin: 24,
+      oversizedRowThreshold: 24,
+    });
+
+    const longColumn = layout.columnGroups.find((group) => group.includes("LongList"));
+    expect(longColumn).toEqual(["LongList"]);
+  });
+
+  it("does not dedicate a column to a card with only 24 rows (boundary)", () => {
+    // Same shapes as above but one row fewer: not oversized, so the height
+    // packer is free to pair the short LongList card with a sibling.
+    const layout = buildFilterSectionLayout({
+      classNames: ["LongList", "Short1", "Short2"],
+      rowCountByClass: { LongList: 24, Short1: 4, Short2: 4 },
+      measuredCardHeightByClass: { LongList: 80, Short1: 300, Short2: 300 },
+      naturalGapPx: 24,
+      maxColumns: 2,
+      cardBottomMargin: 24,
+      oversizedRowThreshold: 24,
+    });
+
+    const longColumn = layout.columnGroups.find((group) => group.includes("LongList"));
+    expect(longColumn.length).toBeGreaterThan(1);
+  });
+
+  it("derives the per-density oversized threshold as one below the inclusive minimum", () => {
+    expect(getOversizedRowThreshold("standard")).toBe(OVERSIZED_MIN_ROWS_BY_DENSITY.standard - 1);
+    expect(getOversizedRowThreshold("compact")).toBe(OVERSIZED_MIN_ROWS_BY_DENSITY.compact - 1);
+    expect(getOversizedRowThreshold("compact-plus")).toBe(OVERSIZED_MIN_ROWS_BY_DENSITY["compact-plus"] - 1);
+  });
+
+  it("falls back to the standard density threshold for unknown modes", () => {
+    expect(getOversizedRowThreshold("nope")).toBe(getOversizedRowThreshold("standard"));
+    expect(getOversizedRowThreshold(undefined)).toBe(getOversizedRowThreshold("standard"));
+  });
+
+  it("qualifies a card with exactly the configured minimum rows", () => {
+    const compactMin = OVERSIZED_MIN_ROWS_BY_DENSITY.compact;
+    const threshold = getOversizedRowThreshold("compact");
+    expect(compactMin > threshold).toBe(true); // the minimum count claims a column
+    expect(compactMin - 1 > threshold).toBe(false); // one fewer does not
   });
 
   it("keeps demographics column bottoms aligned so Ethnicity ends level with Race", () => {

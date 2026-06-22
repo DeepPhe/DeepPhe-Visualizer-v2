@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import { Box, IconButton, Paper, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
@@ -308,3 +309,29 @@ export default function PatientDrawer({
     </Box>
   );
 }
+
+PatientDrawer.propTypes = {
+  isVisible: PropTypes.bool,
+  isMaximized: PropTypes.bool,
+  isExpanded: PropTypes.bool,
+  filterSummaryText: PropTypes.string,
+  activeDrawerTab: PropTypes.number,
+  setActiveDrawerTab: PropTypes.func,
+  openPatientIds: PropTypes.array,
+  cohortSize: PropTypes.number,
+  onClosePatientTab: PropTypes.func,
+  panelId: PropTypes.string,
+  patientGridRows: PropTypes.array,
+  totalPatientGridPages: PropTypes.number,
+  currentPatientGridPage: PropTypes.number,
+  pageSize: PropTypes.number,
+  onPageChange: PropTypes.func,
+  isTableLoading: PropTypes.bool,
+  pageError: PropTypes.string,
+  onRetryPatientSummary: PropTypes.func,
+  statusText: PropTypes.string,
+  collapsedHeaderSummary: PropTypes.string,
+  onOpenPatientTab: PropTypes.func,
+  setIsExpanded: PropTypes.func,
+  setIsMaximized: PropTypes.func,
+};

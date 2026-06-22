@@ -1,6 +1,10 @@
 import { normalizeClassName } from "../../utils/dataProcessing";
 import { prettifyClassName } from "./filterDefinitions";
 
+// Re-exported from the shared util so existing importers (filters.jsx) keep a
+// single import site; the trim/dedupe/numeric-sort behavior lives in one place.
+export { normalizePatientIds } from "../../utils/patientIds";
+
 const CANCER_TYPE_MAP = { B: "Breast", M: "Melanoma", O: "Ovarian Cancer" };
 const GENDER_MAP = { M: "Male", F: "Female", U: "Unknown" };
 
@@ -48,12 +52,6 @@ export function normalizeCountResponse(payload) {
     patientIds,
     timing,
   };
-}
-
-export function normalizePatientIds(patientIds = []) {
-  return [...new Set((Array.isArray(patientIds) ? patientIds : []).map((id) => String(id || "").trim()))]
-    .filter(Boolean)
-    .sort((leftId, rightId) => leftId.localeCompare(rightId, undefined, { numeric: true, sensitivity: "base" }));
 }
 
 function normalizeSummaryRecordForGrid(summary) {

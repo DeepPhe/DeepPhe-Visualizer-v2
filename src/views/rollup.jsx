@@ -1,3 +1,5 @@
+import { parsePatientIds } from "../utils/patientIds";
+
 const CLASS_NAME_TOKEN_PATTERN = /[^A-Z0-9]+/g;
 const STAGE_SUFFIX_PATTERN = /(StageFinding|StageFind)$/i;
 
@@ -16,30 +18,6 @@ function normalizeLabel(value) {
 
 function stripStageSuffix(value) {
   return normalizeLabel(value).replace(STAGE_SUFFIX_PATTERN, "");
-}
-
-function normalizePatientIds(rawValue) {
-  if (Array.isArray(rawValue)) {
-    return [...new Set(rawValue.map((item) => normalizeLabel(item)).filter(Boolean))];
-  }
-
-  if (typeof rawValue === "string") {
-    return [
-      ...new Set(
-        rawValue
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      ),
-    ];
-  }
-
-  if (rawValue !== undefined && rawValue !== null && rawValue !== "") {
-    const normalized = normalizeLabel(rawValue);
-    return normalized ? [normalized] : [];
-  }
-
-  return [];
 }
 
 function defaultStringCompare(leftValue, rightValue) {
@@ -65,7 +43,7 @@ function normalizeChartRow(row) {
   }
 
   const displayLabel = normalizeLabel(row?.displayLabel) || label;
-  const patientIds = normalizePatientIds(
+  const patientIds = parsePatientIds(
     row?.patientIds ?? row?.patient_ids ?? row?.patientId ?? row?.patient_id
   );
 

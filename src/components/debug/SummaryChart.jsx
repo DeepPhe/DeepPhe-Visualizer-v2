@@ -1,10 +1,11 @@
 import React from "react";
+import PropTypes from "prop-types";
 import { alpha, useTheme } from "@mui/material/styles";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { sortDistributionAlphanumerically } from "../../utils/dataProcessing";
+import FilterableValueCountTable from "./FilterableValueCountTable";
 
 const MAX_BAR_CHART_VALUES = 12;
-import FilterableValueCountTable from "./FilterableValueCountTable";
 
 function SummaryChart({ distribution }) {
   const theme = useTheme();
@@ -56,5 +57,14 @@ function SummaryChart({ distribution }) {
     />
   );
 }
+
+SummaryChart.propTypes = {
+  distribution: PropTypes.arrayOf(
+    PropTypes.shape({
+      label: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      count: PropTypes.number,
+    })
+  ),
+};
 
 export default SummaryChart;

@@ -86,6 +86,44 @@ docker logs -f deepphe-visualizer-v3
 docker stop deepphe-visualizer-v3 && docker rm deepphe-visualizer-v3
 ```
 
+### Standalone Executable
+
+The app can be packaged into a single self-contained executable (no Node.js
+required on the target machine) with [`@yao-pkg/pkg`](https://github.com/yao-pkg/pkg).
+The binary serves the built SPA, mounts the read-only piper-files API, and
+reverse-proxies the DeepPhe data API to a runtime-configurable upstream.
+
+```bash
+# Build the web bundle (same-origin API base) and package all targets
+npm run package
+```
+
+Output binaries are written to `dist/` (one per platform):
+`deepphe-visualizer-v3-macos-arm64`, `-macos-x64`, `-linux-x64`, `-win-x64.exe`.
+
+**Build host requirements**
+
+- Node.js **20+** (required by the pkg toolchain).
+- A target is built natively or cross-built per platform. macOS **arm64** can
+  only be built on an Apple Silicon host; macOS **x64**, Linux x64, and Windows
+  x64 build on any x64 host. The packaging script skips (with a note) any target
+  the current host can't fabricate.
+
+**Running a binary**
+
+```bash
+# Piper files are read from ./data/piperfiles next to the executable
+mkdir -p data/piperfiles   # then drop your .piper files in (or set PIPER_FILES_DIR)
+
+PORT=3000 DEEPPHE_API_LOCATION=http://your-deepphe-host:3333 \
+  ./deepphe-visualizer-v3-macos-x64
+```
+
+Then open [http://localhost:3000](http://localhost:3000). The DeepPhe backend is
+resolved at runtime, so the same binary works against any backend with no CORS
+configuration. See the runtime variables in
+[Environment Variables](#environment-variables).
+
 ### Maintenance
 
 ```bash
@@ -152,11 +190,25 @@ npm test -- --watchAll=false --runInBand
 
 ## Environment Variables
 
+### Build / development
+
 | Variable                         | Description               | Default                 |
 |----------------------------------|---------------------------|-------------------------|
-| `REACT_APP_DEEPPHE_API_LOCATION` | DeepPhe Data API base URL | `http://localhost:3333` |
+| `REACT_APP_DEEPPHE_API_LOCATION` | DeepPhe Data API base URL baked into the build | `http://localhost:3333` |
 | `NODE_ENV`                       | Environment mode          | `development`           |
 | `PORT`                           | Development server port   | `3000`                  |
+
+> `npm run package:web` builds with `REACT_APP_DEEPPHE_API_LOCATION=/` so the
+> packaged binary issues same-origin requests that flow through its reverse proxy.
+
+### Standalone binary (runtime)
+
+| Variable               | Description                                                   | Default                          |
+|------------------------|--------------------------------------------------------------|----------------------------------|
+| `PORT`                 | Port the unified server listens on                           | `3000`                           |
+| `DEEPPHE_API_LOCATION` | Upstream DeepPhe data API origin the binary proxies to       | `http://localhost:3333`          |
+| `PIPER_FILES_DIR`      | Directory of `.piper` files                                  | `data/piperfiles` next to binary |
+| `PIPER_ACTIVE_FILE`    | Active piper filename within `PIPER_FILES_DIR` (optional)    | _unset_                          |
 
 ## Troubleshooting
 

@@ -5,24 +5,7 @@ import {
   summarizeInstances,
 } from "../utils/dataProcessing";
 import { endSpan, startSpan } from "../utils/perfTracker";
-
-const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
-
-function nowMs() {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-}
-
-function logPerf(context, message, details = {}) {
-  if (!isPerfLoggingEnabled) {
-    return;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(`[useBatchDataLoader:${context}] ${message}`, details);
-}
+import { logPerf, nowMs } from "../utils/perf";
 
 function toPatientIdArray(rawValue) {
   if (Array.isArray(rawValue)) {
@@ -130,7 +113,7 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
         const requestEndTime = nowMs();
 
         if (!isActive) {
-          logPerf(errorContext, "stale summary response ignored", {
+          logPerf(`useBatchDataLoader:${errorContext}`, "stale summary response ignored", {
             requestMs: Math.round(requestEndTime - requestStartTime),
           });
           endSpan(span, "cancelled", {
@@ -179,7 +162,7 @@ export function useBatchDataLoader(getSummaryFn, errorContext) {
           setErrorMessage(error?.message || `Failed to load ${errorContext} classes.`);
           setIsLoading(false);
 
-          logPerf(errorContext, "load failed", {
+          logPerf(`useBatchDataLoader:${errorContext}`, "load failed", {
             totalMs: Math.round(nowMs() - loadStartTime),
             message: error?.message || "",
           });

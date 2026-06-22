@@ -1,21 +1,7 @@
 import { useEffect, useState } from "react";
 import { summarizeInstances } from "../utils/dataProcessing";
 import { endSpan, startSpan } from "../utils/perfTracker";
-
-const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
-
-function nowMs() {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-}
-
-function logPerf(context, message, details = {}) {
-  if (!isPerfLoggingEnabled) return;
-  // eslint-disable-next-line no-console
-  console.log(`[useDataLoader:${context}] ${message}`, details);
-}
+import { logPerf, nowMs } from "../utils/perf";
 
 const INSTANCE_CONTEXT_BY_SECTION = {
   OMOP: "OMOP",
@@ -102,7 +88,7 @@ export function useDataLoader(
         });
 
         if (!isActive) {
-          logPerf(errorContext, "stale response ignored", {
+          logPerf(`useDataLoader:${errorContext}`, "stale response ignored", {
             classesMs,
             instancesMs,
           });
@@ -115,7 +101,7 @@ export function useDataLoader(
         setErrorsByClass(nextErrorsByClass);
         setIsLoading(false);
 
-        logPerf(errorContext, "load complete", {
+        logPerf(`useDataLoader:${errorContext}`, "load complete", {
           classes: classList.length,
           classesMs,
           instancesMs,
@@ -131,7 +117,7 @@ export function useDataLoader(
           setErrorMessage(error?.message || `Failed to load ${errorContext} classes.`);
           setIsLoading(false);
 
-          logPerf(errorContext, "load failed", {
+          logPerf(`useDataLoader:${errorContext}`, "load failed", {
             totalMs: Math.round(nowMs() - loadStartTime),
             message: error?.message || "",
           });

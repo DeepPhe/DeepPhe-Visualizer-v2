@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   Button,
@@ -368,3 +369,32 @@ export default function FiltersToolbar({
     </Box>
   );
 }
+
+FiltersToolbar.propTypes = {
+  spacingUnits: PropTypes.number,
+  fontScalePercentLabel: PropTypes.string,
+  canDecreaseFontScale: PropTypes.bool,
+  canIncreaseFontScale: PropTypes.bool,
+  onChangeFontScale: PropTypes.func,
+  highContrast: PropTypes.bool,
+  onToggleHighContrast: PropTypes.func,
+  reducedMotion: PropTypes.bool,
+  onToggleReducedMotion: PropTypes.func,
+  onResetAllFilters: PropTypes.func,
+  canResetAllFilters: PropTypes.bool,
+  filterLayoutToggleTooltip: PropTypes.string,
+  isPerCardColumnLayout: PropTypes.bool,
+  onToggleFilterLayout: PropTypes.func,
+  filterPanelDensityMode: PropTypes.string,
+  onChangeFilterPanelDensityMode: PropTypes.func,
+  isCompactPlusDensity: PropTypes.bool,
+  stackGapPx: PropTypes.number,
+  onChangeStackGapPx: PropTypes.func,
+  slackDistributionMode: PropTypes.string,
+  onChangeSlackDistributionMode: PropTypes.func,
+  themeKey: PropTypes.string,
+  onChangeTheme: PropTypes.func,
+  getToggleButtonSx: PropTypes.func,
+  themeEditorMenuValue: PropTypes.string,
+  homeRoute: PropTypes.string,
+};

@@ -13,9 +13,23 @@
 
 const path = require("path");
 
-const PIPER_FILES_DIR = path.resolve(
-  process.env.PIPER_FILES_DIR || path.join(__dirname, "..", "..", "data", "piperfiles")
-);
+/**
+ * Default location of the piper files directory.
+ *
+ * When running normally, this lives at <repo>/data/piperfiles (relative to this
+ * file). When running inside a packaged @yao-pkg/pkg binary, __dirname points
+ * into the read-only snapshot filesystem, so resolve relative to the executable
+ * instead — users drop a writable/swappable data/piperfiles folder next to the
+ * binary. The PIPER_FILES_DIR env var always takes precedence.
+ */
+function defaultPiperFilesDir() {
+  if (process.pkg) {
+    return path.join(path.dirname(process.execPath), "data", "piperfiles");
+  }
+  return path.join(__dirname, "..", "..", "data", "piperfiles");
+}
+
+const PIPER_FILES_DIR = path.resolve(process.env.PIPER_FILES_DIR || defaultPiperFilesDir());
 
 const PIPER_MAX_BYTES =
   Number(process.env.PIPER_MAX_BYTES) > 0 ? Number(process.env.PIPER_MAX_BYTES) : 1024 * 1024;

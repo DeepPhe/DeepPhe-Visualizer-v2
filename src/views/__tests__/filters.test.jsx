@@ -393,11 +393,11 @@ describe("FiltersView", () => {
         const sectionGrids = Array.from(container.querySelectorAll(".filter-section-grid"));
         const filterSets = Array.from(container.querySelectorAll(".filter-set"));
         // Column caps are configured per filter-set (layoutConfig md caps,
-        // bounded by each section's card count): Patient (4 cards, cap 2),
+        // bounded by each section's card count): Patient (4 cards, cap 3),
         // Cancer Type & Primary Site (1 card), Staging (4 cards, cap 2),
         // Pathology & Grade (1 card).
         expect(sectionGrids.map((node) => node.getAttribute("data-column-cap"))).toEqual([
-          "2",
+          "3",
           "1",
           "2",
           "1",
@@ -563,8 +563,8 @@ describe("FiltersView", () => {
       const columns = patientGrid.querySelectorAll(".filter-section-column");
       const firstColumn = columns[0];
 
-      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
-      expect(columns.length).toBe(2);
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("3");
+      expect(columns.length).toBe(3);
       expect(firstColumn.querySelector('[aria-label="Open Age at Dx filter"]')).not.toBeNull();
     } finally {
       unmount();
@@ -696,8 +696,8 @@ describe("FiltersView", () => {
       expect(pageHeading?.closest('[data-testid="identified-patients-panel"]')).not.toBeNull();
       expect(pageHeading?.tagName).toBe("H1");
 
-      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
-      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(2);
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("3");
+      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(3);
       expect(toggle?.getAttribute("aria-label")).toBe("Switch to stacked layout");
       expect(resetButton?.disabled).toBe(true);
 
@@ -708,8 +708,8 @@ describe("FiltersView", () => {
       await waitFor(() => {
         expect(toggle?.getAttribute("aria-label")).toBe("Switch to one-card-per-column layout");
       });
-      expect(patientGrid.getAttribute("data-column-cap")).toBe("2");
-      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(2);
+      expect(patientGrid.getAttribute("data-column-cap")).toBe("3");
+      expect(patientGrid.querySelectorAll(".filter-section-column").length).toBe(3);
     } finally {
       unmount();
       Object.defineProperty(window, "matchMedia", {
@@ -1304,7 +1304,7 @@ describe("FiltersView", () => {
     unmount();
   });
 
-  it("shows slow-query warning and zero-result hint with itemCounts guidance", async () => {
+  it("hides slow-query warning while showing zero-result hint with itemCounts guidance", async () => {
     fetchDeepPheFilterCount.mockResolvedValue({
       count: 0,
       patient_ids: [],
@@ -1337,7 +1337,7 @@ describe("FiltersView", () => {
       const identifiedPanel = findIdentifiedPatientsPanel(container);
       const drawerText = String(patientGridDrawer?.textContent || "");
       const panelText = String(identifiedPanel?.textContent || "");
-      expect(drawerText).toContain("Query took 106.5 ms");
+      expect(drawerText).not.toContain("Query took 106.5 ms");
       expect(drawerText).toContain(
         "Cancer matched 0 patients before intersection. Check spelling and selected values."
       );

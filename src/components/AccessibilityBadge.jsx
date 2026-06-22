@@ -1,4 +1,5 @@
 import React from "react";
+import PropTypes from "prop-types";
 import AccessibleForwardIcon from "@mui/icons-material/AccessibleForward";
 import { Chip, Tooltip } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
@@ -31,4 +32,10 @@ export default function AccessibilityBadge({ label = "WCAG 2.1 AA", to = "/acces
     </Tooltip>
   );
 }
+
+AccessibilityBadge.propTypes = {
+  label: PropTypes.string,
+  to: PropTypes.string,
+  sx: PropTypes.object,
+};
 

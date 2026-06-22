@@ -43,18 +43,42 @@ export const DEFAULT_FILTER_SET_CARD_COLUMN_CAP = Object.freeze({
 });
 
 export const FILTER_SET_CARD_COLUMN_CAP_BY_ID = Object.freeze({
-  demographics: { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
-  "cancer-type": { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  demographics: { xs: 1, sm: 1, md: 3, lg: 3, xl: 3 },
+  "cancer-type": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
   "tumor-anatomy": { xs: 1, sm: 1, md: 2, lg: 3, xl: 3 },
   staging: { xs: 1, sm: 2, md: 2, lg: 3, xl: 3 },
   pathology: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
   biomarkers: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
-  treatment: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
+  treatment: { xs: 1, sm: 1, md: 2, lg: 5, xl: 5 },
   "clinical-status": { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
   "uncategorized-omop": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
   "uncategorized-attributes": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
   "uncategorized-concepts": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
 });
+
+// Minimum number of charted values a filter card must have to claim its own
+// dedicated column. Tunable per density: standard rows are ~1.5x taller
+// (rowHeight ~30 vs ~20), so a value list reaches "its own browseable lane"
+// length at fewer values there; compact and compact-plus share the tighter row
+// height and tolerate longer shared columns.
+export const OVERSIZED_MIN_ROWS_BY_DENSITY = Object.freeze({
+  standard: 18,
+  compact: 25,
+  "compact-plus": 25,
+});
+
+/**
+ * Dedicated-column threshold for a density, in the form the layout machinery
+ * expects. The packer compares `rowCount > threshold`, so this returns one less
+ * than the inclusive minimum — a card with at least the configured minimum
+ * number of charted values gets its own column.
+ * @param {string} densityMode "standard" | "compact" | "compact-plus"
+ * @returns {number}
+ */
+export function getOversizedRowThreshold(densityMode) {
+  const minRows = OVERSIZED_MIN_ROWS_BY_DENSITY[densityMode] ?? OVERSIZED_MIN_ROWS_BY_DENSITY.standard;
+  return Math.max(0, Math.floor(minRows) - 1);
+}
 
 export function resolvePackedGridSpan({ displayName = "", rowCount = 0 } = {}) {
   const safeRowCount = Math.max(0, Number(rowCount) || 0);

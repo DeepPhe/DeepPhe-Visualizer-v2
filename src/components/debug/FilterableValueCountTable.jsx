@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import PropTypes from "prop-types";
 import {
   Box,
   IconButton,
@@ -166,5 +167,16 @@ function FilterableValueCountTable({ rows, valueHeader = "Value", maxHeight = 28
     </Stack>
   );
 }
+
+FilterableValueCountTable.propTypes = {
+  rows: PropTypes.arrayOf(
+    PropTypes.shape({
+      label: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      count: PropTypes.number,
+    })
+  ),
+  valueHeader: PropTypes.string,
+  maxHeight: PropTypes.number,
+};
 
 export default FilterableValueCountTable;

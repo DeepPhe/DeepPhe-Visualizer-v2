@@ -1,4 +1,5 @@
 import React, { memo } from "react";
+import PropTypes from "prop-types";
 import { Alert, Box, Button, Paper } from "@mui/material";
 import HorizontalBarFilter from "../../components/HorizontalBarFilter";
 
@@ -111,5 +112,32 @@ function FilterSectionCard({
     </Paper>
   );
 }
+
+FilterSectionCard.propTypes = {
+  classNameKey: PropTypes.string,
+  classDisplayName: PropTypes.string,
+  classError: PropTypes.string,
+  sortMode: PropTypes.string,
+  density: PropTypes.string,
+  data: PropTypes.array,
+  selectedValues: PropTypes.array,
+  selectedCount: PropTypes.number,
+  onSelectionChange: PropTypes.func,
+  onRowToggleExpand: PropTypes.func,
+  fontScale: PropTypes.number,
+  customSortOrder: PropTypes.array,
+  inlinePatientIdsThreshold: PropTypes.number,
+  getPatientSummary: PropTypes.func,
+  onOpenFilterModal: PropTypes.func,
+  filterType: PropTypes.string,
+  measureRef: PropTypes.oneOfType([PropTypes.func, PropTypes.object]),
+  cardOuterStyle: PropTypes.object,
+  cardMarginBottom: PropTypes.number,
+  cardHeightCapPx: PropTypes.number,
+  cardHeightOverride: PropTypes.number,
+  cardSx: PropTypes.object,
+  contentAreaSx: PropTypes.object,
+  isCompactDensity: PropTypes.bool,
+};
 
 export default memo(FilterSectionCard);

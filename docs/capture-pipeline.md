@@ -6,13 +6,13 @@ This page documents how the automated screenshots in this site are produced. All
 
 ## Prerequisites
 
-| Requirement                   | Version      | Check                                  |
-| ----------------------------- | ------------ | -------------------------------------- | ---------------- |
-| Node.js                       | 18 or higher | `node --version`                       |
-| npm                           | 8 or higher  | `npm --version`                        |
-| DeepPhe Visualizer running    | port 3000    | `curl -s http://localhost:3000         | grep -c DeepPhe` |
-| DeepPhe Data API running      | port 3333    | `curl -s http://localhost:3333/health` |
-| Playwright browsers installed | —            | see below                              |
+| Requirement                   | Version      | Check                                            |
+| ----------------------------- | ------------ | ------------------------------------------------ |
+| Node.js                       | 18 or higher | `node --version`                                 |
+| npm                           | 8 or higher  | `npm --version`                                  |
+| DeepPhe Visualizer running    | port 3000    | `curl -s http://localhost:3000 \| grep -c DeepPhe` |
+| DeepPhe Data API running      | port 3333    | `curl -s http://localhost:3333/health`           |
+| Playwright browsers installed | —            | see below                                        |
 
 ### Install Playwright browsers (first time only)
 

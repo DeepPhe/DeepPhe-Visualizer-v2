@@ -2,28 +2,13 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Alert,
   Box,
-  Button,
   CssBaseline,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
   GlobalStyles,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
   Stack,
-  TextField,
-  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
 import { ThemeProvider, alpha, createTheme } from "@mui/material/styles";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import Masonry from "@mui/lab/Masonry";
 import { getSummary as getOmopSummary } from "../controllers/omap";
 import { getSummary as getAttributesSummary } from "../controllers/attributes";
@@ -34,28 +19,26 @@ import {
   fetchDeepPheFilterSummary,
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
-import HorizontalBarFilter from "../components/HorizontalBarFilter";
 import { useBatchDataLoader } from "../hooks/useBatchDataLoader";
+import { useThemeBuilderState } from "../hooks/useThemeBuilderState";
 import {
   FONT_SCALE_OPTIONS,
   findClosestFontScaleIndex,
   useFilterPagePreferences,
 } from "../hooks/useFilterPagePreferences";
-import { MONOSPACE_STACK, THEME_OPTIONS, getThemeByKey } from "../themes";
+import { getThemeByKey } from "../themes";
 import {
-  EMPTY_THEME_COLOR_OVERRIDES,
   THEME_EDITOR_MENU_VALUE,
   buildThemeColorOverridePatch,
   collectThemeColorEntries,
-  getInitialThemeColorOverridesByTheme,
-  persistThemeColorOverridesByTheme,
-  toColorInputHexValue,
 } from "./filters/themeColorOverrides";
 import { normalizeClassName } from "../utils/dataProcessing";
 import { endSpan, logMilestone, startSpan } from "../utils/perfTracker";
 import { resolveFilterSetsWithExtras, resolveFilterSetsForAttributesAndConcepts } from "./filterSets";
 import { buildFilterSectionLayout, estimateCardHeight } from "./filterLayout";
 import FilterSectionCard from "./filters/FilterSectionCard";
+import FilterDetailModal from "./filters/FilterDetailModal";
+import ThemeBuilderDialog from "./filters/ThemeBuilderDialog";
 import FiltersToolbar from "./filters/FiltersToolbar";
 import {
   FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
@@ -63,6 +46,7 @@ import {
   FILTER_SECTION_LAYOUT_COLUMNS,
   getFilterSetCardColumnsByBreakpoint,
   getFilterSetPriorityIndex,
+  getOversizedRowThreshold,
   resolvePackedGridSpan,
   resolveResponsiveColumnCap,
 } from "./filters/layoutConfig";
@@ -76,7 +60,6 @@ import {
 import {
   AGE_AT_DX_CLASS,
   AGE_SELECTION_MODE,
-  DEFAULT_FILTER_VALUE_SORT_MODE,
   FILTER_SORT_DIMENSION,
   FILTER_SORT_DIRECTION,
   buildAgeDecileChartData,
@@ -203,13 +186,27 @@ function FiltersView() {
     changeSlackDistributionMode,
   } = useFilterPagePreferences();
   const [fontFamilyKey] = useState(getInitialFontFamilyKey);
-  const [isThemeBuilderOpen, setIsThemeBuilderOpen] = useState(false);
-  const [themeBuilderThemeKey, setThemeBuilderThemeKey] = useState(() => themeKey);
-  const [themeBuilderSearchQuery, setThemeBuilderSearchQuery] = useState("");
-  const [themeColorOverridesByTheme, setThemeColorOverridesByTheme] = useState(getInitialThemeColorOverridesByTheme);
+  const {
+    isThemeBuilderOpen,
+    openThemeBuilder,
+    themeBuilderThemeKey,
+    themeBuilderSearchQuery,
+    setThemeBuilderSearchQuery,
+    activeThemeColorOverrides,
+    themeBuilderColorEntries,
+    filteredThemeBuilderColorEntries,
+    themeBuilderThemeOverrides,
+    hasThemeBuilderOverrides,
+    hasAnyThemeColorOverrides,
+    handleThemeBuilderClose,
+    handleThemeBuilderThemeChange,
+    handleThemeBuilderEntryChange,
+    handleThemeBuilderThemeReset,
+    handleThemeBuilderResetAll,
+    handleThemeBuilderApplyTheme,
+  } = useThemeBuilderState({ themeKey, changeTheme });
   const selectedBaseTheme = useMemo(() => getThemeByKey(themeKey), [themeKey]);
   const activeThemeColorEntries = useMemo(() => collectThemeColorEntries(selectedBaseTheme), [selectedBaseTheme]);
-  const activeThemeColorOverrides = themeColorOverridesByTheme[themeKey] || EMPTY_THEME_COLOR_OVERRIDES;
   const activeThemeColorPatch = useMemo(
     () => buildThemeColorOverridePatch(activeThemeColorEntries, activeThemeColorOverrides),
     [activeThemeColorEntries, activeThemeColorOverrides]
@@ -286,99 +283,13 @@ function FiltersView() {
     (event) => {
       const nextKey = String(event?.target?.value || "");
       if (nextKey === THEME_EDITOR_MENU_VALUE) {
-        setThemeBuilderThemeKey(themeKey);
-        setThemeBuilderSearchQuery("");
-        setIsThemeBuilderOpen(true);
+        openThemeBuilder(themeKey);
         return;
       }
       changeTheme(nextKey);
     },
-    [themeKey, changeTheme]
+    [themeKey, changeTheme, openThemeBuilder]
   );
-
-  const themeBuilderTheme = useMemo(() => getThemeByKey(themeBuilderThemeKey), [themeBuilderThemeKey]);
-  const themeBuilderColorEntries = useMemo(() => collectThemeColorEntries(themeBuilderTheme), [themeBuilderTheme]);
-  const themeBuilderThemeOverrides = themeColorOverridesByTheme[themeBuilderThemeKey] || EMPTY_THEME_COLOR_OVERRIDES;
-  const filteredThemeBuilderColorEntries = useMemo(() => {
-    const normalizedQuery = String(themeBuilderSearchQuery || "")
-      .trim()
-      .toLowerCase();
-    if (!normalizedQuery) {
-      return themeBuilderColorEntries;
-    }
-    return themeBuilderColorEntries.filter((entry) => {
-      const pathText = String(entry?.pathLabel || "").toLowerCase();
-      const valueText = String(entry?.defaultValue || "").toLowerCase();
-      return pathText.includes(normalizedQuery) || valueText.includes(normalizedQuery);
-    });
-  }, [themeBuilderColorEntries, themeBuilderSearchQuery]);
-  const hasThemeBuilderOverrides = Object.keys(themeBuilderThemeOverrides).length > 0;
-  const hasAnyThemeColorOverrides = Object.keys(themeColorOverridesByTheme).length > 0;
-
-  useEffect(() => {
-    persistThemeColorOverridesByTheme(themeColorOverridesByTheme);
-  }, [themeColorOverridesByTheme]);
-
-  const handleThemeBuilderClose = useCallback(() => {
-    setIsThemeBuilderOpen(false);
-  }, []);
-
-  const handleThemeBuilderThemeChange = useCallback((event) => {
-    const nextThemeKey = String(event?.target?.value || "");
-    if (!THEME_OPTIONS.some((option) => option.key === nextThemeKey)) {
-      return;
-    }
-    setThemeBuilderThemeKey(nextThemeKey);
-    setThemeBuilderSearchQuery("");
-  }, []);
-
-  const handleThemeBuilderEntryChange = useCallback(
-    (entry, rawNextValue) => {
-      if (!entry?.id || !entry?.defaultValue) {
-        return;
-      }
-
-      const normalizedNextValue = String(rawNextValue ?? "").trim();
-      setThemeColorOverridesByTheme((previousOverridesByTheme) => {
-        const previousThemeOverrides = previousOverridesByTheme[themeBuilderThemeKey] || EMPTY_THEME_COLOR_OVERRIDES;
-        const nextThemeOverrides = { ...previousThemeOverrides };
-
-        if (!normalizedNextValue || normalizedNextValue === entry.defaultValue) {
-          delete nextThemeOverrides[entry.id];
-        } else {
-          nextThemeOverrides[entry.id] = normalizedNextValue;
-        }
-
-        const nextOverridesByTheme = { ...previousOverridesByTheme };
-        if (Object.keys(nextThemeOverrides).length === 0) {
-          delete nextOverridesByTheme[themeBuilderThemeKey];
-        } else {
-          nextOverridesByTheme[themeBuilderThemeKey] = nextThemeOverrides;
-        }
-        return nextOverridesByTheme;
-      });
-    },
-    [themeBuilderThemeKey]
-  );
-
-  const handleThemeBuilderThemeReset = useCallback(() => {
-    setThemeColorOverridesByTheme((previousOverridesByTheme) => {
-      if (!previousOverridesByTheme[themeBuilderThemeKey]) {
-        return previousOverridesByTheme;
-      }
-      const nextOverridesByTheme = { ...previousOverridesByTheme };
-      delete nextOverridesByTheme[themeBuilderThemeKey];
-      return nextOverridesByTheme;
-    });
-  }, [themeBuilderThemeKey]);
-
-  const handleThemeBuilderResetAll = useCallback(() => {
-    setThemeColorOverridesByTheme({});
-  }, []);
-
-  const handleThemeBuilderApplyTheme = useCallback(() => {
-    changeTheme(themeBuilderThemeKey);
-  }, [themeBuilderThemeKey, changeTheme]);
 
   const handleFontScaleChange = changeFontScale;
   const handleHighContrastToggle = toggleHighContrast;
@@ -1535,7 +1446,9 @@ function FiltersView() {
   const patientGridCollapsedHeaderSummary = useMemo(() => {
     const hasFilterSummaries = activeFilters.length > 0;
     const hasPerfSummary = SHOULD_LOG_FILTERS_PERF && Boolean(countResult);
+    const showSlowWarning = false;
     const hasSlowWarning = Boolean(countResult) && isSlowQuery;
+    const shouldShowSlowWarning = hasSlowWarning && showSlowWarning;
     const hasZeroHint = Boolean(countResult) && Boolean(zeroResultHint);
     const hasIdentifiedSummary = Boolean(countResult && identifiedSummary);
     const hasStatusCopy =
@@ -1543,7 +1456,7 @@ function FiltersView() {
       Boolean(countError) ||
       hasIdentifiedSummary ||
       hasFilterSummaries ||
-      hasSlowWarning ||
+      shouldShowSlowWarning ||
       hasZeroHint ||
       hasPerfSummary;
 
@@ -1608,7 +1521,7 @@ function FiltersView() {
             ))}
           </Box>
         ) : null}
-        {hasSlowWarning ? (
+        {shouldShowSlowWarning ? (
           <Alert severity="warning">
             Query took {formatMs(timing.totalMs)} ms. Consider narrowing selections for faster response.
           </Alert>
@@ -2214,14 +2127,13 @@ function FiltersView() {
   const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 60 : 120;
   const NATURAL_STACK_GAP_PX = isCompactDensity ? 8 : 24;
   const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
-  // Cards with more than this many rows claim their own dedicated column
-  // before LPT packs the rest. Set to 10 because in standard/compact density
-  // any card past ~10 rows overflows its own per-card cap (200/300px depending
-  // on density) and starts requiring internal scroll — the ergonomic line
-  // where sharing a column with another card becomes awkward. The threshold
-  // uses the chart's data-array length (currently charted values), not the
-  // underlying vocabulary size.
-  const OVERSIZED_ROW_THRESHOLD = 10;
+  // A filter card with enough charted values claims its own dedicated column
+  // before LPT packs the rest — the point where a value list reads as its own
+  // browseable lane rather than a card to stack under a sibling. The minimum is
+  // tunable per density (OVERSIZED_MIN_ROWS_BY_DENSITY in layoutConfig) since
+  // taller standard rows reach that length sooner. The count uses the chart's
+  // data-array length (currently charted values), not the vocabulary size.
+  const OVERSIZED_ROW_THRESHOLD = getOversizedRowThreshold(filterPanelDensityMode);
   const resolveSectionHeightCapPx = (sectionHeightCap = FILTER_SECTION_HEIGHT_CAP_PX) => {
     const numericHeightCap = Number(sectionHeightCap);
     if (!Number.isFinite(numericHeightCap) || numericHeightCap <= 0) {
@@ -2368,7 +2280,7 @@ function FiltersView() {
       stackableCardMaxHeight: FILTER_CARD_MAX_HEIGHT_PX,
       allowNonContiguousPacking: isCompactPlusDensity,
       slackDistributionMode,
-      // Cards with more than 25 rows claim their own column in any density.
+      // Cards with 25+ rows claim their own column in any density.
       // A 25+ row list is "a browseable lane" regardless of density mode — the
       // ergonomic argument doesn't depend on whether layout uses LPT or DP.
       // (filterLayout.js forces the LPT path when oversized cards exist so the
@@ -3141,261 +3053,58 @@ function FiltersView() {
               setIsExpanded={setIsPatientGridDockExpanded}
               setIsMaximized={setIsPatientGridDockMaximized}
             />
-            <Dialog
+            <ThemeBuilderDialog
               open={isThemeBuilderOpen}
               onClose={handleThemeBuilderClose}
-              fullWidth
-              maxWidth="lg"
-              aria-labelledby="theme-builder-modal-title"
-            >
-              <DialogTitle id="theme-builder-modal-title">Theme Builder</DialogTitle>
-              <DialogContent dividers>
-                <Stack spacing={1.5}>
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ md: "center" }}>
-                    <FormControl size="small" sx={{ minWidth: 190 }}>
-                      <InputLabel id="theme-builder-theme-select-label">Theme</InputLabel>
-                      <Select
-                        labelId="theme-builder-theme-select-label"
-                        value={themeBuilderThemeKey}
-                        label="Theme"
-                        onChange={handleThemeBuilderThemeChange}
-                      >
-                        {THEME_OPTIONS.map((option) => (
-                          <MenuItem key={option.key} value={option.key}>
-                            {option.label}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={handleThemeBuilderApplyTheme}
-                      disabled={themeBuilderThemeKey === themeKey}
-                    >
-                      {themeBuilderThemeKey === themeKey ? "Active Theme" : "Use This Theme"}
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      size="small"
-                      onClick={handleThemeBuilderThemeReset}
-                      disabled={!hasThemeBuilderOverrides}
-                    >
-                      Reset Theme Colors
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      size="small"
-                      onClick={handleThemeBuilderResetAll}
-                      disabled={!hasAnyThemeColorOverrides}
-                    >
-                      Reset All Themes
-                    </Button>
-                  </Stack>
-                  <TextField
-                    size="small"
-                    label="Search color paths"
-                    placeholder="palette.primary.main or #00619E"
-                    value={themeBuilderSearchQuery}
-                    onChange={(event) => setThemeBuilderSearchQuery(event.target.value)}
-                  />
-                  <Typography variant="caption" color="text.secondary">
-                    Showing {filteredThemeBuilderColorEntries.length.toLocaleString()} of{" "}
-                    {themeBuilderColorEntries.length.toLocaleString()} color entries ·{" "}
-                    {Object.keys(themeBuilderThemeOverrides).length.toLocaleString()} overrides for this theme
-                  </Typography>
-                  <Box
-                    sx={{
-                      maxHeight: { xs: "52vh", md: "60vh" },
-                      overflowY: "auto",
-                      pr: 0.5,
-                    }}
-                  >
-                    <Stack spacing={1}>
-                      {filteredThemeBuilderColorEntries.length > 0 ? (
-                        filteredThemeBuilderColorEntries.map((entry) => {
-                          const overriddenValue = themeBuilderThemeOverrides[entry.id];
-                          const displayValue = overriddenValue ?? entry.defaultValue;
-                          const colorPickerValue = toColorInputHexValue(displayValue);
-                          const hasEntryOverride = typeof overriddenValue === "string" && overriddenValue.length > 0;
-
-                          return (
-                            <Paper key={entry.id} variant="outlined" sx={{ p: 1 }}>
-                              <Stack spacing={0.75}>
-                                <Typography
-                                  variant="caption"
-                                  sx={{ color: "text.secondary", fontFamily: MONOSPACE_STACK, wordBreak: "break-word" }}
-                                >
-                                  {entry.pathLabel}
-                                  {entry.kind === "token" ? ` [color ${entry.tokenIndex + 1}]` : ""}
-                                </Typography>
-                                <Stack
-                                  direction={{ xs: "column", sm: "row" }}
-                                  spacing={1}
-                                  alignItems={{ sm: "center" }}
-                                >
-                                  {colorPickerValue ? (
-                                    <TextField
-                                      size="small"
-                                      type="color"
-                                      label="Pick"
-                                      value={colorPickerValue}
-                                      onChange={(event) => handleThemeBuilderEntryChange(entry, event.target.value)}
-                                      sx={{ width: 96, flexShrink: 0 }}
-                                      inputProps={{
-                                        "aria-label": `${entry.pathLabel} color picker`,
-                                      }}
-                                    />
-                                  ) : null}
-                                  <TextField
-                                    size="small"
-                                    fullWidth
-                                    label={entry.kind === "direct" ? "Color value" : "Color token"}
-                                    value={displayValue}
-                                    onChange={(event) => handleThemeBuilderEntryChange(entry, event.target.value)}
-                                    inputProps={{
-                                      "aria-label": `${entry.pathLabel} color value`,
-                                    }}
-                                  />
-                                  <Button
-                                    size="small"
-                                    onClick={() => handleThemeBuilderEntryChange(entry, entry.defaultValue)}
-                                    disabled={!hasEntryOverride}
-                                  >
-                                    Reset
-                                  </Button>
-                                </Stack>
-                              </Stack>
-                            </Paper>
-                          );
-                        })
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          No matching color entries for this query.
-                        </Typography>
-                      )}
-                    </Stack>
-                  </Box>
-                </Stack>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={handleThemeBuilderClose}>Close</Button>
-              </DialogActions>
-            </Dialog>
-            <Dialog
+              themeBuilderThemeKey={themeBuilderThemeKey}
+              onThemeChange={handleThemeBuilderThemeChange}
+              onApplyTheme={handleThemeBuilderApplyTheme}
+              activeThemeKey={themeKey}
+              onResetTheme={handleThemeBuilderThemeReset}
+              hasOverrides={hasThemeBuilderOverrides}
+              onResetAll={handleThemeBuilderResetAll}
+              hasAnyOverrides={hasAnyThemeColorOverrides}
+              searchQuery={themeBuilderSearchQuery}
+              onSearchQueryChange={setThemeBuilderSearchQuery}
+              filteredColorEntries={filteredThemeBuilderColorEntries}
+              totalColorEntryCount={themeBuilderColorEntries.length}
+              themeOverrides={themeBuilderThemeOverrides}
+              onEntryChange={handleThemeBuilderEntryChange}
+            />
+            <FilterDetailModal
               open={Boolean(activeFilterDetail)}
               onClose={handleCloseFilterModal}
-              fullWidth
-              maxWidth="md"
-              aria-labelledby="filter-modal-title"
-            >
-              <DialogTitle id="filter-modal-title">
-                {activeFilterDetail?.classDisplayName || "Filter details"}
-              </DialogTitle>
-              <DialogContent dividers>
-                <Stack spacing={2}>
-                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25} alignItems="center">
-                    <TextField
-                      label="Search values"
-                      placeholder="Type to filter labels"
-                      size="small"
-                      fullWidth
-                      value={activeFilterSearchQuery}
-                      onChange={(event) => setActiveFilterSearchQuery(event.target.value)}
-                      inputProps={{
-                        "aria-label": "Search filter values",
-                      }}
-                    />
-                    <FormControl size="small" sx={{ minWidth: 140 }}>
-                      <InputLabel id="filter-modal-sort-by-label">Sort by</InputLabel>
-                      <Select
-                        labelId="filter-modal-sort-by-label"
-                        value={activeFilterSortDimension}
-                        label="Sort by"
-                        onChange={handleModalSortDimensionChange}
-                      >
-                        <MenuItem value={FILTER_SORT_DIMENSION.COUNT}>Count</MenuItem>
-                        <MenuItem value={FILTER_SORT_DIMENSION.LABEL}>Label</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <Tooltip
-                      title={activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC ? "Ascending" : "Descending"}
-                    >
-                      <IconButton
-                        onClick={handleModalSortDirectionToggle}
-                        aria-label={
-                          activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC ? "Sort ascending" : "Sort descending"
-                        }
-                        sx={{ border: 1, borderColor: "divider", borderRadius: 1 }}
-                      >
-                        {activeFilterSortDirection === FILTER_SORT_DIRECTION.ASC ? (
-                          <ArrowUpwardIcon fontSize="small" />
-                        ) : (
-                          <ArrowDownwardIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                  {activeFilterDetail?.classError ? (
-                    <Alert severity="error">{activeFilterDetail.classError}</Alert>
-                  ) : null}
-                  {filteredModalChartData.length > 0 ? (
-                    <HorizontalBarFilter
-                      key={
-                        activeFilterDetail
-                          ? `modal:${activeFilterDetail.type}:${activeFilterDetail.className}:${activeFilterDetail.sortMode}`
-                          : "modal:chart"
-                      }
-                      className={
-                        activeFilterDetail?.type === "attributes"
-                          ? "filter-modal-chart filter-modal-chart-attributes"
-                          : "filter-modal-chart filter-modal-chart-omop"
-                      }
-                      title={activeFilterDetail?.classDisplayName || "Filter details"}
-                      showTitle={false}
-                      allowCollapse={false}
-                      showSortDimensionToggle={false}
-                      showSortCycleButton={false}
-                      data={filteredModalChartData}
-                      selectedValues={activeFilterDetail?.selectedValues || []}
-                      onSelectionChange={
-                        activeFilterDetail
-                          ? activeFilterDetail.type === "attributes"
-                            ? handleSelectionChange(setSelectedAttributeValuesByClass, activeFilterDetail.className)
-                            : activeFilterDetail.type === "concepts"
-                            ? handleSelectionChange(setSelectedConceptValuesByClass, activeFilterDetail.className)
-                            : handleSelectionChange(setSelectedOmopValuesByClass, activeFilterDetail.className)
-                          : undefined
-                      }
-                      onRowToggleExpand={
-                        activeFilterDetail?.type === "attributes"
-                          ? handleAttributeParentExpansionChange(activeFilterDetail.className)
-                          : undefined
-                      }
-                      fontScale={fontScale}
-                      fillContainer={false}
-                      defaultSort={activeFilterDetail?.sortMode || DEFAULT_FILTER_VALUE_SORT_MODE}
-                      customSortOrder={
-                        activeFilterDetail
-                          ? getCustomSortOrderForDensity(activeFilterDetail.type, activeFilterDetail.className)
-                          : []
-                      }
-                      inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
-                      getPatientSummary={getPatientSummary}
-                    />
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      No matching values.
-                    </Typography>
-                  )}
-                </Stack>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={handleCloseFilterModal}>Close</Button>
-              </DialogActions>
-            </Dialog>
+              activeFilterDetail={activeFilterDetail}
+              searchQuery={activeFilterSearchQuery}
+              onSearchQueryChange={setActiveFilterSearchQuery}
+              sortDimension={activeFilterSortDimension}
+              onSortDimensionChange={handleModalSortDimensionChange}
+              sortDirection={activeFilterSortDirection}
+              onSortDirectionToggle={handleModalSortDirectionToggle}
+              chartData={filteredModalChartData}
+              onSelectionChange={
+                activeFilterDetail
+                  ? activeFilterDetail.type === "attributes"
+                    ? handleSelectionChange(setSelectedAttributeValuesByClass, activeFilterDetail.className)
+                    : activeFilterDetail.type === "concepts"
+                    ? handleSelectionChange(setSelectedConceptValuesByClass, activeFilterDetail.className)
+                    : handleSelectionChange(setSelectedOmopValuesByClass, activeFilterDetail.className)
+                  : undefined
+              }
+              onRowToggleExpand={
+                activeFilterDetail?.type === "attributes"
+                  ? handleAttributeParentExpansionChange(activeFilterDetail.className)
+                  : undefined
+              }
+              customSortOrder={
+                activeFilterDetail
+                  ? getCustomSortOrderForDensity(activeFilterDetail.type, activeFilterDetail.className)
+                  : EMPTY_SELECTION
+              }
+              fontScale={fontScale}
+              getPatientSummary={getPatientSummary}
+              inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+            />
           </Stack>
         </Box>
       </Box>

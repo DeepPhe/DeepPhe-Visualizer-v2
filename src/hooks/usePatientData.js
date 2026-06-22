@@ -3,21 +3,7 @@ import { loadPatientProfile } from "../controllers/patient";
 import { transformCancerSummary } from "../utils/patientView/transformCancerSummary";
 import { transformDocumentTimeline } from "../utils/patientView/transformDocumentTimeline";
 import { endSpan, startSpan } from "../utils/perfTracker";
-
-const isPerfLoggingEnabled = process.env.NODE_ENV !== "production";
-
-function nowMs() {
-  if (typeof performance !== "undefined" && typeof performance.now === "function") {
-    return performance.now();
-  }
-  return Date.now();
-}
-
-function logPerf(message, details = {}) {
-  if (!isPerfLoggingEnabled) return;
-  // eslint-disable-next-line no-console
-  console.log(`[usePatientData] ${message}`, details);
-}
+import { logPerf, nowMs } from "../utils/perf";
 
 /**
  * Manages patient profile state with request-ID-based cancellation.
@@ -72,7 +58,7 @@ export function usePatientData() {
       setCancerSummary(nextCancerSummary);
 
       const totalMs = Math.round(nowMs() - loadStartTime);
-      logPerf("load complete", { patientId: normalized, fetchMs, transformMs, totalMs });
+      logPerf("usePatientData", "load complete", { patientId: normalized, fetchMs, transformMs, totalMs });
       endSpan(span, "ok", { fetchMs, transformMs, totalMs });
 
       return { patientData: nextPatientData, timelineData: nextTimeline, cancerSummary: nextCancerSummary };
@@ -87,7 +73,7 @@ export function usePatientData() {
       setErrorMessage(error?.message || "Failed to load patient details.");
 
       const totalMs = Math.round(nowMs() - loadStartTime);
-      logPerf("load failed", { patientId: normalized, totalMs, message: error?.message || "" });
+      logPerf("usePatientData", "load failed", { patientId: normalized, totalMs, message: error?.message || "" });
       endSpan(span, "error", { errorMessage: error?.message || "", totalMs });
 
       return null;

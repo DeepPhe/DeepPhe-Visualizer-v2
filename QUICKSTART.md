@@ -64,7 +64,13 @@ npm test               # Run tests
 npm run lint           # Check code quality
 npm run lint:a11y      # Check accessibility
 npm run build          # Build for production
+npm run package        # Build standalone executables -> dist/ (see README)
 ```
+
+> `npm run package` produces self-contained binaries (no Node.js needed to run
+> them) that serve the SPA and reverse-proxy the DeepPhe API. Requires Node 20+
+> to build. See the [Standalone Executable](README.md#standalone-executable)
+> section for details.
 
 ## Troubleshooting
 
