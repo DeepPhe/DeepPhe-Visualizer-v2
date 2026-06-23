@@ -1,0 +1,71 @@
+name: Release
+
+# Builds the self-contained executables and attaches them to a GitHub Release.
+# Push a tag like `v0.1.0` to trigger a release, or run manually from the
+# Actions tab (workflow_dispatch) to build/upload artifacts without a release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # required to create/update the release and upload assets
+
+jobs:
+  package:
+    name: Package ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each target is built on a runner whose OS/arch matches it, so pkg
+          # never has to cross-fabricate (cross-arch fabrication fails — e.g.
+          # macOS arm64 cannot be built on an x64 host).
+          - target: node24-macos-arm64
+            runner: macos-14       # Apple Silicon
+            asset: deepphe-visualizer-v2-macos-arm64
+          - target: node24-macos-x64
+            runner: macos-13       # Intel
+            asset: deepphe-visualizer-v2-macos-x64
+          - target: node24-linux-x64
+            runner: ubuntu-latest
+            asset: deepphe-visualizer-v2-linux-x64
+          - target: node24-win-x64
+            runner: windows-latest
+            asset: deepphe-visualizer-v2-win-x64.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build web bundle (same-origin API base)
+        run: npm run package:web
+
+      - name: Package executable (${{ matrix.target }})
+        run: node scripts/package-pkg.mjs ${{ matrix.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+      - name: Attach binary to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true

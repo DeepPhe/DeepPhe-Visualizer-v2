@@ -15,6 +15,10 @@
  * repo's installed node_modules, and package from there. The result bundles
  * just serve.js + src/piper-server + build/ + those two deps.
  *
+ * Usage:
+ *   node scripts/package-pkg.mjs                      # build all four targets
+ *   node scripts/package-pkg.mjs node24-linux-x64     # build a subset (e.g. CI)
+ *
  * Prerequisites:
  *   - `npm install` has been run (node_modules present).
  *   - `npm run package:web` has produced build/ (relative API base for the proxy).
@@ -30,12 +34,17 @@ const stagingDir = path.join(repoRoot, ".pkg-build");
 const distDir = path.join(repoRoot, "dist");
 const buildIndex = path.join(repoRoot, "build", "index.html");
 
-const TARGETS = [
+const ALL_TARGETS = [
   "node24-macos-arm64",
   "node24-macos-x64",
   "node24-linux-x64",
   "node24-win-x64",
 ];
+
+// Build all targets by default, or only those named on the command line so each
+// CI runner can package its own native target (avoids cross-arch fabrication).
+const requestedTargets = process.argv.slice(2);
+const TARGETS = requestedTargets.length > 0 ? requestedTargets : ALL_TARGETS;
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 if (nodeMajor < 20) {
@@ -65,8 +74,10 @@ fs.cpSync(
 // Reuse the repo's installed dependencies and the built frontend via symlinks
 // (no second npm install, no 12 MB copy). pkg only embeds what the manifest
 // declares + what serve.js requires, so the rest of node_modules is ignored.
-fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(stagingDir, "node_modules"));
-fs.symlinkSync(path.join(repoRoot, "build"), path.join(stagingDir, "build"));
+// Windows needs "junction" for directory links so this works without admin.
+const linkType = process.platform === "win32" ? "junction" : undefined;
+fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(stagingDir, "node_modules"), linkType);
+fs.symlinkSync(path.join(repoRoot, "build"), path.join(stagingDir, "build"), linkType);
 
 // Minimal manifest: only the real server deps, so nothing extra is bundled.
 // Targets are passed per-invocation below (not via pkg.targets) because a
@@ -91,7 +102,13 @@ fs.writeFileSync(
 fs.rmSync(distDir, { recursive: true, force: true });
 fs.mkdirSync(distDir, { recursive: true });
 
-const pkgBin = path.join(repoRoot, "node_modules", ".bin", "pkg");
+// Run @yao-pkg/pkg's JS entry with the current Node binary so packaging works
+// cross-platform (the node_modules/.bin/pkg shim is not directly spawnable on
+// Windows).
+const pkgPkgDir = path.join(repoRoot, "node_modules", "@yao-pkg", "pkg");
+const pkgManifest = JSON.parse(fs.readFileSync(path.join(pkgPkgDir, "package.json"), "utf-8"));
+const pkgBinRel = typeof pkgManifest.bin === "string" ? pkgManifest.bin : pkgManifest.bin.pkg;
+const pkgEntry = path.join(pkgPkgDir, pkgBinRel);
 const outputName = (target) => {
   // node24-macos-arm64 -> deepphe-visualizer-v2-macos-arm64(.exe)
   const suffix = target.replace(/^node\d+-/, "");
@@ -105,7 +122,7 @@ const failed = [];
 for (const target of TARGETS) {
   const outPath = path.join(distDir, outputName(target));
   console.log(`\n=== Packaging ${target} -> ${path.basename(outPath)} ===`);
-  const result = spawnSync(pkgBin, [".", "-t", target, "-o", outPath], {
+  const result = spawnSync(process.execPath, [pkgEntry, ".", "-t", target, "-o", outPath], {
     cwd: stagingDir,
     stdio: "inherit",
   });
