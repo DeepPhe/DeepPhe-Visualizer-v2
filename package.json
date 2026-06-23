@@ -2,7 +2,7 @@
   "name": "deepphe-visualizer-v2",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "description": "DeepPhe Visualizer v2 - Cancer phenotype visualization and analysis",
   "dependencies": {
     "@emotion/cache": "11.10.8",

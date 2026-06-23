@@ -5,7 +5,7 @@
 ![React](https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=white)
 ![Material-UI](https://img.shields.io/badge/Material--UI-5.16-007FFF?logo=mui&logoColor=white)
 ![Node](https://img.shields.io/badge/Node-18+-339933?logo=node.js&logoColor=white)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/graphs/commit-activity)
 

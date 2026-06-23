@@ -81,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - README.md with badges and comprehensive docs
   - ACCESSIBILITY.md with WCAG guidelines
   - CONTRIBUTING.md with development guidelines
-  - LICENSE (MIT)
+  - LICENSE (Apache 2.0)
 
 ### Changed
 - N/A (initial release)
