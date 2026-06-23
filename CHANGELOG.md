@@ -22,8 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters, scrollable card caps, and slack distribution bounded by content
   height (`filterLayout.js`)
 - Performance tracker spans and milestones (`utils/perfTracker.js`)
-- Documentation pipeline: MkDocs site, screenshot capture, and PDF export
-  scripts (`npm run docs:review`)
+- Task-oriented Docusaurus user guide for building cohorts, reviewing selected
+  patients, opening patient details, and exporting results
+- Documentation screenshot preparation and printable user-guide PDF export
+  (`npm run docs:review`)
 - Read-only piper files server (`server.js` + `src/piper-server/config.js`)
 - Comprehensive unit testing infrastructure
 - GitHub Actions CI/CD pipeline
@@ -101,4 +103,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version History
 
 - **0.1.0** - Initial release (March 17, 2026)
-

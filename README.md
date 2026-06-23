@@ -1,15 +1,15 @@
-# DeepPhe Visualizer v3
+# DeepPhe Visualizer v2
 
-[![CI](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepPhe/DeepPhe-viz-v3/actions/workflows/ci.yml)
+[![CI](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/actions/workflows/ci.yml)
 [![Accessibility](https://img.shields.io/badge/a11y-WCAG%202.1%20AA-green.svg)](https://www.w3.org/WAI/WCAG2AA-Conformance)
 ![React](https://img.shields.io/badge/React-18.2-61DAFB?logo=react&logoColor=white)
 ![Material-UI](https://img.shields.io/badge/Material--UI-5.16-007FFF?logo=mui&logoColor=white)
 ![Node](https://img.shields.io/badge/Node-18+-339933?logo=node.js&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/DeepPhe/DeepPhe-viz-v3/graphs/commit-activity)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/graphs/commit-activity)
 
-A modern React application for medical data visualization and analysis, built with Material-UI and CRACO. DeepPhe Visualizer v3 is the next-generation visualization tool for cancer phenotype extraction and analysis.
+A modern React application for medical data visualization and analysis, built with Material-UI and CRACO. DeepPhe Visualizer v2 is the next-generation visualization tool for cancer phenotype extraction and analysis.
 
 ## Prerequisites
 
@@ -20,8 +20,8 @@ A modern React application for medical data visualization and analysis, built wi
 
 ```bash
 # Clone the repository
-git clone https://github.com/DeepPhe/DeepPhe-viz-v3.git
-cd DeepPhe-viz-v3
+git clone https://github.com/DeepPhe/DeepPhe-Visualizer-v2.git
+cd DeepPhe-Visualizer-v2
 
 # Install dependencies
 npm install --legacy-peer-deps
@@ -57,6 +57,19 @@ npm run build            # Create production build
 npm run eject            # Eject from react-scripts (one-way operation)
 ```
 
+### User documentation
+
+The task-oriented user guide is built with Docusaurus in an isolated
+`docs-site/` package. Node.js 20 or later is required for documentation builds.
+
+```bash
+npm run docs:install     # Install the isolated documentation dependencies
+npm run docs:start       # Preview the guide locally
+npm run docs:build       # Generate the static guide in site/
+npm run docs:pdf         # Export the printable guide PDF
+npm run docs:review      # Capture screenshots, build, and export the PDF
+```
+
 ### Docker Deployment
 
 ```bash
@@ -74,16 +87,16 @@ Manual Docker commands:
 
 ```bash
 # Build image
-docker build -t deepphe-visualizer-v3 .
+docker build -t deepphe-visualizer-v2 .
 
 # Run container
-docker run -d -p 3000:3000 --name deepphe-visualizer-v3 deepphe-visualizer-v3
+docker run -d -p 3000:3000 --name deepphe-visualizer-v2 deepphe-visualizer-v2
 
 # View logs
-docker logs -f deepphe-visualizer-v3
+docker logs -f deepphe-visualizer-v2
 
 # Stop and remove
-docker stop deepphe-visualizer-v3 && docker rm deepphe-visualizer-v3
+docker stop deepphe-visualizer-v2 && docker rm deepphe-visualizer-v2
 ```
 
 ### Standalone Executable
@@ -99,7 +112,7 @@ npm run package
 ```
 
 Output binaries are written to `dist/` (one per platform):
-`deepphe-visualizer-v3-macos-arm64`, `-macos-x64`, `-linux-x64`, `-win-x64.exe`.
+`deepphe-visualizer-v2-macos-arm64`, `-macos-x64`, `-linux-x64`, `-win-x64.exe`.
 
 **Build host requirements**
 
@@ -116,7 +129,7 @@ Output binaries are written to `dist/` (one per platform):
 mkdir -p data/piperfiles   # then drop your .piper files in (or set PIPER_FILES_DIR)
 
 PORT=3000 DEEPPHE_API_LOCATION=http://your-deepphe-host:3333 \
-  ./deepphe-visualizer-v3-macos-x64
+  ./deepphe-visualizer-v2-macos-x64
 ```
 
 Then open [http://localhost:3000](http://localhost:3000). The DeepPhe backend is

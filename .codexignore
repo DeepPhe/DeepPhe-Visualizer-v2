@@ -21,7 +21,6 @@ public/docs/viz2/
 
 # Large local data and envs
 data/
-.venv-mkdocs/
 
 # Local IDE noise
 .idea/
@@ -39,7 +38,7 @@ CHANGELOG.md
 CONTRIBUTING.md
 QUICKSTART.md
 README.md
-mkdocs.yml
 
 # Large lockfiles and generated maps
 package-lock.json
+docs-site/package-lock.json

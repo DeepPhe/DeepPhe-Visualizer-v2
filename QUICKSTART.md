@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get DeepPhe Visualizer v3 running on your machine in under 5 minutes.
+Get DeepPhe Visualizer v2 running on your machine in under 5 minutes.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ If not installed, download from [nodejs.org](https://nodejs.org/)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/DeepPhe/DeepPhe-viz-v3.git
-cd DeepPhe-viz-v3
+git clone https://github.com/DeepPhe/DeepPhe-Visualizer-v2.git
+cd DeepPhe-Visualizer-v2
 
 # 2. Install dependencies (use --legacy-peer-deps for compatibility)
 npm install --legacy-peer-deps
@@ -31,7 +31,7 @@ The app opens automatically at [http://localhost:3000](http://localhost:3000)
 
 ## Backend API Setup
 
-DeepPhe Visualizer v3 requires the DeepPhe Data API backend running on port 3333.
+DeepPhe Visualizer v2 requires the DeepPhe Data API backend running on port 3333.
 
 ### Start the backend:
 
@@ -43,7 +43,7 @@ PORT=3333 npm start
 
 ### Configure API location (optional):
 
-Create `.env.local` in DeepPhe-viz-v3 root:
+Create `.env.local` in DeepPhe-Visualizer-v2 root:
 
 ```env
 REACT_APP_DEEPPHE_API_LOCATION=http://localhost:3333
@@ -118,7 +118,7 @@ npm install eslint-config-react-app --legacy-peer-deps
 ## Project Structure Overview
 
 ```
-DeepPhe-viz-v3/
+DeepPhe-Visualizer-v2/
 ├── src/
 │   ├── components/     # Reusable UI components
 │   ├── views/         # Page components (debug.js)
@@ -141,7 +141,7 @@ DeepPhe-viz-v3/
 
 ## Getting Help
 
-- Check existing [GitHub Issues](https://github.com/DeepPhe/DeepPhe-viz-v3/issues)
+- Check existing [GitHub Issues](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/issues)
 - Read the [FAQ](#) (coming soon)
 - Open a new issue with the "question" label
 

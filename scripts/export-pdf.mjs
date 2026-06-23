@@ -7,7 +7,7 @@ import process from "node:process";
 import { chromium } from "playwright";
 
 const SITE_DIR = path.resolve("site");
-const OUTPUT_PDF = path.resolve("output/reports/deepphe-ui-review.pdf");
+const OUTPUT_PDF = path.resolve("output/reports/deepphe-visualizer-user-guide.pdf");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -79,10 +79,10 @@ async function createStaticServer() {
 }
 
 async function ensureSiteArtifacts() {
-  const fullReportHtml = path.join(SITE_DIR, "full-report", "index.html");
-  if (!fs.existsSync(fullReportHtml)) {
+  const printableGuideHtml = path.join(SITE_DIR, "printable-guide", "index.html");
+  if (!fs.existsSync(printableGuideHtml)) {
     throw new Error(
-      "Missing MKDocs output for /full-report/. Run scripts/build-mkdocs.sh before exporting PDF."
+      "Missing Docusaurus output for /printable-guide/. Run npm run docs:build before exporting PDF."
     );
   }
 
@@ -110,14 +110,15 @@ async function run() {
   await ensureSiteArtifacts();
 
   const { server, port } = await createStaticServer();
-  const url = `http://127.0.0.1:${port}/full-report/`;
+  const url = `http://127.0.0.1:${port}/printable-guide/`;
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
 
   try {
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.emulateMedia({ media: "screen" });
+    await page.emulateMedia({ media: "print" });
+    await page.evaluate(() => document.fonts?.ready);
     await waitForImages(page);
 
     await page.pdf({

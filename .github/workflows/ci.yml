@@ -48,3 +48,32 @@ jobs:
       run: |
         echo "Build completed successfully"
         du -sh build/
+
+  documentation:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        cache-dependency-path: docs-site/package-lock.json
+
+    - name: Install documentation dependencies
+      run: npm ci --prefix docs-site
+
+    - name: Type-check documentation
+      run: npm --prefix docs-site run typecheck
+
+    - name: Build user guide
+      run: npm run docs:build
+
+    - name: Upload user guide
+      uses: actions/upload-artifact@v4
+      with:
+        name: deepphe-visualizer-user-guide
+        path: site/

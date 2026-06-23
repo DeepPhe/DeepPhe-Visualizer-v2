@@ -1,6 +1,6 @@
-# Contributing to DeepPhe Visualizer v3
+# Contributing to DeepPhe Visualizer v2
 
-Thank you for considering contributing to DeepPhe Visualizer v3! This document outlines the process and guidelines for contributing.
+Thank you for considering contributing to DeepPhe Visualizer v2! This document outlines the process and guidelines for contributing.
 
 ## Code of Conduct
 
@@ -12,7 +12,7 @@ Be respectful, constructive, and professional in all interactions.
 
 Before submitting a bug report:
 - Check the issue tracker to avoid duplicates
-- Use the latest version of DeepPhe Visualizer v3
+- Use the latest version of DeepPhe Visualizer v2
 - Collect relevant information (browser, Node version, error messages)
 
 When submitting a bug report, include:
@@ -53,8 +53,8 @@ Feature requests are welcome! Please:
 
 ```bash
 # Clone your fork
-git clone https://github.com/your-username/DeepPhe-viz-v3.git
-cd DeepPhe-viz-v3
+git clone https://github.com/your-username/DeepPhe-Visualizer-v2.git
+cd DeepPhe-Visualizer-v2
 
 # Install dependencies
 npm install --legacy-peer-deps

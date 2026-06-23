@@ -5,9 +5,9 @@ import process from "node:process";
 import { chromium } from "playwright";
 
 const BASE_URL = process.env.APP_URL || "http://localhost:3000";
-const SCREENSHOT_ROOT_DIR = process.env.VIZ3_SCREENSHOT_DIR
-  ? path.resolve(process.env.VIZ3_SCREENSHOT_DIR)
-  : path.resolve("..", "Viz3_screenshots");
+const SCREENSHOT_ROOT_DIR = process.env.VIZ2_SCREENSHOT_DIR
+  ? path.resolve(process.env.VIZ2_SCREENSHOT_DIR)
+  : path.resolve("..", "Viz2_screenshots");
 const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const SUMMARY_PATH = path.join(OUTPUT_DIR, "capture-summary.json");
 const VIEWPORT = { width: 2200, height: 1400 };
@@ -554,7 +554,7 @@ async function run() {
 
   try {
     await gotoRoute(page, "/");
-    await page.getByRole("heading", { name: "DeepPhe Visualizer v3", exact: true }).first().waitFor({
+    await page.getByRole("heading", { name: "DeepPhe Visualizer v2", exact: true }).first().waitFor({
       state: "visible",
       timeout: 10000,
     });

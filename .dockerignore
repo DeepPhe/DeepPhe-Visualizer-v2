@@ -18,8 +18,8 @@ npm-debug.log
 build/
 
 # Deployment artifacts
-viz3-deploy/
-viz3-deploy.tar.gz
+viz2-deploy/
+viz2-deploy.tar.gz
 *.exe
 
 # Logs

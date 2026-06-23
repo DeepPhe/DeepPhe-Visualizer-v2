@@ -1,9 +1,9 @@
 services:
-  deepphe-visualizer-v3:
+  deepphe-visualizer-v2:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: deepphe-visualizer-v3
+    container_name: deepphe-visualizer-v2
     ports:
       - "${PORT:-3000}:3000"
     environment:
@@ -21,7 +21,7 @@ services:
     networks:
       - deepphe-network
     labels:
-      - "com.deepphe.description=DeepPhe Visualizer v3"
+      - "com.deepphe.description=DeepPhe Visualizer v2"
       - "com.deepphe.version=0.1.0"
 
   # Optional: Nginx reverse proxy
@@ -35,7 +35,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
-      - deepphe-visualizer-v3
+      - deepphe-visualizer-v2
     restart: unless-stopped
     networks:
       - deepphe-network

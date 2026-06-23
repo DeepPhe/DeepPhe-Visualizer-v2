@@ -53,13 +53,15 @@ src/example.json
 public/docs/viz2/
 
 # local visual QA artifacts
-screenshots/
+/screenshots/
 
-# mkdocs generated static site
+# generated documentation site
 site/
 
 # local generated reports and screenshot captures
 output/
 
-# local docs build virtual environment
-.venv-mkdocs/
+# Docusaurus generated state + installed deps
+docs-site/node_modules/
+docs-site/.docusaurus/
+docs-site/build/

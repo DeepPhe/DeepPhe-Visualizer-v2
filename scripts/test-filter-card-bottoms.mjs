@@ -5,9 +5,9 @@ import process from "node:process";
 import { chromium } from "playwright";
 
 const BASE_URL = process.env.APP_URL || "http://localhost:3000";
-const SCREENSHOT_ROOT_DIR = process.env.VIZ3_SCREENSHOT_DIR
-  ? path.resolve(process.env.VIZ3_SCREENSHOT_DIR)
-  : path.resolve("..", "Viz3_screenshots");
+const SCREENSHOT_ROOT_DIR = process.env.VIZ2_SCREENSHOT_DIR
+  ? path.resolve(process.env.VIZ2_SCREENSHOT_DIR)
+  : path.resolve("..", "Viz2_screenshots");
 const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const REPORT_PATH = path.join(OUTPUT_DIR, "filter-card-bottom-alignment.json");
 const VIEWPORT = { width: 2200, height: 1400 };

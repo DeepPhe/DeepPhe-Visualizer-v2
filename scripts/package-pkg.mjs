@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Builds self-contained executables of the DeepPhe Visualizer v3 production
+ * Builds self-contained executables of the DeepPhe Visualizer v2 production
  * server (serve.js) with @yao-pkg/pkg.
  *
  * Why a staging directory instead of running `pkg .` at the repo root:
@@ -93,7 +93,7 @@ fs.mkdirSync(distDir, { recursive: true });
 
 const pkgBin = path.join(repoRoot, "node_modules", ".bin", "pkg");
 const outputName = (target) => {
-  // node24-macos-arm64 -> deepphe-visualizer-v3-macos-arm64(.exe)
+  // node24-macos-arm64 -> deepphe-visualizer-v2-macos-arm64(.exe)
   const suffix = target.replace(/^node\d+-/, "");
   return `${manifest.name}-${suffix}${suffix.startsWith("win-") ? ".exe" : ""}`;
 };

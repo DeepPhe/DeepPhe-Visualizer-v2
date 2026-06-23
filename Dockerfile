@@ -28,7 +28,7 @@ COPY --from=build /app/build ./build
 
 # Create optimized package.json for production
 RUN echo '{ \
-  "name": "viz3-react-app", \
+  "name": "deepphe-visualizer-v2", \
   "version": "0.1.0", \
   "dependencies": { \
     "express": "^5.1.0", \
@@ -62,7 +62,7 @@ app.use((req, res) => { \
   res.sendFile(path.join(__dirname, "build", "index.html")); \
 }); \
 const server = app.listen(port, () => { \
-  console.log(`Viz3 running on port ${port}`); \
+  console.log(`DeepPhe Visualizer v2 running on port ${port}`); \
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`); \
 }); \
 process.on("SIGTERM", () => { \

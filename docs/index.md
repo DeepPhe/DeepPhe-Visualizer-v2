@@ -1,20 +1,40 @@
-# DeepPhe Visualizer v3 UI Review
+---
+slug: /
+title: DeepPhe Visualizer User Guide
+sidebar_label: Welcome
+description: Learn how to build, review, and export patient cohorts in the DeepPhe Visualizer.
+---
 
-This documentation site is generated from automated Playwright captures of the live app routes at `http://localhost:3000`.
+# DeepPhe Visualizer user guide
 
-![Home route overview](assets/screenshots/01-home.png)
-_Figure 01. Home route with direct links to all QA-reviewed screens._
+The DeepPhe Visualizer helps you find groups of patients whose clinical records match selected demographic, cancer, staging, pathology, biomarker, and treatment criteria.
 
-## Deliverables
+Most work happens in the **Patient Cohort Explorer**, also called the Filters screen.
 
-- Automated screenshots: `../Viz3_screenshots/playwright/`
-- Copied documentation images: `docs/assets/screenshots/`
-- Built docs site: `site/`
-- Leadership PDF: `output/reports/deepphe-ui-review.pdf`
+![Patient Cohort Explorer](assets/screenshots/end-user/cohort-explorer-overview.png)
 
-## Coverage Map
+## Start here
 
-- Route-level walkthrough: [Route Coverage](routes.md)
-- Primary filtering workflow: [Filters Workflow](filters.md)
-- Patient table behavior: [Patient Details](patient-details.md)
-- Executive narrative: [Full Report](full-report.md)
+- [Understand the Cohort Explorer](getting-started/overview.md)
+- [Build your first cohort](getting-started/first-cohort.md)
+- [Select and combine filter values](cohort-explorer/selecting-filters.md)
+- [Review the selected patients](cohort-explorer/selected-patients.md)
+- [Export results to CSV](cohort-explorer/exporting-results.md)
+
+## What you can do
+
+The Cohort Explorer lets you:
+
+- choose one or more values from a clinical filter;
+- combine criteria from different filters;
+- see the matching patient count update;
+- inspect patient-level summaries;
+- open an individual patient without leaving the screen;
+- control which patient columns are visible; and
+- export the currently loaded results to CSV.
+
+:::caution Clinical interpretation
+
+Visualizer results are derived from structured data and NLP-extracted clinical concepts. Confirm important findings against the source medical record and your organization’s review procedures.
+
+:::

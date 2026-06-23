@@ -1,5 +1,5 @@
 /**
- * DeepPhe Visualizer v3 — unified production server.
+ * DeepPhe Visualizer v2 — unified production server.
  *
  * This is the entry point packaged into a self-contained executable with
  * @yao-pkg/pkg. A single process:
@@ -116,6 +116,6 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`DeepPhe Visualizer v3 running on http://localhost:${PORT}`);
+  console.log(`DeepPhe Visualizer v2 running on http://localhost:${PORT}`);
   console.log(`Proxying DeepPhe data API -> ${DEEPPHE_API_LOCATION}`);
 });

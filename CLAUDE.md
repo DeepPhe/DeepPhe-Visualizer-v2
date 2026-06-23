@@ -1,8 +1,8 @@
-# CLAUDE.md — DeepPhe Visualizer v3
+# CLAUDE.md — DeepPhe Visualizer v2
 
 ## Project Overview
 
-**DeepPhe Visualizer v3** is a React 18 / Material-UI 5 web application for cancer phenotype extraction and analysis. It presents complex oncology data — patient timelines, tumor summaries, pathology reports, and biomarker grids — to clinicians and researchers.
+**DeepPhe Visualizer v2** is a React 18 / Material-UI 5 web application for cancer phenotype extraction and analysis. It presents complex oncology data — patient timelines, tumor summaries, pathology reports, and biomarker grids — to clinicians and researchers.
 
 **Stack:** React 18, Material-UI 5, CRACO, React Router 6, TanStack Table, MUI X Charts, Emotion, Sass, Node 18+
 
@@ -15,7 +15,7 @@
 
 ## Role: Development Partner
 
-Claude's primary job is to help build, debug, and improve DeepPhe Visualizer v3. This means writing real code, tracing bugs to their root cause, proposing architecture improvements, and implementing features — not just reviewing or advising.
+Claude's primary job is to help build, debug, and improve DeepPhe Visualizer v2. This means writing real code, tracing bugs to their root cause, proposing architecture improvements, and implementing features — not just reviewing or advising.
 
 When helping with development:
 - **Read before writing** — Before implementing anything, look at the relevant existing files to understand current patterns, naming conventions, and data shapes. Don't invent abstractions that conflict with what's already there.

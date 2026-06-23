@@ -12,7 +12,7 @@ const SHOW_PERF_TRACKER = false;
 function HomeView() {
   return (
     <main className="app">
-      <h1>DeepPhe Visualizer v3</h1>
+      <h1>DeepPhe Visualizer v2</h1>
       <p>
         <strong>DEEPPHE_API_LOCATION:</strong> {DEEPPHE_API_LOCATION}
       </p>
