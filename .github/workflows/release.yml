@@ -1,16 +1,22 @@
 name: Release
 
-# Builds the self-contained executables and attaches them to a GitHub Release.
-# Push a tag like `v0.1.0` to trigger a release, or run manually from the
-# Actions tab (workflow_dispatch) to build/upload artifacts without a release.
+# Builds the self-contained executables and publishes them to
+# https://github.com/DeepPhe/DeepPhe-Dist/releases.
+#
+# Required repository secret:
+#   DEEPPHE_DIST_RELEASE_TOKEN - token with contents:write on DeepPhe/DeepPhe-Dist
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+    branches:
+      - main
 
 permissions:
-  contents: write # required to create/update the release and upload assets
+  contents: read
+
+env:
+  DIST_REPOSITORY: DeepPhe/DeepPhe-Dist
+  DIST_RELEASE_TAG: deepphe-visualizer-v2-main-latest
+  DIST_RELEASE_NAME: DeepPhe Visualizer v2 main latest
 
 jobs:
   package:
@@ -62,10 +68,73 @@ jobs:
           path: dist/${{ matrix.asset }}
           if-no-files-found: error
 
-      - name: Attach binary to release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+  publish:
+    name: Publish DeepPhe-Dist release
+    runs-on: ubuntu-latest
+    needs: package
+    env:
+      GH_TOKEN: ${{ secrets.DEEPPHE_DIST_RELEASE_TOKEN }}
+
+    steps:
+      - name: Require DeepPhe-Dist release token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::Missing DEEPPHE_DIST_RELEASE_TOKEN. Add a repository secret with contents:write access to ${DIST_REPOSITORY}."
+            exit 1
+          fi
+
+      - name: Download packaged binaries
+        uses: actions/download-artifact@v4
         with:
-          files: dist/${{ matrix.asset }}
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+          path: dist-release
+          merge-multiple: true
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA}."
+            echo
+            echo "- Source ref: ${GITHUB_REF_NAME}"
+            echo "- Source workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Distribution repository: ${DIST_REPOSITORY}"
+          } > RELEASE_NOTES.md
+
+      - name: Publish release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find dist-release -maxdepth 1 -type f | sort)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "::error::No packaged binaries were downloaded."
+            exit 1
+          fi
+
+          edit_flags=(
+            --repo "${DIST_REPOSITORY}"
+            --title "${DIST_RELEASE_NAME}"
+            --notes-file RELEASE_NOTES.md
+            --prerelease
+            --latest=false
+          )
+          create_flags=(
+            --repo "${DIST_REPOSITORY}"
+            --title "${DIST_RELEASE_NAME}"
+            --notes-file RELEASE_NOTES.md
+            --prerelease
+            --latest=false
+          )
+
+          if gh release view "${DIST_RELEASE_TAG}" --repo "${DIST_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${DIST_RELEASE_TAG}" "${edit_flags[@]}"
+          else
+            gh release create "${DIST_RELEASE_TAG}" "${create_flags[@]}"
+          fi
+
+          gh release upload "${DIST_RELEASE_TAG}" \
+            --repo "${DIST_REPOSITORY}" \
+            --clobber \
+            "${assets[@]}"
