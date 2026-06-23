@@ -4,18 +4,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import PatientView from "../patient";
-import {
-  loadPatientProfile,
-  loadRandomPatientId,
-  loadViz2PatientOptions,
-  loadViz2PatientProfile,
-} from "../../controllers/patient";
+import { loadPatientProfile, loadRandomPatientId } from "../../controllers/patient";
 
 jest.mock("../../controllers/patient", () => ({
   loadPatientProfile: jest.fn(),
   loadRandomPatientId: jest.fn(),
-  loadViz2PatientOptions: jest.fn(),
-  loadViz2PatientProfile: jest.fn(),
 }));
 
 function renderComponent(element) {
@@ -90,34 +83,6 @@ async function submitPatientId(container, patientId) {
   });
 
   await clickLoadPatientButton(container);
-}
-
-async function clickLookupMode(container, modeLabel) {
-  const toggleButton = Array.from(container.querySelectorAll("button")).find((button) =>
-    String(button.textContent || "").includes(modeLabel)
-  );
-  expect(toggleButton).toBeDefined();
-
-  await act(async () => {
-    toggleButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await Promise.resolve();
-  });
-}
-
-async function selectViz2Patient(container, patientId) {
-  const select = container.querySelector('select[name="viz2-patient-id"]');
-  expect(select).not.toBeNull();
-
-  const nativeValueSetter = Object.getOwnPropertyDescriptor(
-    window.HTMLSelectElement.prototype,
-    "value"
-  )?.set;
-
-  await act(async () => {
-    nativeValueSetter?.call(select, patientId);
-    select.dispatchEvent(new Event("input", { bubbles: true }));
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
 }
 
 async function clickRandomButton(container) {
@@ -219,61 +184,6 @@ describe("PatientView", () => {
       const input = rendered.container.querySelector('input[name="patient-id"]');
       expect(input).not.toBeNull();
       expect(input?.value).toBe("test_patient_random_1");
-    } finally {
-      rendered.unmount();
-    }
-  });
-
-  test("loads patient data from Viz2 source docs mode", async () => {
-    loadViz2PatientOptions.mockResolvedValueOnce([
-      { id: "fake_patient1", label: "Fake_patient_1" },
-      { id: "fake_patient2", label: "Fake_patient_2" },
-    ]);
-    loadViz2PatientProfile.mockResolvedValueOnce({
-      patientId: "fake_patient2",
-      patientName: "fake_patient2",
-      demographics: {
-        patientName: "fake_patient2",
-        gender: "F",
-        firstEncounterDate: "2019-01-01",
-        lastEncounterDate: "2020-01-01",
-      },
-      documents: [
-        {
-          id: "doc-1",
-          name: "Doc 1",
-          date: "202001011000",
-          episode: "Diagnostic",
-          type: "Clinical note",
-          text: "This is clinical note text.",
-          mentions: [],
-        },
-      ],
-      concepts: [],
-      cancers: [],
-    });
-
-    const rendered = renderComponent(<PatientView />);
-
-    try {
-      await clickLookupMode(rendered.container, "Viz2 Source Docs");
-
-      await waitFor(() => {
-        expect(loadViz2PatientOptions).toHaveBeenCalledTimes(1);
-      });
-
-      await selectViz2Patient(rendered.container, "fake_patient2");
-      await clickLoadPatientButton(rendered.container);
-
-      await waitFor(() => {
-        expect(loadViz2PatientProfile).toHaveBeenCalledWith("fake_patient2");
-      });
-
-      expect(loadPatientProfile).not.toHaveBeenCalled();
-
-      await waitFor(() => {
-        expect(rendered.container.textContent).toContain("Loaded patient: fake_patient2");
-      });
     } finally {
       rendered.unmount();
     }

@@ -49,9 +49,6 @@ lerna-debug.log*
 # local sample payloads (can contain sensitive identifiers)
 src/example.json
 
-# generated Viz2 patient docs (copied from external source by sync script)
-public/docs/viz2/
-
 # local visual QA artifacts
 /screenshots/
 

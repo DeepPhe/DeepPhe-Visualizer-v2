@@ -91,7 +91,7 @@ app.get("/healthz", (req, res) => {
   res.json({ status: "ok", upstream: DEEPPHE_API_LOCATION });
 });
 
-// 4. Static assets from the build (hashed JS/CSS, favicon, /docs/viz2, etc.).
+// 4. Static assets from the build (hashed JS/CSS, favicon, etc.).
 app.use(
   express.static(BUILD_DIR, {
     maxAge: "1y",

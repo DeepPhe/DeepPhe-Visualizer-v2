@@ -26,9 +26,6 @@
     "react-scripts": "5.0.1"
   },
   "scripts": {
-    "sync:viz2-docs": "node scripts/sync-viz2-docs.mjs",
-    "prestart": "npm run sync:viz2-docs",
-    "prebuild": "npm run sync:viz2-docs",
     "start": "craco start",
     "build": "craco build",
     "test": "craco test",

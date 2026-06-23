@@ -15,7 +15,6 @@ output/
 
 # Generated docs/assets
 public/docs/
-public/docs/viz2/
 screenshots/
 
 # Large local data and envs

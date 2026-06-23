@@ -121,7 +121,10 @@ function getInitialFilterPanelDensityMode() {
   } catch {
     // localStorage unavailable
   }
-  return FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS;
+  // Standard is currently the only user-facing density (the density picker is
+  // hidden in FiltersToolbar). The compact modes remain implemented and are
+  // still honored when explicitly stored; change this default to re-enable.
+  return FILTER_PANEL_DENSITY_MODE.STANDARD;
 }
 
 /**

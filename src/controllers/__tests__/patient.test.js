@@ -2,8 +2,6 @@ import {
   loadPatientDocumentEpisodeCounts,
   loadPatientProfile,
   loadRandomPatientId,
-  loadViz2PatientOptions,
-  loadViz2PatientProfile,
 } from "../patient";
 import {
   fetchAttributesSummary,
@@ -253,74 +251,5 @@ describe("loadRandomPatientId", () => {
     await expect(loadRandomPatientId()).rejects.toThrow(
       "No patient IDs were available for random selection."
     );
-  });
-});
-
-describe("Viz2 local docs loaders", () => {
-  const originalFetch = global.fetch;
-
-  afterEach(() => {
-    jest.clearAllMocks();
-    global.fetch = originalFetch;
-  });
-
-  test("loads Viz2 patient options from the generated index file", async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => [{ id: "fake_patient2", label: "Fake_patient_2" }],
-    });
-
-    const options = await loadViz2PatientOptions();
-
-    expect(global.fetch).toHaveBeenCalledWith("/docs/viz2/index.json", {
-      headers: { Accept: "application/json" },
-    });
-    expect(options).toEqual([{ id: "fake_patient2", label: "Fake_patient_2" }]);
-  });
-
-  test("falls back to default Viz2 patient options when the index is unavailable", async () => {
-    global.fetch = jest.fn().mockRejectedValueOnce(new Error("network down"));
-
-    const options = await loadViz2PatientOptions();
-
-    expect(options.map((option) => option.id)).toEqual(
-      expect.arrayContaining(["fake_patient1", "fake_patient7", "patientX"])
-    );
-  });
-
-  test("loads and normalizes a Viz2 patient payload", async () => {
-    global.fetch = jest.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        id: "fake_patient2",
-        name: "fake_patient2",
-        documents: [
-          {
-            id: "doc-1",
-            name: "Document 1",
-            type: "Clinical Note",
-            date: "202501010900",
-            episode: "Diagnostic",
-            text: "Sample report text",
-            mentions: [],
-            mentionRelations: [],
-          },
-        ],
-        concepts: [{ id: "concept-1", classUri: "Melanoma", mentionIds: [] }],
-        conceptRelations: [{ type: "relatedTo", sourceId: "concept-1", targetId: "concept-2" }],
-        cancers: [{ id: "cancer-1", classUri: "Melanoma", tumors: [], attributes: [] }],
-      }),
-    });
-
-    const profile = await loadViz2PatientProfile("fake_patient2");
-
-    expect(global.fetch).toHaveBeenCalledWith("/docs/viz2/fake_patient2.json", {
-      headers: { Accept: "application/json" },
-    });
-    expect(profile.patientId).toBe("fake_patient2");
-    expect(profile.documents).toHaveLength(1);
-    expect(profile.cancers).toHaveLength(1);
-    expect(profile.concepts).toHaveLength(1);
-    expect(profile.conceptRelations).toHaveLength(1);
   });
 });

@@ -296,6 +296,10 @@ describe("FiltersView", () => {
     // The view persists layout/theme/drawer preferences to localStorage;
     // clear it so tests don't leak state into each other.
     window.localStorage.clear();
+    // The density picker is hidden and the default is now "standard"; these
+    // layout tests still exercise the (kept) compact-plus packing/cap behavior,
+    // so opt into it explicitly via the persisted preference.
+    window.localStorage.setItem("filterPageCompactMode", "compact-plus");
 
     getOmopSummary.mockResolvedValue({
       classes: ["AGE_AT_DX", "GENDER", "RACE", "ETHNICITY", "CANCER"],

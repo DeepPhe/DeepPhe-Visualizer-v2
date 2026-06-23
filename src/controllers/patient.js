@@ -10,26 +10,11 @@ import {
   fetchPatientDocumentEpisodes,
   fetchPatientDocuments,
 } from "../clients/deepphe-data-api";
-import { VIZ2_DOCS_BASE_URL } from "../config";
 import {
   hasDocumentText,
   normalizePatientPayload,
   resolveDocumentsFromPayload,
 } from "../utils/patientView/normalizePatientPayload";
-
-const FALLBACK_VIZ2_PATIENT_OPTIONS = [
-  "fake_patient1",
-  "fake_patient2",
-  "fake_patient3",
-  "fake_patient4",
-  "fake_patient5",
-  "fake_patient6",
-  "fake_patient7",
-  "patientX",
-].map((patientId) => ({
-  id: patientId,
-  label: formatViz2PatientLabel(patientId),
-}));
 
 function resolveCancersPayload(payload) {
   if (Array.isArray(payload)) {
@@ -86,94 +71,6 @@ function mergeProfileWithCancerAndConceptData(
         ? resolvedConcepts.conceptRelations
         : profile.conceptRelations,
   };
-}
-
-function joinBaseUrl(baseUrl, pathFragment) {
-  const normalizedBase = String(baseUrl || "").replace(/\/+$/, "");
-  const normalizedPath = String(pathFragment || "").replace(/^\/+/, "");
-
-  if (!normalizedBase) {
-    return `/${normalizedPath}`;
-  }
-
-  return `${normalizedBase}/${normalizedPath}`;
-}
-
-function formatViz2PatientLabel(patientId) {
-  const normalizedPatientId = String(patientId || "").trim();
-  const fakePatientMatch = normalizedPatientId.match(/^fake_patient(\d+)$/i);
-
-  if (fakePatientMatch) {
-    return `Fake_patient_${fakePatientMatch[1]}`;
-  }
-
-  return normalizedPatientId || "Unknown patient";
-}
-
-function normalizeViz2PatientOptions(payload) {
-  const rows = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.patients)
-      ? payload.patients
-      : [];
-
-  const normalizedRows = rows
-    .map((row) => {
-      if (typeof row === "string") {
-        const normalizedId = row.trim();
-        return normalizedId
-          ? { id: normalizedId, label: formatViz2PatientLabel(normalizedId) }
-          : null;
-      }
-
-      const normalizedId = String(row?.id || row?.patientId || "").trim();
-      if (!normalizedId) {
-        return null;
-      }
-
-      const normalizedLabel = String(row?.label || row?.name || "").trim();
-      return {
-        id: normalizedId,
-        label: normalizedLabel || formatViz2PatientLabel(normalizedId),
-      };
-    })
-    .filter(Boolean);
-
-  const dedupedById = new Map();
-  normalizedRows.forEach((row) => {
-    dedupedById.set(row.id, row);
-  });
-
-  return [...dedupedById.values()].sort((leftRow, rightRow) =>
-    leftRow.label.localeCompare(rightRow.label, undefined, {
-      numeric: true,
-      sensitivity: "base",
-    })
-  );
-}
-
-async function fetchJson(url, errorPrefix) {
-  let response;
-
-  try {
-    response = await fetch(url, {
-      headers: { Accept: "application/json" },
-    });
-  } catch (networkError) {
-    throw new Error(`${errorPrefix}: ${networkError?.message || "network error"}`);
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `${errorPrefix}: ${response.status} ${response.statusText || "request failed"}`
-    );
-  }
-
-  try {
-    return await response.json();
-  } catch (parseError) {
-    throw new Error(`${errorPrefix}: invalid JSON payload`);
-  }
 }
 
 function collectPatientIdsFromValue(value, patientIds) {
@@ -385,47 +282,6 @@ export async function loadRandomPatientId() {
   }
 
   return randomId;
-}
-
-export async function loadViz2PatientOptions() {
-  const indexUrl = joinBaseUrl(VIZ2_DOCS_BASE_URL, "index.json");
-
-  try {
-    const payload = await fetchJson(indexUrl, "Failed to load Viz2 patient index");
-    const normalizedOptions = normalizeViz2PatientOptions(payload);
-
-    if (normalizedOptions.length > 0) {
-      return normalizedOptions;
-    }
-  } catch {
-    // Fall back to defaults when index is unavailable.
-  }
-
-  return FALLBACK_VIZ2_PATIENT_OPTIONS;
-}
-
-export async function loadViz2PatientProfile(patientId) {
-  const normalizedPatientId = String(patientId || "").trim();
-  if (!normalizedPatientId) {
-    throw new Error("patientId is required");
-  }
-
-  const patientUrl = joinBaseUrl(VIZ2_DOCS_BASE_URL, `${normalizedPatientId}.json`);
-  const patientPayload = await fetchJson(
-    patientUrl,
-    `Failed to load Viz2 patient "${normalizedPatientId}"`
-  );
-
-  const normalizedProfile = normalizePatientPayload({
-    patientPayload,
-    documentsPayload: patientPayload?.documents,
-    fallbackPatientId: normalizedPatientId,
-  });
-
-  return mergeProfileWithCancerAndConceptData(normalizedProfile, {
-    cancersPayload: patientPayload,
-    conceptsPayload: patientPayload,
-  });
 }
 
 export async function loadPatientDocumentEpisodeCounts(

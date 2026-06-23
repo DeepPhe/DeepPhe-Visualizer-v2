@@ -55,9 +55,9 @@ describe("useFilterPagePreferences — defaults", () => {
     expect(result.current.fontScale).toBe(1);
     expect(result.current.highContrast).toBe(false);
     expect(result.current.reducedMotion).toBe(false);
-    expect(result.current.filterPanelDensityMode).toBe("compact-plus");
-    expect(result.current.isCompactDensity).toBe(true);
-    expect(result.current.isCompactPlusDensity).toBe(true);
+    expect(result.current.filterPanelDensityMode).toBe("standard");
+    expect(result.current.isCompactDensity).toBe(false);
+    expect(result.current.isCompactPlusDensity).toBe(false);
     expect(result.current.stackGapPx).toBe(12);
     expect(result.current.slackDistributionMode).toBe("proportional");
 

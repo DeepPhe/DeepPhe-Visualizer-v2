@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -18,19 +18,12 @@ import PatientDemographicsCard from "../components/patient/PatientDemographicsCa
 import CancerTumorSummaryCard from "../components/patient/CancerTumorSummaryCard";
 import PatientDocumentsCard from "../components/patient/PatientDocumentsCard";
 import PatientDocumentViewerCard from "../components/patient/PatientDocumentViewerCard";
-import {
-  loadPatientProfile,
-  loadRandomPatientId,
-  loadViz2PatientOptions,
-  loadViz2PatientProfile,
-} from "../controllers/patient";
+import { loadPatientProfile, loadRandomPatientId } from "../controllers/patient";
 import { usePatientData } from "../hooks/usePatientData";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 import { getThemeByKey } from "../themes";
 
 const DEFAULT_THEME_KEY = "govuk";
-const LOOKUP_MODE_PATIENT_ID = "patient-id";
-const LOOKUP_MODE_VIZ2_DOCS = "viz2-docs";
 
 /**
  * @typedef {Object} SelectionContext
@@ -53,12 +46,7 @@ function getMostRecentDocumentId(reportData = []) {
 }
 
 export default function PatientView() {
-  const [lookupMode, setLookupMode] = useState(LOOKUP_MODE_PATIENT_ID);
   const [patientIdInput, setPatientIdInput] = useState("");
-  const [viz2PatientOptions, setViz2PatientOptions] = useState([]);
-  const [viz2PatientId, setViz2PatientId] = useState("");
-  const [isViz2OptionsLoading, setIsViz2OptionsLoading] = useState(false);
-  const [viz2OptionsErrorMessage, setViz2OptionsErrorMessage] = useState("");
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
   const [loadedPatientId, setLoadedPatientId] = useState("");
@@ -107,10 +95,7 @@ export default function PatientView() {
   );
 
   const activeTheme = useMemo(() => getThemeByKey(DEFAULT_THEME_KEY), []);
-  const activeErrorMessage =
-    validationMessage ||
-    errorMessage ||
-    (lookupMode === LOOKUP_MODE_VIZ2_DOCS ? viz2OptionsErrorMessage : "");
+  const activeErrorMessage = validationMessage || errorMessage;
 
   const selectedDocument = useMemo(() => {
     const documents = Array.isArray(patientData?.documents) ? patientData.documents : [];
@@ -121,60 +106,11 @@ export default function PatientView() {
     return documents.find((document) => document.id === selectedDocumentId) || null;
   }, [patientData, selectedDocumentId]);
 
-  useEffect(() => {
-    if (lookupMode !== LOOKUP_MODE_VIZ2_DOCS || viz2PatientOptions.length > 0) {
-      return undefined;
-    }
-
-    let isCancelled = false;
-    setIsViz2OptionsLoading(true);
-    setViz2OptionsErrorMessage("");
-
-    loadViz2PatientOptions()
-      .then((options) => {
-        if (isCancelled) {
-          return;
-        }
-
-        setViz2PatientOptions(options);
-
-        const currentSelectionIsValid = options.some((option) => option.id === viz2PatientId);
-        if (currentSelectionIsValid) {
-          return;
-        }
-
-        setViz2PatientId(String(options[0]?.id || "").trim());
-      })
-      .catch((error) => {
-        if (isCancelled) {
-          return;
-        }
-
-        setViz2PatientOptions([]);
-        setViz2PatientId("");
-        setViz2OptionsErrorMessage(error?.message || "Failed to load Viz2 patient options.");
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsViz2OptionsLoading(false);
-        }
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [lookupMode, viz2PatientId, viz2PatientOptions.length]);
-
   const handleLoadPatient = async () => {
-    const isViz2Mode = lookupMode === LOOKUP_MODE_VIZ2_DOCS;
-    const normalizedPatientId = String(
-      isViz2Mode ? viz2PatientId : patientIdInput
-    ).trim();
+    const normalizedPatientId = String(patientIdInput).trim();
 
     if (!normalizedPatientId) {
-      setValidationMessage(
-        isViz2Mode ? "Please select a Viz2 patient." : "Please enter a patient ID."
-      );
+      setValidationMessage("Please enter a patient ID.");
       return;
     }
 
@@ -183,8 +119,7 @@ export default function PatientView() {
     setSelectedDocumentId("");
     setSelectionContext(null);
 
-    const loader = isViz2Mode ? loadViz2PatientProfile : loadPatientProfile;
-    const result = await loadPatient(normalizedPatientId, loader);
+    const result = await loadPatient(normalizedPatientId, loadPatientProfile);
 
     if (!result) {
       setLoadedPatientId("");
@@ -206,11 +141,6 @@ export default function PatientView() {
       documentDate: String(mostRecentReport?.formattedDate || "").trim() || null,
       episodeLabel: String(mostRecentReport?.episode || "").trim() || null,
     });
-  };
-
-  const handleLookupModeChange = (nextLookupMode) => {
-    setLookupMode(nextLookupMode);
-    setValidationMessage("");
   };
 
   const handleSelectDocumentFromTimeline = useCallback(
@@ -354,14 +284,8 @@ export default function PatientView() {
           </Paper>
 
           <PatientSearchForm
-            lookupMode={lookupMode}
-            onLookupModeChange={handleLookupModeChange}
             patientIdValue={patientIdInput}
             onPatientIdChange={setPatientIdInput}
-            viz2PatientId={viz2PatientId}
-            viz2PatientOptions={viz2PatientOptions}
-            onViz2PatientIdChange={setViz2PatientId}
-            isViz2OptionsLoading={isViz2OptionsLoading}
             onLoadPatient={handleLoadPatient}
             isLoading={isLoading}
             onPickRandomPatientId={handlePickRandomPatientId}

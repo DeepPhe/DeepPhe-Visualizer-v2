@@ -29,6 +29,12 @@ import {
 } from "../../hooks/useFilterPagePreferences";
 import { THEME_OPTIONS } from "../../themes";
 
+// Standard is currently the only user-facing density, so the density picker
+// (and the compact-plus-only stack-gap / slack controls) are hidden for now.
+// The underlying density modes and layout logic are kept; flip this to true to
+// expose the picker again.
+const DENSITY_CONTROLS_VISIBLE = false;
+
 export default function FiltersToolbar({
   spacingUnits = 1,
   fontScalePercentLabel = "100%",
@@ -234,6 +240,8 @@ export default function FiltersToolbar({
                     {isPerCardColumnLayout ? <ViewColumnIcon fontSize="small" /> : <ViewStreamIcon fontSize="small" />}
                   </IconButton>
                 </Tooltip>
+                {DENSITY_CONTROLS_VISIBLE ? (
+                  <>
                 <FormControl
                   size="small"
                   sx={{
@@ -311,6 +319,8 @@ export default function FiltersToolbar({
                         </MenuItem>
                       </Select>
                     </FormControl>
+                  </>
+                ) : null}
                   </>
                 ) : null}
                 <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>

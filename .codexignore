@@ -17,7 +17,6 @@ screenshots/
 # Generated docs and copied fixtures
 docs/
 public/docs/
-public/docs/viz2/
 
 # Large local data and envs
 data/

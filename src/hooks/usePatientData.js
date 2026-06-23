@@ -9,7 +9,7 @@ import { logPerf, nowMs } from "../utils/perf";
  * Manages patient profile state with request-ID-based cancellation.
  * Returns stable `loadPatient(id, loader?)` — call it imperatively (button
  * handler or useEffect) to kick off a load. The optional `loader` param
- * lets callers substitute an alternative profile fetcher (e.g. Viz2 mode).
+ * lets callers substitute an alternative profile fetcher.
  *
  * @returns {{ patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient }}
  */
