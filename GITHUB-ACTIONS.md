@@ -23,7 +23,7 @@ release publishing workflow.
 Runs on every push and pull request to `main` and `develop`. Two jobs run in parallel:
 
 ### `build`
-Runs on `ubuntu-latest` against a Node matrix (`18.x`, `20.x`). Steps:
+Runs on `ubuntu-latest` with Node `24.x`. Steps:
 1. Checkout, set up Node (with npm cache).
 2. `npm ci --legacy-peer-deps`.
 3. `npm run lint` — ESLint.
@@ -36,7 +36,7 @@ Runs on `ubuntu-latest` against a Node matrix (`18.x`, `20.x`). Steps:
 A failure in any step marks the commit/PR check as failed.
 
 ### `documentation`
-Runs on `ubuntu-latest` with Node `20.x`. Builds the Docusaurus user guide:
+Runs on `ubuntu-latest` with Node `24.x`. Builds the Docusaurus user guide:
 1. Checkout, set up Node (cache keyed on `docs-site/package-lock.json`).
 2. `npm ci --prefix docs-site`.
 3. `npm --prefix docs-site run typecheck`.
