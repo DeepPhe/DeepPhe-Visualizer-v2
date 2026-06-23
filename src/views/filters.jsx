@@ -1311,14 +1311,14 @@ function FiltersView() {
       };
     }
 
+    // Keep the current cohort and patient grid visible while the new count
+    // loads — do NOT clear countResult / the page cache up front. The
+    // result-driven effects below reset the page + cache only when the resolved
+    // patient set actually changes (patientIdsForResultKey), so re-selecting a
+    // filter value that returns the same patients no longer blanks/reloads the
+    // table. On count failure the catch block clears the cohort.
     setIsCountLoading(true);
     setCountError("");
-    setCountResult(null);
-    setCurrentPatientGridPage(0);
-    patientGridPageCacheRef.current = new Map();
-    setPatientGridPageCache(new Map());
-    setPatientGridPageError("");
-    setIsPatientGridPageLoading(false);
 
     const loadCount = async () => {
       const filterSpan = startSpan("filter_query", "filter_query", {
