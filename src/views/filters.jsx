@@ -1395,7 +1395,20 @@ function FiltersView() {
   const patientGridPageSize = isPatientGridDockMaximized
     ? PATIENT_GRID_MAXIMIZED_PAGE_SIZE
     : PATIENT_GRID_DEFAULT_PAGE_SIZE;
-  const patientIdsForResult = useMemo(() => normalizePatientIds(countResult?.patientIds), [countResult?.patientIds]);
+  const stablePatientIdsRef = useRef([]);
+  const patientIdsForResult = useMemo(() => {
+    const next = normalizePatientIds(countResult?.patientIds);
+    const prev = stablePatientIdsRef.current;
+    // normalizePatientIds returns a sorted, de-duped list, so an identical
+    // selected-patient set yields an equal array. Keep the previous reference in
+    // that case so downstream memos/effects (and the patient grid) don't churn
+    // when a new filter value doesn't actually change the cohort.
+    if (prev.length === next.length && prev.every((id, index) => id === next[index])) {
+      return prev;
+    }
+    stablePatientIdsRef.current = next;
+    return next;
+  }, [countResult?.patientIds]);
   const patientIdsForResultKey = useMemo(() => patientIdsForResult.join(","), [patientIdsForResult]);
   const totalPatientGridPages = useMemo(
     () => Math.ceil(patientIdsForResult.length / patientGridPageSize),
@@ -1420,7 +1433,7 @@ function FiltersView() {
     hasSelections && (isCountLoading || Boolean(countResult) || Boolean(countError) || patientGridPageCache.size > 0)
   );
   const patientGridDrawerPanelId = "patient-grid-drawer-panel";
-  const patientGridDrawerStatusText = isCountLoading
+  const patientGridDrawerStatusText = isPatientGridPageLoading
     ? "Updating matched patients…"
     : cohortSize > 0
     ? `Showing page ${(currentPatientGridPage + 1).toLocaleString()} of ${Math.max(
@@ -1565,7 +1578,11 @@ function FiltersView() {
           : "116px",
       }
     : 0;
-  const patientGridDrawerTableLoading = isCountLoading || isPatientGridPageLoading;
+  // Drive the table's loading from the patient-set page fetch only, not the
+  // count request: isPatientGridPageLoading is keyed on the sorted cohort
+  // (patientIdsForResultKey), so the grid reloads only when the selected-patient
+  // set actually changes — not on every filter count that returns the same set.
+  const patientGridDrawerTableLoading = isPatientGridPageLoading;
 
   useEffect(() => {
     setCurrentPatientGridPage(0);

@@ -62,7 +62,7 @@ function toExpandedState(updaterResult) {
   return { [mostRecentRowId]: true };
 }
 
-export default function PatientGrid({
+function PatientGrid({
   data = [],
   cohortSize = 0,
   totalCohortCount = 0,
@@ -684,3 +684,7 @@ PatientGrid.propTypes = {
   onPatientOpen: PropTypes.func,
   openPatientIds: PropTypes.arrayOf(PropTypes.string),
 };
+
+// Memoized so the patient grid only re-renders when its props actually change
+// (e.g. the selected-patient set), not on every parent re-render.
+export default React.memo(PatientGrid);
