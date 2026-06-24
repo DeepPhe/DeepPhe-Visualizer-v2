@@ -18,6 +18,7 @@ function FilterSectionCard({
   customSortOrder = [],
   inlinePatientIdsThreshold = 20,
   getPatientSummary = undefined,
+  onOpenPatientDocumentView = undefined,
   onOpenFilterModal = undefined,
   filterType = "attributes",
   measureRef = undefined,
@@ -106,6 +107,7 @@ function FilterSectionCard({
             customSortOrder={customSortOrder}
             inlinePatientIdsThreshold={inlinePatientIdsThreshold}
             getPatientSummary={getPatientSummary}
+            onOpenPatientDocumentView={onOpenPatientDocumentView}
           />
         </Box>
       </Box>
@@ -128,6 +130,7 @@ FilterSectionCard.propTypes = {
   customSortOrder: PropTypes.array,
   inlinePatientIdsThreshold: PropTypes.number,
   getPatientSummary: PropTypes.func,
+  onOpenPatientDocumentView: PropTypes.func,
   onOpenFilterModal: PropTypes.func,
   filterType: PropTypes.string,
   measureRef: PropTypes.oneOfType([PropTypes.func, PropTypes.object]),

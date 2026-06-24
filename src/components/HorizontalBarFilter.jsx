@@ -134,6 +134,7 @@ function HorizontalBarFilter({
   customSortOrder = [],
   inlinePatientIdsThreshold = 0,
   getPatientSummary,
+  onOpenPatientDocumentView,
   barRegionScale = 1,
   density = "standard",
   className = "",
@@ -543,6 +544,14 @@ function HorizontalBarFilter({
     run();
   };
   const handlePatientDotClick = (event, patientId) => {
+    // Clicking a dot opens that patient's document view in the patient drawer.
+    // Hovering still shows the summary tooltip (handled separately). Where no
+    // open-document-view handler is wired (e.g. the filter detail modal), fall
+    // back to the previous behavior of pinning the summary tooltip.
+    if (typeof onOpenPatientDocumentView === "function") {
+      onOpenPatientDocumentView(patientId);
+      return;
+    }
     openPatientSummary(event.currentTarget, patientId, 0, true);
   };
   const handlePatientDotMouseEnter = (event, patientId, rowIndex = null) => {
@@ -1072,7 +1081,10 @@ function HorizontalBarFilter({
                             dotPatientIds.length === 1
                               ? barStartX + barMaxWidth / 2
                               : dotTrackStartX + dotStep * dotIndex;
-                          const patientDotLabel = `Patient ${patientId}. Hover or click to view summary.`;
+                          const patientDotLabel =
+                            typeof onOpenPatientDocumentView === "function"
+                              ? `Patient ${patientId}. Hover to view summary, click to open document view.`
+                              : `Patient ${patientId}. Hover or click to view summary.`;
 
                           return (
                             <g key={`${row.label}-${patientId}-${dotIndex}`}>
@@ -1238,6 +1250,7 @@ HorizontalBarFilter.propTypes = {
   customSortOrder: PropTypes.arrayOf(PropTypes.string),
   inlinePatientIdsThreshold: PropTypes.number,
   getPatientSummary: PropTypes.func,
+  onOpenPatientDocumentView: PropTypes.func,
   barRegionScale: PropTypes.number,
   density: PropTypes.oneOf(["standard", "compact"]),
   className: PropTypes.string,

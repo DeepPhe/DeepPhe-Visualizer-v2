@@ -15,23 +15,17 @@ Most work happens in the **Patient Cohort Explorer**, also called the Filters sc
 
 ## Start here
 
-- [Understand the Cohort Explorer](getting-started/overview.md)
-- [Build your first cohort](getting-started/first-cohort.md)
-- [Select and combine filter values](cohort-explorer/selecting-filters.md)
-- [Review the selected patients](cohort-explorer/selected-patients.md)
-- [Export results to CSV](cohort-explorer/exporting-results.md)
+New to the Visualizer? Begin with [Understand the Cohort Explorer](getting-started/overview.md) and [Build your first cohort](getting-started/first-cohort.md).
 
-## What you can do
+## Core workflow
 
-The Cohort Explorer lets you:
+The guide is organized around three things you do, in order:
 
-- choose one or more values from a clinical filter;
-- combine criteria from different filters;
-- see the matching patient count update;
-- inspect patient-level summaries;
-- open an individual patient without leaving the screen;
-- control which patient columns are visible; and
-- export the currently loaded results to CSV.
+1. **[Build a cohort](cohort-explorer/screen-overview.md)** — choose and combine clinical filter values, and watch the matching patient count update.
+2. **[Review patient results](cohort-explorer/selected-patients.md)** — inspect patient-level summaries, control which columns are visible, search, sort, and expand rows.
+3. **[Explore an individual patient](cohort-explorer/viewing-a-patient.md)** — open a single patient in place to see demographics, summaries, the document timeline, and the structured Patient Summary Card.
+
+For supporting tasks — exporting results, display settings, accessibility, and filter reference — see the **Reference** section.
 
 :::caution Clinical interpretation
 

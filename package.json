@@ -42,7 +42,7 @@
     "docs:build": "npm run docs:prepare && npm --prefix docs-site run build",
     "docs:serve": "npm --prefix docs-site run serve",
     "docs:pdf": "node scripts/export-pdf.mjs",
-    "docs:review": "npm run capture:screenshots && npm run docs:build && npm run docs:pdf",
+    "docs:generate": "npm run capture:screenshots && npm run docs:build && npm run docs:pdf",
     "package:web": "cross-env REACT_APP_DEEPPHE_API_LOCATION=/ npm run build",
     "package": "npm run package:web && node scripts/package-pkg.mjs"
   },

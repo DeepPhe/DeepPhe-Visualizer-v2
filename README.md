@@ -67,7 +67,7 @@ npm run docs:install     # Install the isolated documentation dependencies
 npm run docs:start       # Preview the guide locally
 npm run docs:build       # Generate the static guide in site/
 npm run docs:pdf         # Export the printable guide PDF
-npm run docs:review      # Capture screenshots, build, and export the PDF
+npm run docs:generate    # Generate the feature guide: capture screenshots, build the site, export the PDF
 ```
 
 ### Docker Deployment

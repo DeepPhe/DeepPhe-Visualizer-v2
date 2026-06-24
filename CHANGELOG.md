@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Performance tracker spans and milestones (`utils/perfTracker.js`)
 - Task-oriented Docusaurus user guide for building cohorts, reviewing selected
   patients, opening patient details, and exporting results
-- Documentation screenshot preparation and printable user-guide PDF export
-  (`npm run docs:review`)
+- Feature-documentation pipeline that captures screenshots, builds the guide,
+  and exports the printable user-guide PDF (`npm run docs:generate`)
 - Read-only piper files server (`server.js` + `src/piper-server/config.js`)
 - Comprehensive unit testing infrastructure
 - GitHub Actions CI/CD pipeline

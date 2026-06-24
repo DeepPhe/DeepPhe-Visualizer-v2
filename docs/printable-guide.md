@@ -6,26 +6,22 @@ description: A concise printable workflow for the DeepPhe Patient Cohort Explore
 
 # DeepPhe Patient Cohort Explorer
 
-## Quick workflow
+This guide follows the three core features in order: **build a cohort**, **review patient results**, then **explore an individual patient**.
+
+![Patient Cohort Explorer](assets/screenshots/end-user/cohort-explorer-overview.png)
+
+## 1. Build a cohort
 
 1. Find a filter card and select a value.
 2. Add values from the same filter as alternatives.
 3. Add selections from different filters to narrow the cohort.
-4. Check the count in the Selected Patients drawer.
-5. Expand the drawer and review the loaded patient page.
-6. Open an individual patient when source-level context is needed.
-7. Choose visible columns and export the current page to CSV.
 
-![Patient Cohort Explorer](assets/screenshots/end-user/cohort-explorer-overview.png)
-
-## Filtering rules
+Filtering rules:
 
 - Multiple values in one filter mean **value A or value B**.
 - Different filters mean **filter A and filter B**.
 - Select an active value again to remove it.
 - Select **Reset filters** to clear the cohort.
-
-## Read the counts
 
 An unfiltered value normally shows its total count. After criteria are active, another value may display `included/total`, showing how many patients with that value remain in the current cohort.
 
@@ -33,13 +29,17 @@ An unfiltered value normally shows its total count. After criteria are active, a
 
 <div className="print-page-break" />
 
-## Review selected patients
+## 2. Review patient results
 
-The drawer supports search, sorting, column visibility, pagination, row expansion, and patient tabs.
+Check the count in the Selected Patients drawer, then expand it to review the loaded patient page. The drawer supports search, sorting, column visibility, pagination, row expansion, and patient tabs. Patient search applies to the currently loaded page.
 
 ![Selected Patients drawer](assets/screenshots/end-user/selected-patients-drawer.png)
 
-Patient search applies to the currently loaded page.
+## 3. Explore an individual patient
+
+Open a single patient with **Show in Document Viewer** when source-level context is needed, or select a **patient dot** on any filter bar to open that patient directly (hovering a dot previews its summary). The patient opens as a tab inside the drawer, showing demographics, cancer and tumor summaries, the document timeline, source text with concept overlays, and a structured Patient Summary Card when the data is available.
+
+![Embedded patient view](assets/screenshots/end-user/embedded-patient-view.png)
 
 ## Export
 

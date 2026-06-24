@@ -1430,7 +1430,11 @@ function FiltersView() {
   );
   const shouldShowPatientDetailGrid = Boolean(countResult);
   const isPatientGridDockVisible = Boolean(
-    hasSelections && (isCountLoading || Boolean(countResult) || Boolean(countError) || patientGridPageCache.size > 0)
+    // Open patient document views (e.g. opened by clicking a patient dot) keep the
+    // drawer visible even when no filters are selected.
+    openPatientIds.length > 0 ||
+      (hasSelections &&
+        (isCountLoading || Boolean(countResult) || Boolean(countError) || patientGridPageCache.size > 0))
   );
   const patientGridDrawerPanelId = "patient-grid-drawer-panel";
   const patientGridDrawerStatusText = isPatientGridPageLoading
@@ -2602,6 +2606,7 @@ function FiltersView() {
             customSortOrder={customSortOrder}
             inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
             getPatientSummary={getPatientSummary}
+            onOpenPatientDocumentView={handleOpenPatientTab}
             onOpenFilterModal={handleOpenFilterModal}
             filterType={filterType}
             measureRef={setCardMeasureRef(filterType, className)}
@@ -2772,6 +2777,7 @@ function FiltersView() {
           customSortOrder={customSortOrder}
           inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
           getPatientSummary={getPatientSummary}
+          onOpenPatientDocumentView={handleOpenPatientTab}
           onOpenFilterModal={handleOpenFilterModal}
           filterType="omop"
           measureRef={setCardMeasureRef("omop", className)}

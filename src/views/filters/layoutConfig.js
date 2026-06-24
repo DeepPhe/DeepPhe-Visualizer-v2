@@ -8,7 +8,8 @@ export const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
 
 export const FILTER_SECTION_LABEL_SX = {
   display: "block",
-  fontSize: "0.65rem",
+  fontSize: "0.85rem",
+  fontWeight: 600,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
   color: "text.secondary",

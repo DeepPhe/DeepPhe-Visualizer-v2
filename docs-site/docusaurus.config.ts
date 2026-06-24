@@ -6,7 +6,6 @@ import type {EditUrlFunction} from '@docusaurus/plugin-content-docs';
 const organizationName = 'DeepPhe';
 const projectName = 'DeepPhe-Visualizer-v2';
 const repositoryUrl = `https://github.com/${organizationName}/${projectName}`;
-const baseUrl = process.env.DOCS_BASE_URL || '/';
 const editUrl: EditUrlFunction = ({docPath}) =>
   `${repositoryUrl}/edit/main/docs/${docPath}`;
 
@@ -14,11 +13,11 @@ const config: Config = {
   title: 'DeepPhe Visualizer User Guide',
   tagline: 'Build and explore patient cohorts with DeepPhe',
   url: 'https://deepphe.github.io',
-  baseUrl,
-  trailingSlash: true,
+  baseUrl: '/DeepPhe-Visualizer-v2/',
+  trailingSlash: false,
 
-  organizationName,
-  projectName,
+  organizationName: 'DeepPhe',
+  projectName: 'DeepPhe-Visualizer-v2',
   onBrokenLinks: 'throw',
 
   future: {

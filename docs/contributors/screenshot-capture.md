@@ -39,13 +39,13 @@ docs/assets/screenshots/end-user/
 
 The Docusaurus site is generated in `site/`.
 
-## Full documentation package
+## Generate the full feature guide
 
 ```bash
-npm run docs:review
+npm run docs:generate
 ```
 
-This captures screenshots, builds the Docusaurus site, and exports the printable guide PDF.
+This captures the feature screenshots, builds the Docusaurus site, and exports the printable guide PDF.
 
 ## Safety
 

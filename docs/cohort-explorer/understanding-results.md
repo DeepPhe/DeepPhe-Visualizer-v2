@@ -30,6 +30,15 @@ For example, `12/40` means:
 
 This lets you preview how a value relates to the current cohort before selecting it.
 
+## Patient dots
+
+When a filter value matches a small number of patients, each patient appears as a **dot** on that value's bar.
+
+- **Hover** a dot to preview that patient's summary without leaving the screen.
+- **Select** a dot to open that patient's document view as a tab in the Selected Patients drawer. This works even when no filters are active and does not change the current cohort.
+
+See [View an individual patient](viewing-a-patient.md) for what the document view contains.
+
 ## Zero results
 
 If no patients satisfy the selected criteria:

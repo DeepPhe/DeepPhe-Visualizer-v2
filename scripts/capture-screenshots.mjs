@@ -11,30 +11,17 @@ const SCREENSHOT_ROOT_DIR = process.env.VIZ2_SCREENSHOT_DIR
 const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const SUMMARY_PATH = path.join(OUTPUT_DIR, "capture-summary.json");
 const VIEWPORT = { width: 2200, height: 1400 };
-const PLACEHOLDER_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAoMBgR8iNQwAAAAASUVORK5CYII=";
 
+// Feature-documentation capture set. Each entry illustrates one of the three
+// guide focus areas — cohort filtering, patient results & grid, and the
+// individual patient view — plus the home landing and the secondary display
+// settings shot. Review-only captures (theme variants, every filter set/card,
+// debug and accessibility views) are intentionally not generated here.
 const SCREENSHOT_ORDER = [
-  "01-home.png",
   "02-filters-overview.png",
   "03-identified-patients-panel.png",
   "04-theme-selector-open.png",
-  "05-theme-obsidian.png",
-  "06-theme-solstice.png",
-  "07-theme-vapor.png",
-  "08-filterset-demographics.png",
   "09-filter-age-at-dx.png",
-  "10-filter-race.png",
-  "11-filter-gender.png",
-  "12-filter-ethnicity.png",
-  "13-filterset-cancer-type.png",
-  "14-filter-cancer.png",
-  "15-filterset-staging.png",
-  "16-filter-stage.png",
-  "17-filter-t-stage.png",
-  "18-filter-n-stage.png",
-  "19-filter-m-stage.png",
-  "20-filter-lymph-involvement.png",
   "21-filter-selection-active-state.png",
   "22-patient-details-overview.png",
   "23-patient-details-column-menu.png",
@@ -42,8 +29,6 @@ const SCREENSHOT_ORDER = [
   "25-patient-details-empty-search.png",
   "32-embedded-patient-drawer.png",
   "33-patient-summary-card.png",
-  "30-debug-view.png",
-  "31-accessibility-view.png",
 ];
 
 const summary = {
@@ -51,9 +36,11 @@ const summary = {
   baseUrl: BASE_URL,
   viewport: VIEWPORT,
   screenshots: [],
-  missingStates: [],
-  runtimeNotes: [],
 };
+
+// Captures that could not be produced as intended. A documentation run must
+// fail loudly rather than publish a guide with a missing or wrong-target image.
+const failures = [];
 
 function filePath(name) {
   return path.join(OUTPUT_DIR, name);
@@ -129,47 +116,29 @@ async function withCapture(page, config) {
     try {
       await captureViewport(page, config.file, config.fallbackFullPage || false);
     } catch (fallbackError) {
+      entry.status = "failed";
       const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
       entry.note = `${entry.note} | fallback screenshot failed: ${fallbackMessage}`;
-      await fs.writeFile(filePath(config.file), Buffer.from(PLACEHOLDER_PNG_BASE64, "base64"));
     }
-    console.warn(`Fallback used for ${config.file}: ${entry.note}`);
+    console.warn(`Could not capture ${config.file} as intended (${entry.status}): ${entry.note}`);
   }
 
   summary.screenshots.push(entry);
   if (entry.status !== "captured") {
-    summary.missingStates.push(entry);
+    failures.push(entry);
   }
 }
 
+// Filter cards are `.filter-card` papers identified by their "Open <name> filter"
+// button, not by a heading element.
 function filterCardLocator(page, title) {
-  const heading = page.getByRole("heading", { name: title, exact: true }).first();
-  return heading.locator("xpath=ancestor::div[contains(@class,'MuiPaper-root')][1]");
-}
-
-async function captureFilterSetViewport(page, file, filterSetLabel) {
-  await withCapture(page, {
-    file,
-    route: "/filters",
-    target: `${filterSetLabel} filter set`,
-    fallbackFullPage: false,
-    run: async () => {
-      const heading = page.getByRole("heading", { name: filterSetLabel, exact: true }).first();
-      const exists = await waitForLocator(heading, 10000);
-      if (!exists) {
-        throw new Error(`Could not find filter set heading: ${filterSetLabel}`);
-      }
-      await heading.scrollIntoViewIfNeeded();
-      await sleep(250);
-      await captureViewport(page, file, false);
-    },
-  });
+  return page.locator(`.filter-card:has(button[aria-label="Open ${title} filter"])`).first();
 }
 
 async function captureFilterCard(page, file, filterName) {
   await withCapture(page, {
     file,
-    route: "/filters",
+    route: "/",
     target: `${filterName} filter card`,
     fallbackFullPage: false,
     run: async () => {
@@ -196,95 +165,39 @@ async function openThemeMenu(page) {
   }
 }
 
-async function chooseTheme(page, label) {
-  let option = page.getByRole("option", { name: label, exact: true }).first();
-  if ((await option.count()) === 0 || !(await option.isVisible().catch(() => false))) {
-    await openThemeMenu(page);
-  }
-
-  option = page.getByRole("option", { name: label, exact: true }).first();
-  const exists = await waitForLocator(option, 5000);
-  if (!exists) {
-    throw new Error(`Theme option not found: ${label}`);
-  }
-  await option.click();
-  await sleep(350);
-}
-
-async function toggleCardHeightStates(page) {
-  const toFit = page.getByLabel("Switch to fit content heights").first();
-  const toNormalized = page.getByLabel("Switch to normalized row heights").first();
-
-  const sawDefault = (await toFit.count()) > 0;
-  if (sawDefault) {
-    await toFit.click();
-    await sleep(250);
-  }
-
-  const sawFit = (await toNormalized.count()) > 0;
-  if (sawFit) {
-    await toNormalized.click();
-    await sleep(250);
-  }
-
-  if (sawDefault && sawFit) {
-    summary.runtimeNotes.push("Card height toggle automation exercised both states: normalized and fit-content.");
-  } else {
-    summary.runtimeNotes.push(
-      "Card height toggle state coverage was partial due to missing toggle control at runtime."
-    );
-    summary.missingStates.push({
-      file: "02-filters-overview.png",
-      route: "/filters",
-      target: "Card height toggle state coverage",
-      status: "fallback",
-      note: "Could not verify both card height states from the UI.",
-    });
-  }
-}
-
+// Select a value in the first filter card that has selectable bars. The bars are
+// SVG overlays whose React handler only fires on keyboard activation, so we focus
+// the bar and press Enter rather than clicking. Returns the card so the caller can
+// screenshot its active state.
 async function activateFilterSelection(page) {
-  const candidateCards = [
-    "Age at Dx",
-    "Race",
-    "Gender",
-    "Ethnicity",
-    "Cancer",
-    "Stage",
-    "T Stage",
-    "N Stage",
-    "M Stage",
-    "Lymph Involvement",
-  ];
+  const cards = page.locator(".filter-card");
+  const cardCount = await cards.count();
 
-  for (const name of candidateCards) {
-    const card = filterCardLocator(page, name);
-    if ((await card.count()) === 0) {
+  for (let index = 0; index < cardCount; index += 1) {
+    const card = cards.nth(index);
+    const bars = card.locator(".horizontal-bar-filter-row-overlay[role='button']");
+    if ((await bars.count()) === 0) {
       continue;
     }
 
-    await card
-      .first()
-      .scrollIntoViewIfNeeded()
-      .catch(() => {});
+    await card.scrollIntoViewIfNeeded().catch(() => {});
     await sleep(200);
 
-    const interactive = card.locator("[role='button'][aria-pressed]");
-    if ((await interactive.count()) > 0) {
-      await interactive.first().click({ force: true });
-      await sleep(750);
-      return { activated: true, cardName: name };
-    }
+    const bar = bars.first();
+    await bar.focus().catch(() => {});
+    await page.keyboard.press("Enter");
+    await sleep(900);
 
-    const fallbackButtons = card.locator("button[aria-label^='Toggle ']");
-    if ((await fallbackButtons.count()) > 0) {
-      await fallbackButtons.first().click();
-      await sleep(750);
-      return { activated: true, cardName: name };
+    const label = (await bar.getAttribute("aria-label")) || "";
+    if (/\bSelected\b/i.test(label)) {
+      const openLabel =
+        (await card.locator(".filter-card-open-button").first().getAttribute("aria-label")) || "";
+      const cardName = openLabel.replace(/^Open\s+/i, "").replace(/\s+filter$/i, "").trim();
+      return { activated: true, card, cardName };
     }
   }
 
-  return { activated: false, cardName: "" };
+  return { activated: false, card: null, cardName: "" };
 }
 
 async function capturePatientDetailsSeries(page) {
@@ -295,7 +208,7 @@ async function capturePatientDetailsSeries(page) {
   const detailsVisible = embeddedDetailsVisible || legacyDetailsVisible;
 
   if (!detailsVisible) {
-    summary.runtimeNotes.push("Patient Details did not render on /filters after filter selection.");
+    console.warn("Patient Details did not render on the Cohort Explorer after filter selection.");
 
     const missingSeries = [
       {
@@ -319,11 +232,11 @@ async function capturePatientDetailsSeries(page) {
     for (const entry of missingSeries) {
       await withCapture(page, {
         file: entry.file,
-        route: "/filters",
+        route: "/",
         target: entry.target,
         fallbackFullPage: false,
         run: async () => {
-          throw new Error("Patient Details panel is unavailable on /filters.");
+          throw new Error("Patient Details panel is unavailable on the Cohort Explorer.");
         },
       });
     }
@@ -337,7 +250,7 @@ async function capturePatientDetailsSeries(page) {
 
   await withCapture(page, {
     file: "22-patient-details-overview.png",
-    route: "/filters",
+    route: "/",
     target: "Patient Details overview",
     fallbackFullPage: false,
     run: async () => {
@@ -347,7 +260,7 @@ async function capturePatientDetailsSeries(page) {
 
   await withCapture(page, {
     file: "23-patient-details-column-menu.png",
-    route: "/filters",
+    route: "/",
     target: "Patient Details column chooser menu",
     fallbackFullPage: false,
     run: async () => {
@@ -371,7 +284,7 @@ async function capturePatientDetailsSeries(page) {
 
   await withCapture(page, {
     file: "24-patient-details-expanded-row.png",
-    route: "/filters",
+    route: "/",
     target: "Expanded row details",
     fallbackFullPage: false,
     run: async () => {
@@ -388,7 +301,7 @@ async function capturePatientDetailsSeries(page) {
 
   await withCapture(page, {
     file: "25-patient-details-empty-search.png",
-    route: "/filters",
+    route: "/",
     target: "Patient Details empty search state",
     fallbackFullPage: false,
     run: async () => {
@@ -424,11 +337,11 @@ async function captureEmbeddedPatientViewSeries(page) {
   ];
 
   if (!hasExpandButton) {
-    summary.runtimeNotes.push("EmbeddedPatientView capture skipped: no expandable patient rows found.");
+    console.warn("EmbeddedPatientView capture skipped: no expandable patient rows found.");
     for (const entry of missingFiles) {
       await withCapture(page, {
         file: entry.file,
-        route: "/filters",
+        route: "/",
         target: entry.target,
         fallbackFullPage: false,
         run: async () => {
@@ -447,13 +360,13 @@ async function captureEmbeddedPatientViewSeries(page) {
   const hasOpenButton = await waitForLocator(openButton, 6000);
 
   if (!hasOpenButton) {
-    summary.runtimeNotes.push(
+    console.warn(
       "EmbeddedPatientView capture skipped: 'Show in Document Viewer' button not found after row expand."
     );
     for (const entry of missingFiles) {
       await withCapture(page, {
         file: entry.file,
-        route: "/filters",
+        route: "/",
         target: entry.target,
         fallbackFullPage: false,
         run: async () => {
@@ -471,13 +384,13 @@ async function captureEmbeddedPatientViewSeries(page) {
   const drawerVisible = await waitForLocator(drawer, 8000);
 
   if (!drawerVisible) {
-    summary.runtimeNotes.push(
+    console.warn(
       "EmbeddedPatientView capture skipped: patient-grid-drawer did not appear after opening patient tab."
     );
     for (const entry of missingFiles) {
       await withCapture(page, {
         file: entry.file,
-        route: "/filters",
+        route: "/",
         target: entry.target,
         fallbackFullPage: false,
         run: async () => {
@@ -498,7 +411,7 @@ async function captureEmbeddedPatientViewSeries(page) {
 
   await withCapture(page, {
     file: "32-embedded-patient-drawer.png",
-    route: "/filters",
+    route: "/",
     target: "Embedded patient view (drawer with patient data)",
     fallbackFullPage: false,
     run: async () => {
@@ -508,35 +421,20 @@ async function captureEmbeddedPatientViewSeries(page) {
 
   await withCapture(page, {
     file: "33-patient-summary-card.png",
-    route: "/filters",
+    route: "/",
     target: "Patient Summary Card (diagnoses, staging, biomarkers)",
     fallbackFullPage: false,
     run: async () => {
-      const summaryHeading = page.getByRole("heading", { name: "Patient Summary", exact: true }).first();
-      const hasHeading = await waitForLocator(summaryHeading, 5000);
-      if (!hasHeading) {
-        throw new Error("Patient Summary Card heading not visible (patient may have no summary data)");
+      // The card title is a CardHeader span (not a heading). The scroll region is
+      // only present when the patient actually has structured summary sections.
+      const summaryCard = page
+        .locator('.MuiCard-root:has([data-testid="patient-summary-card-scroll"])')
+        .first();
+      const hasCard = await waitForLocator(summaryCard, 6000);
+      if (!hasCard) {
+        throw new Error("Patient Summary Card has no section data for the opened patient");
       }
-      const summaryCard = summaryHeading.locator("xpath=ancestor::*[contains(@class,'MuiCard-root')][1]");
       await captureLocatorOrFallback(page, summaryCard, "33-patient-summary-card.png", false);
-    },
-  });
-}
-
-async function captureRouteViewport(page, route, heading, file) {
-  await gotoRoute(page, route);
-  await page.getByRole("heading", { name: heading, exact: true }).first().waitFor({
-    state: "visible",
-    timeout: 12000,
-  });
-
-  await withCapture(page, {
-    file,
-    route,
-    target: `${heading} route view`,
-    fallbackFullPage: false,
-    run: async () => {
-      await captureViewport(page, file, false);
     },
   });
 }
@@ -547,36 +445,32 @@ async function run() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: VIEWPORT,
-    colorScheme: "dark",
+    colorScheme: "light",
+  });
+  // Force the "Standard" (govuk) app theme for documentation screenshots, regardless
+  // of the OS color scheme. Without this the app falls back to Obsidian under a dark
+  // preference. THEME_STORAGE_KEY is "filterPageTheme" (see src/themes.js).
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem("filterPageTheme", "govuk");
+    } catch {
+      // localStorage unavailable; the app default still resolves to Standard in light mode.
+    }
   });
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
 
   try {
+    // The Cohort Explorer is the app root ("/"); there is no separate "/filters" route.
     await gotoRoute(page, "/");
-    await page.getByRole("heading", { name: "DeepPhe Visualizer v2", exact: true }).first().waitFor({
+    await page.locator("[data-testid='filters-page-heading']").first().waitFor({
       state: "visible",
-      timeout: 10000,
-    });
-    await withCapture(page, {
-      file: "01-home.png",
-      route: "/",
-      target: "Home route",
-      fallbackFullPage: false,
-      run: async () => {
-        await captureViewport(page, "01-home.png", false);
-      },
-    });
-
-    await gotoRoute(page, "/filters");
-    await page.getByRole("heading", { name: "Patient Cohort Explorer", exact: true }).first().waitFor({
-      state: "visible",
-      timeout: 15000,
+      timeout: 20000,
     });
 
     await withCapture(page, {
       file: "02-filters-overview.png",
-      route: "/filters",
+      route: "/",
       target: "Filters overview",
       fallbackFullPage: false,
       run: async () => {
@@ -584,128 +478,89 @@ async function run() {
       },
     });
 
-    await toggleCardHeightStates(page);
-
     await withCapture(page, {
       file: "03-identified-patients-panel.png",
-      route: "/filters",
+      route: "/",
       target: "Identified Patients panel",
       fallbackFullPage: false,
       run: async () => {
-        const panel = page
-          .getByRole("heading", { name: "Identified Patients", exact: true })
-          .first()
-          .locator("xpath=ancestor::div[contains(@class,'MuiPaper-root')][1]");
+        const panel = page.locator("[data-testid='identified-patients-panel']").first();
         await captureLocatorOrFallback(page, panel, "03-identified-patients-panel.png", false);
       },
     });
 
+    // Secondary (Reference) shot: the display/theme selector for the display-settings page.
     await withCapture(page, {
       file: "04-theme-selector-open.png",
-      route: "/filters",
+      route: "/",
       target: "Theme selector menu open",
       fallbackFullPage: false,
       run: async () => {
         await openThemeMenu(page);
         await captureViewport(page, "04-theme-selector-open.png", false);
+        await page.keyboard.press("Escape").catch(() => {});
+        await sleep(250);
       },
     });
 
-    await withCapture(page, {
-      file: "05-theme-obsidian.png",
-      route: "/filters",
-      target: "Theme switched to Obsidian",
-      fallbackFullPage: false,
-      run: async () => {
-        await chooseTheme(page, "Obsidian");
-        await captureViewport(page, "05-theme-obsidian.png", false);
-      },
-    });
-
-    await withCapture(page, {
-      file: "06-theme-solstice.png",
-      route: "/filters",
-      target: "Theme switched to Solstice",
-      fallbackFullPage: false,
-      run: async () => {
-        await chooseTheme(page, "Solstice");
-        await captureViewport(page, "06-theme-solstice.png", false);
-      },
-    });
-
-    await withCapture(page, {
-      file: "07-theme-vapor.png",
-      route: "/filters",
-      target: "Theme switched to Vapor",
-      fallbackFullPage: false,
-      run: async () => {
-        await chooseTheme(page, "Vapor");
-        await captureViewport(page, "07-theme-vapor.png", false);
-      },
-    });
-
-    await captureFilterSetViewport(page, "08-filterset-demographics.png", "Demographics");
+    // Cohort filtering: one representative filter card.
     await captureFilterCard(page, "09-filter-age-at-dx.png", "Age at Dx");
-    await captureFilterCard(page, "10-filter-race.png", "Race");
-    await captureFilterCard(page, "11-filter-gender.png", "Gender");
-    await captureFilterCard(page, "12-filter-ethnicity.png", "Ethnicity");
-
-    await captureFilterSetViewport(page, "13-filterset-cancer-type.png", "Cancer Type");
-    await captureFilterCard(page, "14-filter-cancer.png", "Cancer");
-
-    await captureFilterSetViewport(page, "15-filterset-staging.png", "Staging");
-    await captureFilterCard(page, "16-filter-stage.png", "Stage");
-    await captureFilterCard(page, "17-filter-t-stage.png", "T Stage");
-    await captureFilterCard(page, "18-filter-n-stage.png", "N Stage");
-    await captureFilterCard(page, "19-filter-m-stage.png", "M Stage");
-    await captureFilterCard(page, "20-filter-lymph-involvement.png", "Lymph Involvement");
 
     const activeSelection = await activateFilterSelection(page);
     await withCapture(page, {
       file: "21-filter-selection-active-state.png",
-      route: "/filters",
+      route: "/",
       target: "Active filter selection state",
       fallbackFullPage: false,
       run: async () => {
         if (!activeSelection.activated) {
-          throw new Error("Could not activate any filter value on /filters");
+          throw new Error("Could not activate any filter value on the Cohort Explorer");
         }
 
-        const card = filterCardLocator(page, activeSelection.cardName);
-        await captureLocatorOrFallback(page, card, "21-filter-selection-active-state.png", false);
+        await captureLocatorOrFallback(
+          page,
+          activeSelection.card,
+          "21-filter-selection-active-state.png",
+          false
+        );
       },
     });
-
-    if (!activeSelection.activated) {
-      summary.runtimeNotes.push(
-        "No selectable filter values were available on /filters; active-state capture uses fallback viewport content."
-      );
-    }
 
     await capturePatientDetailsSeries(page);
     await captureEmbeddedPatientViewSeries(page);
 
-    await captureRouteViewport(page, "/debug", "Debug View", "30-debug-view.png");
-    await captureRouteViewport(page, "/accessibility", "Accessibility Statement", "31-accessibility-view.png");
-
+    // Post-run validation: every targeted screenshot must exist on disk.
     for (const file of SCREENSHOT_ORDER) {
-      await fs.access(filePath(file)).catch(() => {
-        summary.missingStates.push({
+      const exists = await fs
+        .access(filePath(file))
+        .then(() => true)
+        .catch(() => false);
+      if (!exists && !failures.some((entry) => entry.file === file)) {
+        failures.push({
           file,
           route: "n/a",
           target: "Post-run validation",
-          status: "fallback",
+          status: "failed",
           note: "Screenshot file was not generated.",
         });
-      });
+      }
     }
 
     await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
 
-    const missingCount = summary.missingStates.length;
     const total = SCREENSHOT_ORDER.length;
-    console.log(`Capture complete. Screenshots targeted: ${total}. Missing/fallback states: ${missingCount}.`);
+    console.log(`Capture complete. Feature screenshots targeted: ${total}. Issues: ${failures.length}.`);
     console.log(`Summary written to ${SUMMARY_PATH}`);
+
+    if (failures.length > 0) {
+      const detail = failures
+        .map((entry) => `- ${entry.file}: ${entry.note || "could not be captured as intended"}`)
+        .join("\n");
+      throw new Error(
+        `One or more feature screenshots could not be captured cleanly:\n${detail}\n` +
+          "Fix the app state or selectors and re-run before publishing the guide."
+      );
+    }
   } finally {
     await context.close();
     await browser.close();
@@ -713,9 +568,8 @@ async function run() {
 }
 
 run().catch(async (error) => {
-  summary.runtimeNotes.push(`Fatal capture error: ${error instanceof Error ? error.message : String(error)}`);
   await ensureOutput();
-  await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
-  console.error(error);
+  await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2)).catch(() => {});
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

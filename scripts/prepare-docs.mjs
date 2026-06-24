@@ -23,6 +23,8 @@ const SCREENSHOT_MAP = [
   ["23-patient-details-column-menu.png", "visible-patient-columns.png"],
   ["24-patient-details-expanded-row.png", "expanded-patient-row.png"],
   ["25-patient-details-empty-search.png", "patient-search-no-results.png"],
+  ["32-embedded-patient-drawer.png", "embedded-patient-view.png"],
+  ["33-patient-summary-card.png", "patient-summary-card.png"],
   ["04-theme-selector-open.png", "display-settings.png"],
 ];
 
