@@ -215,6 +215,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const [factSelection, setFactSelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectionContext, setSelectionContext] = useState(null);
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
+  const [cancerDetailWidth, setCancerDetailWidth] = useState(null);
+  const cancerResizeObserverRef = useRef(null);
   const omopRequestIdRef = useRef(0);
   const patientSummaryRequestIdRef = useRef(0);
   const [omopDetails, setOmopDetails] = useState(EMPTY_OMOP_DETAILS);
@@ -388,6 +391,30 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     [timelineData]
   );
 
+  const handleCloseDocument = useCallback(() => {
+    setSelectedDocumentId("");
+    setSelectionContext(null);
+  }, []);
+
+  // Track the Cancer & Tumor Detail panel's actual rendered width so Patient
+  // Summary can be sized to match it (it is content-sized, not a fixed %).
+  const registerCancerCell = useCallback((node) => {
+    if (cancerResizeObserverRef.current) {
+      cancerResizeObserverRef.current.disconnect();
+      cancerResizeObserverRef.current = null;
+    }
+    if (node && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver((entries) => {
+        const nextWidth = Math.round(entries[0]?.contentRect?.width || 0);
+        if (nextWidth > 0) {
+          setCancerDetailWidth(nextWidth);
+        }
+      });
+      observer.observe(node);
+      cancerResizeObserverRef.current = observer;
+    }
+  }, []);
+
   const handleSelectRelatedDocument = useCallback(
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
@@ -471,6 +498,29 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   if (!patientData) {
     return null;
   }
+
+  const hasSummary = patientSummarySections.length > 0;
+  const summaryCollapsed = hasSummary && isSummaryCollapsed;
+  // A collapsed summary with no open document only needs a slim rail, so the
+  // bottom region shrinks to it instead of holding a tall, mostly-empty box.
+  const bottomCollapsedAlone = summaryCollapsed && !selectedDocument;
+
+  let bottomGridColumnsLg;
+  if (summaryCollapsed) {
+    bottomGridColumnsLg = selectedDocument ? "48px minmax(0, 1fr)" : "48px";
+  } else if (hasSummary && selectedDocument) {
+    bottomGridColumnsLg = "minmax(280px, 1fr) minmax(0, 1.7fr)";
+  } else if (hasSummary) {
+    // No document open: single column; the box itself is capped to the measured
+    // Cancer & Tumor Detail width so the two left-hand panels line up.
+    bottomGridColumnsLg = "minmax(0, 1fr)";
+  } else {
+    bottomGridColumnsLg = "minmax(0, 1fr)";
+  }
+
+  // When only the (expanded) summary is showing, match Cancer & Tumor Detail's
+  // actual rendered width instead of a fixed percentage.
+  const matchCancerWidth = hasSummary && !summaryCollapsed && !selectedDocument;
 
   return (
     <Box
@@ -694,11 +744,13 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           display: "grid",
           gridTemplateColumns: {
             xs: "minmax(0, 1fr)",
-            lg: patientSummarySections.length > 0 ? "fit-content(62%) minmax(0, 1fr)" : "minmax(0, 1fr)",
+            lg: "fit-content(62%) minmax(0, 1fr)",
           },
           alignItems: "stretch",
-          flex: "0 1 auto",
-          minHeight: 0,
+          // Hold the intended height instead of shrinking when the drawer is
+          // short — otherwise the timeline cell collapses and scrolls internally.
+          flex: "0 0 auto",
+          minHeight: { xs: 0, lg: 360 },
           height: { xs: "auto", lg: 360 },
           border: 1,
           borderColor: "divider",
@@ -710,6 +762,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       >
         {/* Cancer and Tumor Detail */}
         <Box
+          ref={registerCancerCell}
           sx={{
             minWidth: 0,
             minHeight: 0,
@@ -718,7 +771,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             justifySelf: { lg: "start" },
             width: { lg: "fit-content" },
             maxWidth: { lg: "100%" },
-            overflowY: { xs: "visible", lg: "auto" },
+            // Let the card scroll internally (like the Patient Summary panel)
+            // rather than clipping its overflow at this wrapper.
+            overflow: "hidden",
           }}
         >
           <CancerTumorSummaryCard
@@ -728,49 +783,22 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             selectedDocumentId={selectedDocumentId}
             onFactSelect={handleFactSelect}
             onSelectDocument={handleSelectRelatedDocument}
-            contentAutoHeight
           />
         </Box>
 
-        {/* Patient Summary */}
-        {patientSummarySections.length > 0 ? (
-          <Box
-            sx={{
-              minWidth: 0,
-              minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              borderTop: { xs: 1, lg: 0 },
-              borderLeft: { lg: 1 },
-              borderColor: "divider",
-            }}
-          >
-            <PatientSummaryCard sections={patientSummarySections} />
-          </Box>
-        ) : null}
-      </Box>
-
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: { xs: 0, lg: 220 },
-          display: "grid",
-          gridTemplateColumns: {
-            xs: "minmax(0, 1fr)",
-            lg: selectedDocument ? "300px minmax(0, 2fr)" : "300px",
-          },
-          alignItems: "stretch",
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1,
-          overflow: "hidden",
-          mx: 1.5,
-          mb: 1.5,
-        }}
-      >
-        {/* Document Timeline */}
-        <Box sx={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Patient Document Timeline */}
+        <Box
+          sx={{
+            minWidth: 0,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            borderTop: { xs: 1, lg: 0 },
+            borderLeft: { lg: 1 },
+            borderColor: "divider",
+          }}
+        >
           <PatientDocumentsCard
             embedded
             timelineData={timelineData}
@@ -779,31 +807,69 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             onSelectDocument={handleSelectDocumentFromTimeline}
           />
         </Box>
-
-        {/* Document Viewer */}
-        {selectedDocument ? (
-          <Box
-            sx={{
-              minWidth: 0,
-              minHeight: 0,
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              borderTop: { xs: 1, lg: 0 },
-              borderLeft: { lg: 1 },
-              borderColor: "divider",
-            }}
-          >
-            <PatientDocumentViewerCard
-              embedded
-              document={selectedDocument}
-              concepts={patientData.concepts}
-              factSelection={factSelection}
-              selectionContext={selectionContext}
-            />
-          </Box>
-        ) : null}
       </Box>
+
+      {hasSummary || selectedDocument ? (
+        <Box
+          sx={{
+            flex: bottomCollapsedAlone ? "0 0 auto" : 1,
+            minHeight: bottomCollapsedAlone ? 0 : { xs: 0, lg: 220 },
+            width: bottomCollapsedAlone ? { lg: "fit-content" } : undefined,
+            maxWidth: matchCancerWidth
+              ? { lg: cancerDetailWidth ? `${cancerDetailWidth}px` : "62%" }
+              : undefined,
+            alignSelf: matchCancerWidth ? { lg: "flex-start" } : undefined,
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "minmax(0, 1fr)",
+              lg: bottomGridColumnsLg,
+            },
+            alignItems: "stretch",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            overflow: "hidden",
+            mx: 1.5,
+            mb: 1.5,
+          }}
+        >
+          {/* Patient Summary */}
+          {hasSummary ? (
+            <Box sx={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <PatientSummaryCard
+                sections={patientSummarySections}
+                collapsed={isSummaryCollapsed}
+                onToggleCollapse={() => setIsSummaryCollapsed((previous) => !previous)}
+              />
+            </Box>
+          ) : null}
+
+          {/* Document Viewer */}
+          {selectedDocument ? (
+            <Box
+              sx={{
+                minWidth: 0,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                borderTop: { xs: hasSummary ? 1 : 0, lg: 0 },
+                borderLeft: { lg: hasSummary ? 1 : 0 },
+                borderColor: "divider",
+              }}
+            >
+              <PatientDocumentViewerCard
+                embedded
+                document={selectedDocument}
+                concepts={patientData.concepts}
+                factSelection={factSelection}
+                selectionContext={selectionContext}
+                onClose={handleCloseDocument}
+              />
+            </Box>
+          ) : null}
+        </Box>
+      ) : null}
     </Box>
   );
 }

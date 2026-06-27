@@ -6,6 +6,29 @@ export const FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT = Object.freeze({
   xl: 6,
 });
 
+// Minimum on-screen widths used to cap how finely the breakpoint-based column
+// counts may subdivide the available space. These keep filter cards readable
+// (titles, bars, and counts not cut off) regardless of viewport width.
+export const FILTER_SECTION_LANE_MIN_WIDTH_PX = 460;
+export const FILTER_CARD_MIN_WIDTH_PX = 240;
+
+/**
+ * Reduce a configured column count so each resulting column is at least
+ * `minColumnWidthPx` wide given `availableWidthPx`. When the available width is
+ * unknown (0) the configured cap is returned unchanged.
+ * @returns {number}
+ */
+export function capColumnsByWidth(configuredColumns, availableWidthPx, minColumnWidthPx) {
+  const cap = Math.max(1, Math.floor(Number(configuredColumns) || 1));
+  const width = Number(availableWidthPx) || 0;
+  const minWidth = Math.max(1, Number(minColumnWidthPx) || 1);
+  if (width <= 0) {
+    return cap;
+  }
+  const widthCap = Math.max(1, Math.floor(width / minWidth));
+  return Math.max(1, Math.min(cap, widthCap));
+}
+
 export const FILTER_SECTION_LABEL_SX = {
   display: "block",
   fontSize: "0.85rem",
@@ -50,7 +73,7 @@ export const FILTER_SET_CARD_COLUMN_CAP_BY_ID = Object.freeze({
   staging: { xs: 1, sm: 2, md: 2, lg: 3, xl: 3 },
   pathology: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
   biomarkers: { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
-  treatment: { xs: 1, sm: 1, md: 2, lg: 5, xl: 5 },
+  treatment: { xs: 1, sm: 1, md: 2, lg: 3, xl: 3 },
   "clinical-status": { xs: 1, sm: 1, md: 2, lg: 2, xl: 3 },
   "uncategorized-omop": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },
   "uncategorized-attributes": { xs: 1, sm: 1, md: 2, lg: 2, xl: 2 },

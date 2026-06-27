@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useMemo, useRef, useState, useId } from "react";
 import PropTypes from "prop-types";
-import { Box, Typography, useTheme } from "@mui/material";
+import { Box, Tooltip, Typography, useTheme } from "@mui/material";
 import PatientSummaryTooltip from "./PatientSummaryTooltip";
 import BarFilterHeader from "./horizontalBarFilter/BarFilterHeader";
 import {
@@ -133,6 +133,7 @@ function HorizontalBarFilter({
   showSortCycleButton = true,
   customSortOrder = [],
   inlinePatientIdsThreshold = 0,
+  showBarBehindDots = false,
   getPatientSummary,
   onOpenPatientDocumentView,
   barRegionScale = 1,
@@ -834,7 +835,16 @@ function HorizontalBarFilter({
                 const valueLabel = formatCountLabel(row.value, row.includedValue);
                 const shortLabel = truncateLabel(row.displayLabel, maxLabelCharacters);
                 const isSelected = selectedSet.has(row.label);
-                const isDisabled = row.value === 0 && isInteractive;
+                // A row whose included (numerator) count is 0 matches no patients
+                // under the current selection, so choosing it would filter the
+                // cohort down to nothing — treat it as unselectable. Rows with no
+                // data at all (value 0) are likewise disabled. An already-selected
+                // row is never disabled, so it can always be toggled back off.
+                const numericIncludedValue = Number(row.includedValue);
+                const isExcludedByCurrentFilters =
+                  Number.isFinite(numericIncludedValue) && numericIncludedValue === 0;
+                const isDisabled =
+                  isInteractive && !isSelected && (row.value === 0 || isExcludedByCurrentFilters);
 
                 const showPatientDots = shouldShowPatientDots(row, inlinePatientIdsThreshold);
                 const dotPatientIds = showPatientDots ? toDotPatientIds(row) : [];
@@ -984,7 +994,11 @@ function HorizontalBarFilter({
                       fill={barTrackColor}
                     />
 
-                    {/* Bar fill */}
+                    {/* Bar fill. Normally the full proportional bar. When the
+                        row renders as patient dots, the bar is hidden unless the
+                        "bars behind dots" option is on — then the same
+                        proportional bar is drawn behind the dots at half the
+                        dots' opacity, so the dots stay the dominant mark. */}
                     {!showPatientDots ? (
                       <rect
                         className="horizontal-bar-filter-row-bar"
@@ -998,6 +1012,18 @@ function HorizontalBarFilter({
                       >
                         <title>{tooltipText}</title>
                       </rect>
+                    ) : showBarBehindDots ? (
+                      <rect
+                        className="horizontal-bar-filter-row-bar horizontal-bar-filter-row-bar-behind-dots"
+                        x={barStartX}
+                        y={barY}
+                        width={barWidth}
+                        height={barHeight}
+                        rx={2}
+                        fill={rowFillColor}
+                        fillOpacity={patientDotOpacity * 0.5}
+                        pointerEvents="none"
+                      />
                     ) : null}
 
                     <text
@@ -1015,7 +1041,21 @@ function HorizontalBarFilter({
                       {valueLabel}
                     </text>
 
-                    {/* Interactive overlay */}
+                    {/* Interactive overlay. Wrapped in an MUI Tooltip so the
+                        full (untruncated) attribute label shows immediately on
+                        hover. It replaces a native SVG <title>, which had a
+                        slow, browser-controlled delay and was skipped entirely
+                        for patient-dot rows. describeChild keeps the rect's own
+                        aria-label as the accessible name. */}
+                    <Tooltip
+                      title={String(row.displayLabel)}
+                      placement="top"
+                      describeChild
+                      followCursor
+                      enterDelay={0}
+                      enterNextDelay={0}
+                      enterTouchDelay={0}
+                    >
                     <rect
                       className="horizontal-bar-filter-row-overlay"
                       x={0}
@@ -1026,7 +1066,9 @@ function HorizontalBarFilter({
                       role={isInteractive && !isDisabled ? "button" : undefined}
                       aria-label={
                         isInteractive
-                          ? `${row.displayLabel}: ${valueLabel}. ${isSelected ? "Selected" : "Not selected"}.`
+                          ? isDisabled
+                            ? `${row.displayLabel}: ${valueLabel}. Unavailable — no patients match the current filters.`
+                            : `${row.displayLabel}: ${valueLabel}. ${isSelected ? "Selected" : "Not selected"}.`
                           : undefined
                       }
                       aria-pressed={isInteractive ? isSelected : undefined}
@@ -1072,9 +1114,8 @@ function HorizontalBarFilter({
                             }
                           : undefined
                       }
-                    >
-                      {!showPatientDots ? <title>{tooltipText}</title> : null}
-                    </rect>
+                    />
+                    </Tooltip>
                     {showPatientDots
                       ? dotPatientIds.map((patientId, dotIndex) => {
                           const dotCenterX =
@@ -1249,6 +1290,7 @@ HorizontalBarFilter.propTypes = {
   showSortCycleButton: PropTypes.bool,
   customSortOrder: PropTypes.arrayOf(PropTypes.string),
   inlinePatientIdsThreshold: PropTypes.number,
+  showBarBehindDots: PropTypes.bool,
   getPatientSummary: PropTypes.func,
   onOpenPatientDocumentView: PropTypes.func,
   barRegionScale: PropTypes.number,

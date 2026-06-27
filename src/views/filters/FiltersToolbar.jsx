@@ -14,9 +14,11 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import AlignHorizontalLeftIcon from "@mui/icons-material/AlignHorizontalLeft";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ContrastIcon from "@mui/icons-material/Contrast";
 import MotionPhotosOffIcon from "@mui/icons-material/MotionPhotosOff";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import PaletteOutlinedIcon from "@mui/icons-material/PaletteOutlined";
 import RemoveIcon from "@mui/icons-material/Remove";
 import ViewColumnIcon from "@mui/icons-material/ViewColumn";
@@ -37,6 +39,10 @@ const DENSITY_CONTROLS_VISIBLE = false;
 
 export default function FiltersToolbar({
   spacingUnits = 1,
+  totalPatientCount = null,
+  selectedPatientCount = 0,
+  hasActiveFilters = false,
+  isSelectedCountLoading = false,
   fontScalePercentLabel = "100%",
   canDecreaseFontScale = false,
   canIncreaseFontScale = false,
@@ -45,6 +51,8 @@ export default function FiltersToolbar({
   onToggleHighContrast = undefined,
   reducedMotion = false,
   onToggleReducedMotion = undefined,
+  showBarBehindDots = false,
+  onToggleShowBarBehindDots = undefined,
   onResetAllFilters = undefined,
   canResetAllFilters = false,
   filterLayoutToggleTooltip = "",
@@ -63,6 +71,26 @@ export default function FiltersToolbar({
   themeEditorMenuValue = "__theme-builder__",
   homeRoute = "/debug",
 }) {
+  const hasTotalPatientCount = Number.isFinite(totalPatientCount);
+  const formattedTotalPatientCount = hasTotalPatientCount ? totalPatientCount.toLocaleString() : null;
+  const formattedSelectedPatientCount = (Number(selectedPatientCount) || 0).toLocaleString();
+  // Accessible sentence read by screen readers via the aria-live region. Mirrors
+  // the visible text but spelled out, so the number is never left unexplained.
+  const patientCountAriaLabel = hasActiveFilters
+    ? hasTotalPatientCount
+      ? `${formattedSelectedPatientCount} of ${formattedTotalPatientCount} patients match the current filters`
+      : `${formattedSelectedPatientCount} patients match the current filters`
+    : hasTotalPatientCount
+      ? `Showing all ${formattedTotalPatientCount} patients in the dataset`
+      : null;
+  // Fuller explanation shown on hover/focus so a glance at the chip answers
+  // "7 patients — out of what?" without the user having to guess.
+  const patientCountTooltip = hasActiveFilters
+    ? hasTotalPatientCount
+      ? `${formattedSelectedPatientCount} of ${formattedTotalPatientCount} patients match the current filter selections.`
+      : `${formattedSelectedPatientCount} patients match the current filter selections.`
+    : "Total patients in the dataset. Select filter values to narrow your cohort.";
+
   return (
     <Box
       sx={{
@@ -131,6 +159,58 @@ export default function FiltersToolbar({
                 >
                   DeepPhe Patient Cohort Explorer
                 </Typography>
+                {patientCountAriaLabel ? (
+                  <Tooltip title={patientCountTooltip}>
+                    <Box
+                      role="status"
+                      aria-live="polite"
+                      aria-label={patientCountAriaLabel}
+                      data-testid="patient-count-readout"
+                      sx={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 0.625,
+                        px: 1,
+                        height: 28,
+                        border: 1,
+                        borderColor: "divider",
+                        borderRadius: 1,
+                        bgcolor: "background.paper",
+                        flexShrink: 0,
+                        cursor: "default",
+                        // Dim while a new cohort count is resolving so the number
+                        // visibly reads as "updating" rather than stale.
+                        opacity: hasActiveFilters && isSelectedCountLoading ? 0.55 : 1,
+                        transition: "opacity 0.15s ease",
+                      }}
+                    >
+                      <PeopleAltOutlinedIcon fontSize="small" sx={{ color: "text.secondary" }} aria-hidden="true" />
+                      <Typography
+                        component="span"
+                        variant="body2"
+                        aria-hidden="true"
+                        sx={{ color: "text.secondary", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+                      >
+                        {hasActiveFilters ? (
+                          <>
+                            <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
+                              {formattedSelectedPatientCount}
+                            </Box>
+                            {hasTotalPatientCount ? ` of ${formattedTotalPatientCount}` : ""} patients selected
+                          </>
+                        ) : (
+                          <>
+                            All{" "}
+                            <Box component="span" sx={{ fontWeight: 700, color: "text.primary" }}>
+                              {formattedTotalPatientCount}
+                            </Box>{" "}
+                            patients
+                          </>
+                        )}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                ) : null}
               </Box>
               <Box
                 sx={{
@@ -212,6 +292,21 @@ export default function FiltersToolbar({
                     sx={getToggleButtonSx(reducedMotion)}
                   >
                     <MotionPhotosOffIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title={showBarBehindDots ? "Bars behind dots (on)" : "Bars behind dots"}>
+                  <IconButton
+                    size="small"
+                    onClick={onToggleShowBarBehindDots}
+                    aria-label={
+                      showBarBehindDots
+                        ? "Hide bars behind patient dots"
+                        : "Show bars behind patient dots"
+                    }
+                    aria-pressed={showBarBehindDots}
+                    sx={getToggleButtonSx(showBarBehindDots)}
+                  >
+                    <AlignHorizontalLeftIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <Button
@@ -382,6 +477,10 @@ export default function FiltersToolbar({
 
 FiltersToolbar.propTypes = {
   spacingUnits: PropTypes.number,
+  totalPatientCount: PropTypes.number,
+  selectedPatientCount: PropTypes.number,
+  hasActiveFilters: PropTypes.bool,
+  isSelectedCountLoading: PropTypes.bool,
   fontScalePercentLabel: PropTypes.string,
   canDecreaseFontScale: PropTypes.bool,
   canIncreaseFontScale: PropTypes.bool,
@@ -390,6 +489,8 @@ FiltersToolbar.propTypes = {
   onToggleHighContrast: PropTypes.func,
   reducedMotion: PropTypes.bool,
   onToggleReducedMotion: PropTypes.func,
+  showBarBehindDots: PropTypes.bool,
+  onToggleShowBarBehindDots: PropTypes.func,
   onResetAllFilters: PropTypes.func,
   canResetAllFilters: PropTypes.bool,
   filterLayoutToggleTooltip: PropTypes.string,

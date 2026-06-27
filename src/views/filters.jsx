@@ -41,9 +41,12 @@ import FilterDetailModal from "./filters/FilterDetailModal";
 import ThemeBuilderDialog from "./filters/ThemeBuilderDialog";
 import FiltersToolbar from "./filters/FiltersToolbar";
 import {
+  FILTER_CARD_MIN_WIDTH_PX,
   FILTER_SECTION_COLUMN_CAP_BY_BREAKPOINT,
   FILTER_SECTION_LABEL_SX,
+  FILTER_SECTION_LANE_MIN_WIDTH_PX,
   FILTER_SECTION_LAYOUT_COLUMNS,
+  capColumnsByWidth,
   getFilterSetCardColumnsByBreakpoint,
   getFilterSetPriorityIndex,
   getOversizedRowThreshold,
@@ -177,10 +180,12 @@ function FiltersView() {
     isCompactPlusDensity,
     stackGapPx,
     slackDistributionMode,
+    showBarBehindDots,
     changeTheme,
     changeFontScale,
     toggleHighContrast,
     toggleReducedMotion,
+    toggleShowBarBehindDots,
     changeFilterPanelDensityMode,
     changeStackGapPx,
     changeSlackDistributionMode,
@@ -254,18 +259,43 @@ function FiltersView() {
       }),
     [isLgUp, isMdUp, isSmUp, isXlUp]
   );
+  // Measured width of the filter area, used to keep section lanes and filter
+  // cards from subdividing into columns too narrow to read.
+  const [filterAreaWidth, setFilterAreaWidth] = useState(0);
+  const filterAreaResizeObserverRef = useRef(null);
+  const registerFilterArea = useCallback((node) => {
+    if (filterAreaResizeObserverRef.current) {
+      filterAreaResizeObserverRef.current.disconnect();
+      filterAreaResizeObserverRef.current = null;
+    }
+    if (node && typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver((entries) => {
+        const nextWidth = Math.round(entries[0]?.contentRect?.width || 0);
+        if (nextWidth > 0) {
+          setFilterAreaWidth(nextWidth);
+        }
+      });
+      observer.observe(node);
+      filterAreaResizeObserverRef.current = observer;
+    }
+  }, []);
+
   const resolvedFilterSectionLayoutColumns = useMemo(
     () =>
-      resolveResponsiveColumnCap(
-        isCompactDensity ? FILTER_SECTION_LAYOUT_COLUMNS.compact : FILTER_SECTION_LAYOUT_COLUMNS.standard,
-        {
-          isSmUp,
-          isMdUp,
-          isLgUp,
-          isXlUp,
-        }
+      capColumnsByWidth(
+        resolveResponsiveColumnCap(
+          isCompactDensity ? FILTER_SECTION_LAYOUT_COLUMNS.compact : FILTER_SECTION_LAYOUT_COLUMNS.standard,
+          {
+            isSmUp,
+            isMdUp,
+            isLgUp,
+            isXlUp,
+          }
+        ),
+        filterAreaWidth,
+        FILTER_SECTION_LANE_MIN_WIDTH_PX
       ),
-    [isCompactDensity, isLgUp, isMdUp, isSmUp, isXlUp]
+    [filterAreaWidth, isCompactDensity, isLgUp, isMdUp, isSmUp, isXlUp]
   );
   const custom = useMemo(() => activeTheme.custom || {}, [activeTheme.custom]);
   const initialLoadStartRef = useRef(
@@ -294,6 +324,7 @@ function FiltersView() {
   const handleFontScaleChange = changeFontScale;
   const handleHighContrastToggle = toggleHighContrast;
   const handleReducedMotionToggle = toggleReducedMotion;
+  const handleShowBarBehindDotsToggle = toggleShowBarBehindDots;
   const handleFilterPanelDensityModeChange = useCallback(
     (event) => {
       changeFilterPanelDensityMode(
@@ -322,6 +353,12 @@ function FiltersView() {
   const omopData = useBatchDataLoader(getOmopSummaryForFilters, "OMOP");
   const attributeData = useBatchDataLoader(getAttributesSummaryForFilters, "Attributes");
   const conceptData = useBatchDataLoader(getConceptsSummaryForFilters, "Concepts");
+  // Dataset-wide total patient count, resolved once as the distinct union of
+  // patient IDs across every OMOP class. The bar summaries are intentionally
+  // loaded without patient IDs (for speed), so this is a dedicated one-shot
+  // fetch. Every patient carries OMOP demographics (gender, age at diagnosis),
+  // so the OMOP union covers the full corpus. `null` until resolved.
+  const [totalPatientCount, setTotalPatientCount] = useState(null);
   const [selectedOmopValuesByClass, setSelectedOmopValuesByClass] = useState({});
   const [selectedAttributeValuesByClass, setSelectedAttributeValuesByClass] = useState({});
   const [selectedConceptValuesByClass, setSelectedConceptValuesByClass] = useState({});
@@ -1384,6 +1421,67 @@ function FiltersView() {
     };
   }, [hasSelections, requestFilters]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const collectPatientIds = (rawValue, into) => {
+      if (Array.isArray(rawValue)) {
+        rawValue.forEach((id) => {
+          const trimmed = String(id ?? "").trim();
+          if (trimmed) {
+            into.add(trimmed);
+          }
+        });
+        return;
+      }
+      if (typeof rawValue === "string") {
+        rawValue
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .forEach((id) => into.add(id));
+        return;
+      }
+      if (rawValue !== undefined && rawValue !== null && rawValue !== "") {
+        const trimmed = String(rawValue).trim();
+        if (trimmed) {
+          into.add(trimmed);
+        }
+      }
+    };
+
+    const loadTotalPatientCount = async () => {
+      try {
+        const summary = await getOmopSummary({ includePatientIds: true });
+        if (!isActive) {
+          return;
+        }
+        const instancesByClass = summary?.instancesByClass || {};
+        const distinctPatientIds = new Set();
+        Object.values(instancesByClass).forEach((rows) => {
+          (Array.isArray(rows) ? rows : []).forEach((row) => {
+            collectPatientIds(
+              row?.patientIds ?? row?.patient_ids ?? row?.patientId ?? row?.patient_id,
+              distinctPatientIds
+            );
+          });
+        });
+        setTotalPatientCount(distinctPatientIds.size);
+      } catch (error) {
+        if (isActive) {
+          // Leave the total unresolved rather than showing a wrong number.
+          setTotalPatientCount(null);
+        }
+      }
+    };
+
+    loadTotalPatientCount();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const timing = useMemo(() => countResult?.timing || {}, [countResult?.timing]);
   const isSlowQuery = Number(timing.totalMs || 0) > SLOW_QUERY_THRESHOLD_MS;
   const zeroResultHint = countResult?.count === 0 ? getZeroResultHint(activeFilters, timing.itemCounts) : "";
@@ -1795,7 +1893,12 @@ function FiltersView() {
 
         return {
           ...row,
-          includedValue: includedCountByRowKey[rowKey],
+          // The included/total fraction in the count label is only meaningful
+          // once a filter narrows the cohort. Before any selection, leave it
+          // undefined so the row shows its plain count. (Included-count requests
+          // still run at startup to resolve patient dots — we just don't surface
+          // them as a numerator/denominator yet.)
+          includedValue: hasSelections ? includedCountByRowKey[rowKey] : undefined,
           patientIds: includedPatientIds.length > 0 ? includedPatientIds : normalizeInstanceValues(row?.patientIds),
         };
       });
@@ -1806,6 +1909,7 @@ function FiltersView() {
     ageAtDxDecileChartData,
     ageAtDxSelectionMode,
     chartDataByClass,
+    hasSelections,
     includedCountByRowKey,
     includedPatientIdsByRowKey,
     orderedOmopClasses,
@@ -1821,7 +1925,7 @@ function FiltersView() {
 
         return {
           ...row,
-          includedValue: includedCountByRowKey[rowKey],
+          includedValue: hasSelections ? includedCountByRowKey[rowKey] : undefined,
           patientIds: includedPatientIds.length > 0 ? includedPatientIds : normalizeInstanceValues(row?.patientIds),
         };
       });
@@ -1830,6 +1934,7 @@ function FiltersView() {
     return next;
   }, [
     attributeDisplayChartDataByClass,
+    hasSelections,
     includedCountByRowKey,
     includedPatientIdsByRowKey,
     orderedAttributeFilterClasses,
@@ -1845,14 +1950,20 @@ function FiltersView() {
 
         return {
           ...row,
-          includedValue: includedCountByRowKey[rowKey],
+          includedValue: hasSelections ? includedCountByRowKey[rowKey] : undefined,
           patientIds: includedPatientIds.length > 0 ? includedPatientIds : normalizeInstanceValues(row?.patientIds),
         };
       });
     });
 
     return next;
-  }, [conceptDisplayChartDataByClass, includedCountByRowKey, includedPatientIdsByRowKey, orderedConceptClasses]);
+  }, [
+    conceptDisplayChartDataByClass,
+    hasSelections,
+    includedCountByRowKey,
+    includedPatientIdsByRowKey,
+    orderedConceptClasses,
+  ]);
   const getChartDataForDensity = useCallback(
     (rows, filterType, className) => withCompactFilterLabels(rows, filterType, className, isCompactDensity),
     [isCompactDensity]
@@ -2385,10 +2496,17 @@ function FiltersView() {
       isLgUp,
       isXlUp,
     });
-    if (isPerCardColumnLayout && !isCompactPlusDensity) {
-      return sectionColumnCaps;
-    }
-    return Math.min(sectionColumnCaps, Math.max(1, Number(resolvedSectionColumnCap) || 1));
+    const breakpointCap =
+      isPerCardColumnLayout && !isCompactPlusDensity
+        ? sectionColumnCaps
+        : Math.min(sectionColumnCaps, Math.max(1, Number(resolvedSectionColumnCap) || 1));
+    // Each section lane gets roughly an equal slice of the filter area, so cap
+    // card columns to keep each card at least FILTER_CARD_MIN_WIDTH_PX wide.
+    const approxLaneWidth =
+      filterAreaWidth > 0
+        ? filterAreaWidth / Math.max(1, resolvedFilterSectionLayoutColumns)
+        : 0;
+    return capColumnsByWidth(breakpointCap, approxLaneWidth, FILTER_CARD_MIN_WIDTH_PX);
   };
   const getFilterSectionColumnSx = (span = null) => {
     void span;
@@ -2605,6 +2723,7 @@ function FiltersView() {
             fontScale={fontScale}
             customSortOrder={customSortOrder}
             inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+            showBarBehindDots={showBarBehindDots}
             getPatientSummary={getPatientSummary}
             onOpenPatientDocumentView={handleOpenPatientTab}
             onOpenFilterModal={handleOpenFilterModal}
@@ -2658,16 +2777,6 @@ function FiltersView() {
 
   const renderOmopFilterSet = (filterSet, keyPrefix = "omop", { inlineAttributeFilterSets = [] } = {}) => {
     const renderedFilters = filterSet.filters;
-    const sectionHasData = renderedFilters.some((filter) => {
-      const className = filter.key;
-      const isAgeAtDxClass = normalizeClassName(className) === AGE_AT_DX_CLASS;
-      const classData =
-        isAgeAtDxClass && ageAtDxSelectionMode === AGE_SELECTION_MODE.DECILE
-          ? ageAtDxDecileChartData
-          : chartDataByClass[className] || [];
-      const classChartData = omopChartDataWithIncludedByClass[className] || classData;
-      return Array.isArray(classChartData) && classChartData.length > 0;
-    });
     const classChartDataByClass = {};
     renderedFilters.forEach((filter) => {
       const className = filter.key;
@@ -2776,6 +2885,7 @@ function FiltersView() {
           fontScale={fontScale}
           customSortOrder={customSortOrder}
           inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+          showBarBehindDots={showBarBehindDots}
           getPatientSummary={getPatientSummary}
           onOpenPatientDocumentView={handleOpenPatientTab}
           onOpenFilterModal={handleOpenFilterModal}
@@ -2837,12 +2947,6 @@ function FiltersView() {
         <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
           {filterSet.label}
         </Typography>
-        {cohortSize > 0 && sectionHasData ? (
-          <Typography variant="caption" color="text.secondary">
-            Showing filter values for {cohortSize.toLocaleString()} matched patient
-            {cohortSize === 1 ? "" : "s"}
-          </Typography>
-        ) : null}
         <Masonry
           className="filter-section-grid"
           data-column-cap={JSON.stringify(omopGridColumns)}
@@ -2885,14 +2989,6 @@ function FiltersView() {
 
   const renderAttributeFilterSet = (filterSet, keyPrefix = "attributes") => {
     const renderedFilters = filterSet.filters;
-    const sectionHasData = renderedFilters.some((filter) => {
-      const className = filter.key;
-      const isConcept = String(filter.type || "").toLowerCase() === "concepts";
-      const classChartData = isConcept
-        ? conceptChartDataWithIncludedByClass[className] || conceptDisplayChartDataByClass[className] || []
-        : attributeChartDataWithIncludedByClass[className] || attributeDisplayChartDataByClass[className] || [];
-      return Array.isArray(classChartData) && classChartData.length > 0;
-    });
     const classChartDataByClass = {};
     renderedFilters.forEach((filter) => {
       const className = filter.key;
@@ -2926,12 +3022,6 @@ function FiltersView() {
         <Typography component="h2" variant="caption" sx={FILTER_SECTION_LABEL_SX}>
           {filterSet.label}
         </Typography>
-        {!isCompactDensity && cohortSize > 0 && sectionHasData ? (
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-            Showing filter values for {cohortSize.toLocaleString()} matched patient
-            {cohortSize === 1 ? "" : "s"}
-          </Typography>
-        ) : null}
         <Masonry
           className="filter-section-grid"
           data-column-cap={JSON.stringify(attributeGridColumns)}
@@ -2967,6 +3057,10 @@ function FiltersView() {
           <Stack spacing={2} sx={{ pb: patientGridDrawerBottomPadding }}>
             <FiltersToolbar
               spacingUnits={FILTER_PANEL_SPACING_UNITS}
+              totalPatientCount={totalPatientCount}
+              selectedPatientCount={cohortSize}
+              hasActiveFilters={hasSelections}
+              isSelectedCountLoading={isCountLoading}
               fontScalePercentLabel={fontScalePercentLabel}
               canDecreaseFontScale={canDecreaseFontScale}
               canIncreaseFontScale={canIncreaseFontScale}
@@ -2975,6 +3069,8 @@ function FiltersView() {
               onToggleHighContrast={handleHighContrastToggle}
               reducedMotion={reducedMotion}
               onToggleReducedMotion={handleReducedMotionToggle}
+              showBarBehindDots={showBarBehindDots}
+              onToggleShowBarBehindDots={handleShowBarBehindDotsToggle}
               onResetAllFilters={handleResetAllFilters}
               canResetAllFilters={canResetAllFilters}
               filterLayoutToggleTooltip={filterLayoutToggleTooltip}
@@ -3006,6 +3102,7 @@ function FiltersView() {
             {canRenderFilterSections ? (
               filterSectionsForDisplay.length > 0 ? (
                 <Masonry
+                  ref={registerFilterArea}
                   className="filter-set-layout-masonry"
                   columns={resolvedFilterSectionLayoutColumns}
                   spacing={FILTER_PANEL_SPACING_UNITS}
@@ -3127,6 +3224,7 @@ function FiltersView() {
               fontScale={fontScale}
               getPatientSummary={getPatientSummary}
               inlinePatientIdsThreshold={INLINE_PATIENT_IDS_THRESHOLD}
+              showBarBehindDots={showBarBehindDots}
             />
           </Stack>
         </Box>

@@ -26,6 +26,7 @@ import {
   Typography,
 } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import CloseIcon from "@mui/icons-material/Close";
 import {
   buildConfidenceHistogram,
   buildMentionHighlightModel,
@@ -560,6 +561,7 @@ export default function PatientDocumentViewerCard({
   factSelection = null,
   embedded = false,
   selectionContext = null,
+  onClose = undefined,
 }) {
   const NO_ENABLED_GROUP_SENTINEL = "__NO_ENABLED_GROUPS__";
   const [activeTab, setActiveTab] = useState(0);
@@ -792,6 +794,15 @@ export default function PatientDocumentViewerCard({
         sx={{ py: embedded ? 1 : undefined, px: embedded ? 1.5 : undefined }}
         titleTypographyProps={{ variant: titleVariant, sx: { fontWeight: 700 } }}
         subheaderTypographyProps={{ component: "div", variant: "caption" }}
+        action={
+          onClose ? (
+            <Tooltip title="Close document">
+              <IconButton size="small" aria-label="Close document" onClick={onClose}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : undefined
+        }
       />
       <Divider />
       <CardContent
@@ -876,7 +887,6 @@ export default function PatientDocumentViewerCard({
                         aria-label="Concept group legend"
                       >
                         {sortedGroupNames.map((groupName) => {
-                          const family = GROUP_FAMILY_BY_NAME[groupName] || groupName;
                           const prefix = getGroupPrefix(groupName);
                           const color = highlightModel.groupColorByName[groupName] || DEFAULT_GROUP_COLOR;
                           return (
@@ -901,7 +911,7 @@ export default function PatientDocumentViewerCard({
                                 color="text.secondary"
                                 sx={{ fontSize: "0.68rem" }}
                               >
-                                <strong>{prefix}</strong> {family}
+                                <strong>{prefix}</strong> · {groupName}
                               </Typography>
                             </Box>
                           );
@@ -1299,6 +1309,7 @@ PatientDocumentViewerCard.propTypes = {
     conceptIds: PropTypes.arrayOf(PropTypes.string),
   }),
   embedded: PropTypes.bool,
+  onClose: PropTypes.func,
   selectionContext: PropTypes.shape({
     source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document"]),
     documentType: PropTypes.string,

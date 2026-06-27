@@ -50,6 +50,7 @@ export default function FilterDetailModal({
   fontScale,
   getPatientSummary,
   inlinePatientIdsThreshold,
+  showBarBehindDots,
 }) {
   const title = activeFilterDetail?.classDisplayName || "Filter details";
   const isAscending = sortDirection === FILTER_SORT_DIRECTION.ASC;
@@ -120,6 +121,7 @@ export default function FilterDetailModal({
               defaultSort={activeFilterDetail?.sortMode || DEFAULT_FILTER_VALUE_SORT_MODE}
               customSortOrder={customSortOrder}
               inlinePatientIdsThreshold={inlinePatientIdsThreshold}
+              showBarBehindDots={showBarBehindDots}
               getPatientSummary={getPatientSummary}
             />
           ) : (
@@ -153,4 +155,5 @@ FilterDetailModal.propTypes = {
   fontScale: PropTypes.number,
   getPatientSummary: PropTypes.func,
   inlinePatientIdsThreshold: PropTypes.number,
+  showBarBehindDots: PropTypes.bool,
 };

@@ -17,6 +17,7 @@ function FilterSectionCard({
   fontScale = 1,
   customSortOrder = [],
   inlinePatientIdsThreshold = 20,
+  showBarBehindDots = false,
   getPatientSummary = undefined,
   onOpenPatientDocumentView = undefined,
   onOpenFilterModal = undefined,
@@ -106,6 +107,7 @@ function FilterSectionCard({
             defaultSort={sortMode}
             customSortOrder={customSortOrder}
             inlinePatientIdsThreshold={inlinePatientIdsThreshold}
+            showBarBehindDots={showBarBehindDots}
             getPatientSummary={getPatientSummary}
             onOpenPatientDocumentView={onOpenPatientDocumentView}
           />
@@ -129,6 +131,7 @@ FilterSectionCard.propTypes = {
   fontScale: PropTypes.number,
   customSortOrder: PropTypes.array,
   inlinePatientIdsThreshold: PropTypes.number,
+  showBarBehindDots: PropTypes.bool,
   getPatientSummary: PropTypes.func,
   onOpenPatientDocumentView: PropTypes.func,
   onOpenFilterModal: PropTypes.func,

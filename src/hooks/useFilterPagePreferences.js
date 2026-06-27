@@ -7,6 +7,7 @@ const REDUCED_MOTION_STORAGE_KEY = "filterPageReducedMotion";
 const COMPACT_MODE_STORAGE_KEY = "filterPageCompactMode";
 const STACK_GAP_STORAGE_KEY = "filterPageStackGapPx";
 const SLACK_MODE_STORAGE_KEY = "filterPageSlackMode";
+const SHOW_BAR_BEHIND_DOTS_STORAGE_KEY = "filterPageShowBarBehindDots";
 
 export const FONT_SCALE_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 export const STACK_GAP_OPTIONS = [2, 4, 6, 8, 12, 16];
@@ -76,13 +77,15 @@ function getInitialFontScale() {
   return 1;
 }
 
-function getInitialBooleanPref(storageKey) {
+function getInitialBooleanPref(storageKey, defaultValue = false) {
   try {
-    return localStorage.getItem(storageKey) === "true";
+    const stored = localStorage.getItem(storageKey);
+    if (stored === "true") return true;
+    if (stored === "false") return false;
   } catch {
     // localStorage unavailable
   }
-  return false;
+  return defaultValue;
 }
 
 function getInitialStackGapPx() {
@@ -148,6 +151,9 @@ export function useFilterPagePreferences() {
   const [slackDistributionMode, setSlackDistributionMode] = useState(
     getInitialSlackDistributionMode
   );
+  const [showBarBehindDots, setShowBarBehindDots] = useState(
+    () => getInitialBooleanPref(SHOW_BAR_BEHIND_DOTS_STORAGE_KEY, true)
+  );
 
   const changeTheme = useCallback((nextKey) => {
     if (!THEME_OPTIONS.some((option) => option.key === nextKey)) return;
@@ -178,6 +184,14 @@ export function useFilterPagePreferences() {
     setReducedMotion((prev) => {
       const next = !prev;
       tryLocalStorage(() => localStorage.setItem(REDUCED_MOTION_STORAGE_KEY, String(next)));
+      return next;
+    });
+  }, []);
+
+  const toggleShowBarBehindDots = useCallback(() => {
+    setShowBarBehindDots((prev) => {
+      const next = !prev;
+      tryLocalStorage(() => localStorage.setItem(SHOW_BAR_BEHIND_DOTS_STORAGE_KEY, String(next)));
       return next;
     });
   }, []);
@@ -222,10 +236,12 @@ export function useFilterPagePreferences() {
     isCompactPlusDensity: filterPanelDensityMode === FILTER_PANEL_DENSITY_MODE.COMPACT_PLUS,
     stackGapPx,
     slackDistributionMode,
+    showBarBehindDots,
     changeTheme,
     changeFontScale,
     toggleHighContrast,
     toggleReducedMotion,
+    toggleShowBarBehindDots,
     changeFilterPanelDensityMode,
     changeStackGapPx,
     changeSlackDistributionMode,

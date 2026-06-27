@@ -272,12 +272,11 @@ export default function PatientDocumentsCard({
                     border: 1,
                     borderColor: "divider",
                     borderRadius: 1,
-                    overflowX: "auto",
-                    overflowY: "hidden",
+                    overflow: "hidden",
                     bgcolor: "background.paper",
                     display: "flex",
                     justifyContent: "center",
-                    maxHeight: 200,
+                    maxHeight: 320,
                   }}
                 >
                   <svg
@@ -288,7 +287,6 @@ export default function PatientDocumentsCard({
                     style={{
                       width: "100%",
                       maxWidth: 1700,
-                      minWidth: 900,
                       height: "auto",
                       display: "block",
                     }}
@@ -351,7 +349,7 @@ export default function PatientDocumentsCard({
                             y={chartModel.dimensions.baselineY + 28}
                             textAnchor={tickTextAnchor}
                             fill="#3e3e3e"
-                            fontSize="11.5"
+                            fontSize="13.5"
                           >
                             {tick.label}
                           </text>

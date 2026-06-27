@@ -270,7 +270,11 @@ export default function CancerTumorSummaryCard({
         borderRadius: 0,
         display: "flex",
         flexDirection: "column",
-        maxHeight: "none",
+        // Fill the height the parent allots so the scrollable CardContent below
+        // (flex:1 + minHeight:0) is bounded and scrolls instead of clipping.
+        // Mirrors PatientSummaryCard, which scrolls correctly with this pattern.
+        height: "100%",
+        minHeight: 0,
         overflow: "hidden",
       }}
     >
