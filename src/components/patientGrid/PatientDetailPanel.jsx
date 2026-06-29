@@ -1,8 +1,14 @@
 import React from "react";
 import PropTypes from "prop-types";
-import { Box, Button, Chip, Typography } from "@mui/material";
+import { Box, Button, Chip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import Masonry from "@mui/lab/Masonry";
+
+// Responsive column counts for the detail Masonry. Kept as a named constant so
+// the SSR-fallback resolution below stays in sync with the `columns` prop.
+const DETAIL_PANEL_COLUMNS = { xs: 1, sm: 2, md: 3, lg: 4, xl: 5 };
+// Rough per-section height used only to seed Masonry's first-paint SSR layout.
+const DETAIL_PANEL_SECTION_HEIGHT_PX = 140;
 
 const DETAIL_SECTION_DEFINITIONS = [
   { key: "diagnoses", label: "Diagnoses" },
@@ -82,6 +88,24 @@ function getDetailNameStyle(item) {
 
 function DetailPanel({ row, onPatientOpen }) {
   const theme = useTheme();
+  // Resolve the responsive column count to a single number so Masonry's SSR
+  // fast path (defaultColumns/defaultHeight/defaultSpacing) can render a
+  // multi-column grid on first paint instead of flashing a single vertical
+  // column until its ResizeObserver measures children. Mirrors the breakpoint
+  // resolution used in the filters view.
+  const isSmUp = useMediaQuery(theme.breakpoints.up("sm"));
+  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const isLgUp = useMediaQuery(theme.breakpoints.up("lg"));
+  const isXlUp = useMediaQuery(theme.breakpoints.up("xl"));
+  const resolvedDetailColumns = isXlUp
+    ? DETAIL_PANEL_COLUMNS.xl
+    : isLgUp
+    ? DETAIL_PANEL_COLUMNS.lg
+    : isMdUp
+    ? DETAIL_PANEL_COLUMNS.md
+    : isSmUp
+    ? DETAIL_PANEL_COLUMNS.sm
+    : DETAIL_PANEL_COLUMNS.xs;
   const details = getDetailSections(row?.original?._raw);
   const patientId = String(row?.original?.patientId || "").trim();
   const canShowDocumentViewerButton = typeof onPatientOpen === "function" && Boolean(patientId);
@@ -159,8 +183,14 @@ function DetailPanel({ row, onPatientOpen }) {
     >
       {detailPanelHeader}
       <Masonry
-        columns={{ xs: 1, sm: 2, md: 3, lg: 4, xl: 5 }}
+        columns={DETAIL_PANEL_COLUMNS}
         spacing={1}
+        defaultColumns={Math.max(1, Math.min(resolvedDetailColumns, details.length))}
+        defaultSpacing={1}
+        defaultHeight={
+          Math.ceil(details.length / Math.max(1, Math.min(resolvedDetailColumns, details.length))) *
+          DETAIL_PANEL_SECTION_HEIGHT_PX
+        }
         sx={{
           m: 0,
           width: "100%",

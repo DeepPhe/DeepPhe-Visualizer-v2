@@ -143,6 +143,25 @@ function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
   return `${includePatientIds ? "withPatientIds" : "withoutPatientIds"}|${JSON.stringify(rowRequestFilters)}`;
 }
 
+// Per-lane height estimate for the outer section Masonry's first paint. See
+// toMasonryDefaultHeight for why this matters.
+const MASONRY_SECTION_LANE_DEFAULT_HEIGHT_PX = 420;
+
+// First-paint sizing for MUI Masonry's SSR fast path. Passing
+// defaultColumns + defaultHeight + defaultSpacing makes Masonry emit a CSS-only
+// multi-column layout on the very first paint. Without them, Masonry renders
+// `display:flex; flex-flow:column wrap` with NO container height until its
+// ResizeObserver measures children (deferred behind a requestAnimationFrame, so
+// after first paint). With no height to wrap against, every card collapses into
+// one vertical column, then snaps into the grid a frame later — the "filters
+// flash as a vertical line, then render normally" bug. defaultHeight only needs
+// to approximate one column's height; Masonry replaces it with the measured
+// height on mount, so steady-state layout is unchanged.
+function toMasonryDefaultHeight(estimatedColumnHeightPx, fallbackPx = 240) {
+  const numeric = Math.round(Number(estimatedColumnHeightPx) || 0);
+  return numeric > 0 ? numeric : fallbackPx;
+}
+
 const REDUCED_MOTION_STYLES = (
   <GlobalStyles
     styles={{
@@ -2953,6 +2972,9 @@ function FiltersView() {
           data-section-height-cap={sectionHeightCap}
           columns={omopGridColumns}
           spacing={FILTER_PANEL_SPACING_UNITS}
+          defaultColumns={omopGridColumns}
+          defaultSpacing={FILTER_PANEL_SPACING_UNITS}
+          defaultHeight={toMasonryDefaultHeight(sectionHeight)}
           sx={getFilterGridSx(sectionHeightCap)}
         >
           {compactPlusOmopColumns ||
@@ -3028,6 +3050,9 @@ function FiltersView() {
           data-section-height-cap={sectionHeightCap}
           columns={attributeGridColumns}
           spacing={FILTER_PANEL_SPACING_UNITS}
+          defaultColumns={attributeGridColumns}
+          defaultSpacing={FILTER_PANEL_SPACING_UNITS}
+          defaultHeight={toMasonryDefaultHeight(sectionHeight)}
           sx={getFilterGridSx(sectionHeightCap)}
         >
           {renderAttributeFilterCards(filterSet, keyPrefix, { sectionHeightCap })}
@@ -3106,6 +3131,13 @@ function FiltersView() {
                   className="filter-set-layout-masonry"
                   columns={resolvedFilterSectionLayoutColumns}
                   spacing={FILTER_PANEL_SPACING_UNITS}
+                  defaultColumns={resolvedFilterSectionLayoutColumns}
+                  defaultSpacing={FILTER_PANEL_SPACING_UNITS}
+                  defaultHeight={
+                    Math.ceil(
+                      filterSectionsForDisplay.length / Math.max(1, resolvedFilterSectionLayoutColumns)
+                    ) * MASONRY_SECTION_LANE_DEFAULT_HEIGHT_PX
+                  }
                   sequential
                   sx={{
                     m: 0,
