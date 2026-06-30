@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Alert,
   Box,
+  CircularProgress,
   CssBaseline,
   GlobalStyles,
   Stack,
@@ -282,7 +283,11 @@ function FiltersView() {
   // cards from subdividing into columns too narrow to read.
   const [filterAreaWidth, setFilterAreaWidth] = useState(0);
   const filterAreaResizeObserverRef = useRef(null);
+  // The filter-area DOM node, kept so the reveal-when-settled effect below can
+  // watch it for layout activity (the nested Masonry grids re-pack post-paint).
+  const filterAreaNodeRef = useRef(null);
   const registerFilterArea = useCallback((node) => {
+    filterAreaNodeRef.current = node || null;
     if (filterAreaResizeObserverRef.current) {
       filterAreaResizeObserverRef.current.disconnect();
       filterAreaResizeObserverRef.current = null;
@@ -391,7 +396,7 @@ function FiltersView() {
   const [countResult, setCountResult] = useState(null);
   const [includedCountByRowKey, setIncludedCountByRowKey] = useState({});
   const [includedPatientIdsByRowKey, setIncludedPatientIdsByRowKey] = useState({});
-  const [, setIsInitialIncludedCountsReady] = useState(false);
+  const [isInitialIncludedCountsReady, setIsInitialIncludedCountsReady] = useState(false);
   const includedPatientIdsByRowKeyRef = useRef({});
   const hasCompletedInitialIncludedCountsLoadRef = useRef(false);
   const [countError, setCountError] = useState("");
@@ -416,6 +421,15 @@ function FiltersView() {
   // last row" bug). Stays in sync with cardNaturalHeightByKey: written in the
   // same useLayoutEffect, frozen by the same data-card-height-override guard.
   const [cardDesiredHeightByKey, setCardDesiredHeightByKey] = useState({});
+  // Reveal gate: the filter sections mount (so they can be measured) but stay
+  // visually hidden until the layout stops moving. This keeps the user on
+  // "Loading filters…" through the burst of post-mount work — height
+  // measurement, column-width settle, chart-width settle, and the nested
+  // Masonry grids re-packing — and reveals one finished grid instead of empty
+  // bars and overlapping cards that shuffle into place. The flip is driven by
+  // the resize-quiet detector below (markFirstLayoutSettled).
+  const [hasSettledFirstLayout, setHasSettledFirstLayout] = useState(false);
+  const hasSettledFirstLayoutRef = useRef(false);
   const cardMeasureRefs = useRef({});
   const patientSummaryCacheRef = useRef(new Map());
   const rowCountResultCacheRef = useRef(new Map());
@@ -426,6 +440,15 @@ function FiltersView() {
 
     hasCompletedInitialIncludedCountsLoadRef.current = true;
     setIsInitialIncludedCountsReady(true);
+  }, []);
+
+  const markFirstLayoutSettled = useCallback(() => {
+    if (hasSettledFirstLayoutRef.current) {
+      return;
+    }
+
+    hasSettledFirstLayoutRef.current = true;
+    setHasSettledFirstLayout(true);
   }, []);
 
   useEffect(() => {
@@ -746,16 +769,24 @@ function FiltersView() {
   const attributeRootError = attributeData.errorMessage;
   const conceptRootError = conceptData.errorMessage;
   const hasDataErrors = !!(rootError || attributeRootError || conceptRootError);
-  // Gate on whether all three batch loaders have completed — not on the async
-  // per-row count pass (isInitialIncludedCountsReady). Waiting for the count
-  // pass creates a window where the loading indicator disappears but the filter
-  // sections haven't mounted yet, causing a visible blank flash. Showing
-  // sections as soon as base data is loaded is strictly better: bars render
-  // with total counts immediately, and included-count indicators appear once
-  // `loadIncludedCounts` finishes its async work.
+  // Sections can mount (so they can be measured) once all three batch loaders
+  // have completed. This does NOT mean they are shown yet — see the reveal gate
+  // below.
   const allBaseDataLoaded = !isLoading && !isAttributeLoading && !isConceptLoading;
-  const shouldShowFilterLoadingState = !hasDataErrors && !allBaseDataLoaded;
   const canRenderFilterSections = !hasDataErrors && allBaseDataLoaded;
+  // Reveal gate. Sections are mounted-but-hidden the whole time the indicator is
+  // up, so unlike the original "show as soon as base data loads" approach this
+  // never produces a blank flash. We hold the reveal until BOTH:
+  //   1. the layout has stopped moving (hasSettledFirstLayout) — hides the
+  //      post-mount churn (chart widths, card-height overrides, Masonry packing);
+  //   2. the first per-row count / patient-id pass is done
+  //      (isInitialIncludedCountsReady) — so the patient dots are already in
+  //      place at reveal instead of popping in afterward.
+  // A safety timeout (see the effect below) flips (2) on its own if that pass
+  // hangs, so a slow/failed network can never strand the grid on "Loading…".
+  const hasRevealedFilterSections =
+    canRenderFilterSections && hasSettledFirstLayout && isInitialIncludedCountsReady;
+  const shouldShowFilterLoadingState = !hasDataErrors && !hasRevealedFilterSections;
   const activeFilters = useMemo(
     () =>
       buildActiveFilters({
@@ -1349,6 +1380,105 @@ function FiltersView() {
     isPerCardColumnLayout,
     omopFilterSets,
   ]);
+
+  // Reveal the filter grid only once its layout has stopped moving. The three
+  // nested MUI Masonry grids (section lanes + the cards inside each section)
+  // each measure their children with a POST-paint ResizeObserver and then
+  // re-pack them, and our own per-card height overrides feed back into that
+  // measurement. Those passes land across several frames AFTER the cards first
+  // mount, so flipping the reveal on a single synchronous measurement un-hides
+  // the grid mid-shuffle — the overlapping-cards flash. Instead we watch the
+  // filter area for resize activity and reveal only after it has been quiet for
+  // two consecutive animation frames, with a safety timeout so the grid is
+  // never stranded hidden.
+  useEffect(() => {
+    if (!canRenderFilterSections || hasSettledFirstLayoutRef.current) {
+      return undefined;
+    }
+
+    const node = filterAreaNodeRef.current;
+    const canObserve =
+      node &&
+      typeof ResizeObserver !== "undefined" &&
+      typeof requestAnimationFrame === "function" &&
+      typeof cancelAnimationFrame === "function";
+
+    if (!canObserve) {
+      // No way to detect settling (SSR/jsdom/old browser) — reveal immediately
+      // rather than hang on the loading indicator.
+      markFirstLayoutSettled();
+      return undefined;
+    }
+
+    let isActive = true;
+    let quietFrameId = null;
+    let safetyTimerId = null;
+    let observer = null;
+
+    const cleanup = () => {
+      isActive = false;
+      if (quietFrameId !== null) {
+        cancelAnimationFrame(quietFrameId);
+        quietFrameId = null;
+      }
+      if (safetyTimerId !== null) {
+        clearTimeout(safetyTimerId);
+        safetyTimerId = null;
+      }
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
+
+    const reveal = () => {
+      if (!isActive) {
+        return;
+      }
+      cleanup();
+      markFirstLayoutSettled();
+    };
+
+    // A fresh resize cancels the pending two-frame countdown and restarts it,
+    // so this bridges the single-frame gaps between Masonry's successive
+    // layout passes and reveals only once the cascade has gone quiet.
+    const scheduleQuiet = () => {
+      if (quietFrameId !== null) {
+        cancelAnimationFrame(quietFrameId);
+      }
+      quietFrameId = requestAnimationFrame(() => {
+        quietFrameId = requestAnimationFrame(() => {
+          quietFrameId = null;
+          reveal();
+        });
+      });
+    };
+
+    observer = new ResizeObserver(scheduleQuiet);
+    observer.observe(node);
+    scheduleQuiet();
+    safetyTimerId = setTimeout(reveal, 800);
+
+    return cleanup;
+  }, [canRenderFilterSections, markFirstLayoutSettled]);
+
+  // Safety net for the dots half of the reveal gate. The reveal waits for the
+  // first per-row count / patient-id pass (markInitialIncludedCountsReady),
+  // which normally fires even on request failures. But a genuinely hung network
+  // could otherwise strand the grid on "Loading filters…" forever, so if that
+  // pass hasn't reported ready a few seconds after base data loads, mark it
+  // ready anyway and let the dots fill in whenever they arrive.
+  useEffect(() => {
+    if (!canRenderFilterSections || hasCompletedInitialIncludedCountsLoadRef.current) {
+      return undefined;
+    }
+
+    const timerId = setTimeout(() => {
+      markInitialIncludedCountsReady();
+    }, 6000);
+
+    return () => clearTimeout(timerId);
+  }, [canRenderFilterSections, markInitialIncludedCountsReady]);
 
   useEffect(() => {
     let isActive = true;
@@ -3115,19 +3245,57 @@ function FiltersView() {
             />
 
             {shouldShowFilterLoadingState ? (
-              <Typography variant="body2" color="text.secondary">
-                Loading filters...
-              </Typography>
+              <Box
+                role="status"
+                aria-live="polite"
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 2.5,
+                  width: "100%",
+                  minHeight: "70vh",
+                  textAlign: "center",
+                }}
+              >
+                <CircularProgress
+                  size={48}
+                  thickness={4}
+                  aria-hidden="true"
+                  sx={{
+                    // A loading spinner is essential feedback — a frozen one
+                    // reads as "hung" — so keep it spinning even when the app's
+                    // global reduced-motion reset flattens animation on every
+                    // element. That reset targets the universal selector, so
+                    // these class-scoped !important rules win on specificity.
+                    // No-ops when reduced motion is off (MUI's own values match).
+                    animationDuration: "1.4s !important",
+                    animationIterationCount: "infinite !important",
+                    "& .MuiCircularProgress-circle": {
+                      animationDuration: "1.4s !important",
+                      animationIterationCount: "infinite !important",
+                    },
+                  }}
+                />
+                <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                  Loading filters…
+                </Typography>
+              </Box>
             ) : null}
 
             {rootError ? <Alert severity="error">{rootError}</Alert> : null}
             {attributeRootError ? <Alert severity="error">{attributeRootError}</Alert> : null}
             {conceptRootError ? <Alert severity="error">{conceptRootError}</Alert> : null}
 
+            {/* Always-mounted width sensor: measuring the filter area while the
+                loading indicator is up means the column count is already
+                resolved when the sections mount, so they never reflow from a
+                width-0 first paint into the measured layout. */}
+            <Box ref={registerFilterArea} sx={{ width: "100%", minWidth: 0 }}>
             {canRenderFilterSections ? (
               filterSectionsForDisplay.length > 0 ? (
                 <Masonry
-                  ref={registerFilterArea}
                   className="filter-set-layout-masonry"
                   columns={resolvedFilterSectionLayoutColumns}
                   spacing={FILTER_PANEL_SPACING_UNITS}
@@ -3144,6 +3312,10 @@ function FiltersView() {
                     width: "100%",
                     maxWidth: "100%",
                     alignContent: "flex-start",
+                    // Mounted-but-hidden until the first measurement pass settles
+                    // (see hasSettledFirstLayout). visibility (not display) keeps
+                    // the cards laid out so they can be measured while hidden.
+                    visibility: hasRevealedFilterSections ? "visible" : "hidden",
                     "& > .filter-set-layout-item": {
                       minWidth: 0,
                       breakInside: "avoid",
@@ -3180,6 +3352,7 @@ function FiltersView() {
                 </Typography>
               )
             ) : null}
+            </Box>
             <PatientDrawer
               isVisible={isPatientGridDockVisible}
               isMaximized={isPatientGridDockMaximized}

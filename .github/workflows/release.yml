@@ -15,7 +15,6 @@ permissions:
 
 env:
   DIST_REPOSITORY: DeepPhe/DeepPhe-Dist
-  DIST_RELEASE_TAG: deepphe-visualizer-v2.0.0
   DIST_RELEASE_NAME: DeepPhe Visualizer v2.0.0
 
 jobs:
@@ -72,8 +71,10 @@ jobs:
     name: Publish DeepPhe-Dist release
     runs-on: ubuntu-latest
     needs: package
+    environment: DPHE 7.1
     env:
       GH_TOKEN: ${{ secrets.DEEPPHE_DIST_RELEASE_TOKEN }}
+      DPHE_VERSION: ${{ vars.DPHE_VERSION }}
 
     steps:
       - name: Require DeepPhe-Dist release token
@@ -104,6 +105,8 @@ jobs:
           } > RELEASE_NOTES.md
 
       - name: Publish release assets
+        env:
+          DIST_RELEASE_TAG: ${{ env.DPHE_VERSION }}
         shell: bash
         run: |
           set -euo pipefail

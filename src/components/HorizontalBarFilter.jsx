@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState, useId } from "react";
+import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useId } from "react";
 import PropTypes from "prop-types";
 import { Box, Tooltip, Typography, useTheme } from "@mui/material";
 import PatientSummaryTooltip from "./PatientSummaryTooltip";
@@ -178,7 +178,15 @@ function HorizontalBarFilter({
     availableSortModes
   );
 
-  useEffect(() => {
+  // Measure the chart container BEFORE paint. chartWidth starts at a fallback
+  // (FALLBACK_CHART_WIDTH) and the entire SVG geometry — bar start/width, count
+  // column position — is derived from it. If this ran as a post-paint useEffect,
+  // the chart would paint once at the fallback geometry and then snap to the
+  // measured width a frame later (the "bars jump into place after the cards
+  // appear" flash). useLayoutEffect resolves the real width before the first
+  // paint, so the chart's initial paint already uses the correct layout. The
+  // ResizeObserver below still handles later container resizes.
+  useLayoutEffect(() => {
     const element = chartContainerRef.current;
     if (!element) {
       return undefined;
