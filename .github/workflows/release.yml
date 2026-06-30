@@ -33,7 +33,7 @@ jobs:
             runner: macos-14       # Apple Silicon
             asset: deepphe-visualizer-v2-macos-arm64
           - target: node24-macos-x64
-            runner: macos-13       # Intel
+            runner: macos-15-intel # Intel
             asset: deepphe-visualizer-v2-macos-x64
           - target: node24-linux-x64
             runner: ubuntu-latest
