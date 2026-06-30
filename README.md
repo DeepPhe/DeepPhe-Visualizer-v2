@@ -6,7 +6,7 @@
 ![Material-UI](https://img.shields.io/badge/Material--UI-5.16-007FFF?logo=mui&logoColor=white)
 ![Node](https://img.shields.io/badge/Node-18+-339933?logo=node.js&logoColor=white)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/DeepPhe/DeepPhe-Visualizer-v2/graphs/commit-activity)
 
 A modern React application for medical data visualization and analysis, built with Material-UI and CRACO. DeepPhe Visualizer v2 is the next-generation visualization tool for cancer phenotype extraction and analysis.

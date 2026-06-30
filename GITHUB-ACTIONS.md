@@ -11,7 +11,7 @@ This repository has two workflows in [`.github/workflows/`](.github/workflows/):
 
 | You do this | What runs |
 |-------------|-----------|
-| Push commits to `main` | **CI** plus **Release** (builds the four binaries and updates the rolling `deepphe-visualizer-v2-main-latest` prerelease in `DeepPhe/DeepPhe-Dist`) |
+| Push commits to `main` | **CI** plus **Release** (builds the four binaries and updates the `deepphe-visualizer-v2.0.0` release in `DeepPhe/DeepPhe-Dist`) |
 | Push commits to `develop` | **CI** (lint, tests, app build, docs build) |
 | Open or update a pull request targeting `main` / `develop` | **CI** |
 
@@ -79,6 +79,6 @@ Each package job:
 After all package jobs finish, the `publish` job downloads the four artifacts
 and uploads them to `DeepPhe/DeepPhe-Dist` with `gh release upload --clobber`.
 Every successful run creates or updates the
-`deepphe-visualizer-v2-main-latest` prerelease in `DeepPhe/DeepPhe-Dist`, then
+`deepphe-visualizer-v2.0.0` release in `DeepPhe/DeepPhe-Dist`, then
 overwrites the four binary assets there. See
 [README.md](README.md#standalone-executable) for how to run them.

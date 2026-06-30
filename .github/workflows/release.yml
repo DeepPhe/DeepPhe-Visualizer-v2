@@ -15,8 +15,8 @@ permissions:
 
 env:
   DIST_REPOSITORY: DeepPhe/DeepPhe-Dist
-  DIST_RELEASE_TAG: deepphe-visualizer-v2-main-latest
-  DIST_RELEASE_NAME: DeepPhe Visualizer v2 main latest
+  DIST_RELEASE_TAG: deepphe-visualizer-v2.0.0
+  DIST_RELEASE_NAME: DeepPhe Visualizer v2.0.0
 
 jobs:
   package:
@@ -117,15 +117,14 @@ jobs:
             --repo "${DIST_REPOSITORY}"
             --title "${DIST_RELEASE_NAME}"
             --notes-file RELEASE_NOTES.md
-            --prerelease
-            --latest=false
+            --prerelease=false
+            --latest
           )
           create_flags=(
             --repo "${DIST_REPOSITORY}"
             --title "${DIST_RELEASE_NAME}"
             --notes-file RELEASE_NOTES.md
-            --prerelease
-            --latest=false
+            --latest
           )
 
           if gh release view "${DIST_RELEASE_TAG}" --repo "${DIST_REPOSITORY}" >/dev/null 2>&1; then

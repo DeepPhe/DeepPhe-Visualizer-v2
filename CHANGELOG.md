@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-29
+
 ### Added
 - Cohort Explorer filters view (`/`) with configurable filter sets, modal
   filter details, compact/compact-plus density modes, theme builder, and a
@@ -102,4 +104,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **2.0.0** - DeepPhe Visualizer v2 release (June 29, 2026)
 - **0.1.0** - Initial release (March 17, 2026)

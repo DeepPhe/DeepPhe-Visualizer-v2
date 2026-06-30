@@ -29,7 +29,7 @@ COPY --from=build /app/build ./build
 # Create optimized package.json for production
 RUN echo '{ \
   "name": "deepphe-visualizer-v2", \
-  "version": "0.1.0", \
+  "version": "2.0.0", \
   "dependencies": { \
     "express": "^5.1.0", \
     "compression": "^1.7.4" \
