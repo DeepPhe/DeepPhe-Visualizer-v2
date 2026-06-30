@@ -1509,27 +1509,21 @@ function FiltersView() {
     const loadCount = async () => {
       const filterSpan = startSpan("filter_query", "filter_query", {
         filterCount: requestFilters?.length ?? 0,
-        includePatientIds: false,
+        includePatientIds: true,
       });
 
       try {
-        let nextResult = normalizeCountResponse(
+        // Resolve the count and the patient IDs in a single round-trip. The
+        // patient drawer always needs the IDs, and the previous two-step pass
+        // (count, then a second request for IDs) doubled the latency to a
+        // populated drawer on every selection without ever showing the count
+        // earlier — setCountResult only fired after both requests resolved.
+        const nextResult = normalizeCountResponse(
           await fetchDeepPheFilterCount({
             filters: requestFilters,
-            includePatientIds: false,
+            includePatientIds: true,
           })
         );
-
-        const shouldAutoResolvePatientIds = nextResult.count > 0 && nextResult.patientIds.length === 0;
-
-        if (shouldAutoResolvePatientIds) {
-          nextResult = normalizeCountResponse(
-            await fetchDeepPheFilterCount({
-              filters: requestFilters,
-              includePatientIds: true,
-            })
-          );
-        }
 
         const successMeta = {
           resultCount: nextResult.count,

@@ -79,6 +79,7 @@ Each package job:
 After all package jobs finish, the `publish` job downloads the four artifacts
 and uploads them to `DeepPhe/DeepPhe-Dist` with `gh release upload --clobber`.
 Every successful run creates or updates the
-`deepphe-visualizer-v2.0.0` release in `DeepPhe/DeepPhe-Dist`, then
+`deepphe-visualizer-v2-<DPHE_VERSION>` release in `DeepPhe/DeepPhe-Dist`
+(for example, `deepphe-visualizer-v2-7.1`), then
 overwrites the four binary assets there. See
 [README.md](README.md#standalone-executable) for how to run them.

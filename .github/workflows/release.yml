@@ -15,7 +15,7 @@ permissions:
 
 env:
   DIST_REPOSITORY: DeepPhe/DeepPhe-Dist
-  DIST_RELEASE_NAME: DeepPhe Visualizer v2.0.0
+  PACKAGE_NAME: deepphe-visualizer-v2
 
 jobs:
   package:
@@ -106,7 +106,7 @@ jobs:
 
       - name: Publish release assets
         env:
-          DIST_RELEASE_TAG: ${{ env.DPHE_VERSION }}
+          DIST_RELEASE_TAG: ${{ env.PACKAGE_NAME }}-${{ env.DPHE_VERSION }}
         shell: bash
         run: |
           set -euo pipefail
@@ -118,14 +118,14 @@ jobs:
 
           edit_flags=(
             --repo "${DIST_REPOSITORY}"
-            --title "${DIST_RELEASE_NAME}"
+            --title "${PACKAGE_NAME} ${DPHE_VERSION}"
             --notes-file RELEASE_NOTES.md
             --prerelease=false
             --latest
           )
           create_flags=(
             --repo "${DIST_REPOSITORY}"
-            --title "${DIST_RELEASE_NAME}"
+            --title "${PACKAGE_NAME} ${DPHE_VERSION}"
             --notes-file RELEASE_NOTES.md
             --latest
           )
