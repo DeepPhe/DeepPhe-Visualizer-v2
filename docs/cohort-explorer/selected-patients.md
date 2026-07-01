@@ -1,52 +1,41 @@
 ---
-title: Review selected patients
-sidebar_label: Selected patients
+title: Selected Patients drawer
+sidebar_label: Selected Patients drawer
 ---
 
-# Review selected patients
+# Selected Patients drawer
 
-The Selected Patients drawer displays patient summaries for the current cohort.
+The **Selected Patients drawer** holds the patient-level view of your cohort: a table of matching patients and any individual patients you have opened.
 
-![Selected Patients drawer](../assets/screenshots/end-user/selected-patients-drawer.png)
+![The Selected Patients drawer with the cohort table, search, columns, export, and pagination](../assets/screenshots/end-user/selected-patients-drawer.png)
 
-## Drawer controls
+## When the drawer appears
 
-- **Minimize** collapses the drawer to its header.
-- **Restore** opens a minimized drawer.
-- **Maximize** expands the drawer to use most of the window.
-- Double-clicking a non-interactive part of the drawer header also toggles the maximized state.
-- **Escape** restores or minimizes the drawer.
+The drawer becomes available when there is something to show — that is, when filters are active and a result is being resolved, **or** when you have opened a patient from a [patient dot](patient-dots.md). A patient tab keeps the drawer visible even if no filters are active.
 
-## Search the loaded page
+## Above the drawer
 
-Use **Search patient details...** to search:
+The active-filter summary lists your current filter selections, each with a per-filter count, so you can see what defines the cohort at a glance.
 
-- patient ID;
-- demographics;
-- cancer type;
-- stage and grade;
-- diagnoses;
-- biomarkers;
-- treatments;
-- procedures; and
-- findings.
+## Tabs
 
-The search applies to the rows currently loaded in the drawer, not every page of the full cohort.
+The drawer opens on the **Selected Patients** table. Opening an individual patient adds a **patient tab** beside it. Select a tab to switch to it; select the close control (**×**) on a tab to close that patient. Opening a patient who already has a tab **focuses the existing tab** rather than creating a duplicate.
 
-![No matching patients](../assets/screenshots/end-user/patient-search-no-results.png)
+## Window controls
 
-## Sort and resize
+- **Minimize** collapses the drawer to its summary line.
+- **Restore** reopens a minimized drawer.
+- **Maximize** expands the drawer to fill most of the window; **Restore** returns it to normal size.
+- **Double-click** an empty part of the drawer header to toggle the maximized state.
+- **Escape** exits the maximized state, or collapses an expanded drawer.
 
-Select a column header to sort the loaded rows. Drag column boundaries to resize them.
+## Page size
 
-## Choose columns
+The drawer loads the cohort in pages:
 
-Open the column chooser to show or hide fields.
+- **10 patients per page** at normal size.
+- **40 patients per page** when maximized.
 
-![Visible patient columns](../assets/screenshots/end-user/visible-patient-columns.png)
+Because maximizing changes the page size, it reloads the current view and may reset you to the first page. Use the pagination controls to move between pages.
 
-The CSV export uses the currently visible columns.
-
-## Move between pages
-
-Use the pagination controls to load another page. The ordinary drawer loads 10 patients per page; the maximized drawer can load more rows.
+Next: work with the cohort table in [The Selected Patients table](patients-table.md).

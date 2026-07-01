@@ -47,6 +47,7 @@ async function waitFor(assertion, timeoutMs = 2000) {
 
 const baseRow = {
   patientId: "TEST-ID-001",
+  docCount: 17,
   ageAtDx: "52",
   gender: "female",
   race: "white",
@@ -65,6 +66,20 @@ const baseRow = {
 };
 
 describe("PatientGrid column sizing", () => {
+  it("shows the document count column", () => {
+    const { container, unmount } = renderComponent(
+      <PatientGrid embedded data={[baseRow]} totalCohortCount={1} cohortSize={1} />
+    );
+
+    const header = container.querySelector('thead th[data-column-id="docCount"]');
+    const cell = container.querySelector('tbody td[data-column-id="docCount"]');
+
+    expect(header?.textContent).toContain("Document Count");
+    expect(cell?.textContent).toBe("17");
+
+    unmount();
+  });
+
   it("renders drag handles for resizable columns", () => {
     const { container, unmount } = renderComponent(
       <PatientGrid embedded data={[baseRow]} totalCohortCount={1} cohortSize={1} />
@@ -111,6 +126,53 @@ describe("PatientGrid column sizing", () => {
 });
 
 describe("PatientGrid detail panel actions", () => {
+  it("shows the confidence slider and hides drawer findings below 50%", async () => {
+    const rowWithConfidenceDetails = {
+      ...baseRow,
+      patientId: "TEST-ID-CONFIDENCE",
+      _raw: {
+        diagnoses: [
+          { name: "High Confidence Finding", confidence: 0.9 },
+          { name: "Low Confidence Finding", confidence: 0.2 },
+        ],
+      },
+    };
+
+    const { container, unmount } = renderComponent(
+      <PatientGrid
+        embedded
+        data={[rowWithConfidenceDetails]}
+        totalCohortCount={1}
+        cohortSize={1}
+      />
+    );
+
+    const expandButton = container.querySelector('button[aria-label="Expand row details"]');
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    let slider = null;
+    await waitFor(() => {
+      slider = container.querySelector(
+        'input[aria-label="Minimum patient drawer finding confidence percent"]'
+      );
+      expect(slider).not.toBeNull();
+    });
+
+    expect(slider.getAttribute("min")).toBe("50");
+    expect(slider.getAttribute("max")).toBe("100");
+    expect(slider.value).toBe("50");
+    expect(container.textContent).toContain("Confidence: >=50%");
+    expect(container.textContent).toContain("100%");
+    expect(container.textContent).toContain("High Confidence Finding");
+    expect(container.textContent).not.toContain("Low Confidence Finding");
+    expect(container.textContent).toContain("1 finding hidden below 50% confidence.");
+
+    unmount();
+  });
+
   it("opens document viewer from expanded patient summary button", async () => {
     const onPatientOpen = jest.fn();
     const rowWithDetails = {

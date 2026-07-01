@@ -13,6 +13,11 @@ function getAgeSortValue(value) {
   return Number.isFinite(numericValue) ? numericValue : Number.POSITIVE_INFINITY;
 }
 
+function getDocumentCountValue(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue : 0;
+}
+
 function getSummaryDisplayValue(summary) {
   if (typeof summary === "string") {
     const text = summary.trim();
@@ -165,6 +170,24 @@ export function createColumns({ onToggleRow }) {
             </Typography>
           </Tooltip>
         );
+      },
+    },
+    {
+      accessorKey: "docCount",
+      id: "docCount",
+      header: "Document Count",
+      size: 115,
+      minSize: 105,
+      sortingFn: (rowA, rowB, columnId) =>
+        getDocumentCountValue(rowA.getValue(columnId)) -
+        getDocumentCountValue(rowB.getValue(columnId)),
+      cell: ({ getValue }) => {
+        const documentCount = getDocumentCountValue(getValue());
+        return renderTruncatedCell({
+          displayValue: documentCount.toLocaleString(),
+          fullValue: documentCount.toLocaleString(),
+          align: "right",
+        });
       },
     },
     {

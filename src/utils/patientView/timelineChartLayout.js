@@ -219,7 +219,7 @@ function resolveEpisodeLegend(reports, episodeCounts = {}) {
     .filter((episode) => episode.count > 0);
 }
 
-function resolveTicks(startDate, endDate, width, plotLeft, tickCount = 7) {
+export function resolveTicks(startDate, endDate, width, plotLeft, tickCount = 7) {
   if (!(startDate instanceof Date) || !(endDate instanceof Date)) {
     return [];
   }

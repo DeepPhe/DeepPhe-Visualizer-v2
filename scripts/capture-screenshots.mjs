@@ -12,12 +12,21 @@ const OUTPUT_DIR = path.join(SCREENSHOT_ROOT_DIR, "playwright");
 const SUMMARY_PATH = path.join(OUTPUT_DIR, "capture-summary.json");
 const VIEWPORT = { width: 2200, height: 1400 };
 
-// Feature-documentation capture set. Each entry illustrates one of the three
-// guide focus areas — cohort filtering, patient results & grid, and the
-// individual patient view — plus the home landing and the secondary display
-// settings shot. Review-only captures (theme variants, every filter set/card,
-// debug and accessibility views) are intentionally not generated here.
-const SCREENSHOT_ORDER = [
+// A deterministic synthetic patient used for the standalone-patient and
+// document-viewer captures. It carries multiple cancers, structured facts, and
+// notes with real dates (a normal timeline rather than the collapsed-date
+// fallback). Override with DOC_PATIENT_ID if your dataset differs.
+const DOC_PATIENT_ID = process.env.DOC_PATIENT_ID || "fake_patient3";
+// A patient whose notes collapse to a single usable date, exercising the
+// timeline's episode-dropdown fallback. Optional; skipped if it does not resolve.
+const COLLAPSED_DATE_PATIENT_ID = process.env.COLLAPSED_DATE_PATIENT_ID || "fake_patient7";
+
+// Feature-documentation capture set. `REQUIRED_SCREENSHOTS` back pages that
+// always show the image and must capture cleanly. `OPTIONAL_SCREENSHOTS` back
+// newer interaction captures that can be data- or environment-dependent; a
+// failure there is reported but does not fail the run, and prepare-docs.mjs
+// keeps any existing tracked image so the site never ships a broken reference.
+const REQUIRED_SCREENSHOTS = [
   "02-filters-overview.png",
   "03-identified-patients-panel.png",
   "04-theme-selector-open.png",
@@ -30,6 +39,22 @@ const SCREENSHOT_ORDER = [
   "32-embedded-patient-drawer.png",
   "33-patient-summary-card.png",
 ];
+
+const OPTIONAL_SCREENSHOTS = [
+  "05-theme-builder.png",
+  "10-patient-dots-bars-behind.png",
+  "26-zero-result-guidance.png",
+  "27-patient-row-context-menu.png",
+  "34-patient-summary-source-picker.png",
+  "40-standalone-patient-lookup.png",
+  "41-patient-fact-linked-timeline.png",
+  "42-document-viewer-concept-list.png",
+  "43-document-viewer-group-filter.png",
+  "44-document-viewer-confidence-filter.png",
+  "45-collapsed-date-episode-controls.png",
+];
+
+const SCREENSHOT_ORDER = [...REQUIRED_SCREENSHOTS, ...OPTIONAL_SCREENSHOTS];
 
 const summary = {
   generatedAt: new Date().toISOString(),
@@ -105,6 +130,7 @@ async function withCapture(page, config) {
     route: config.route,
     target: config.target,
     status: "captured",
+    optional: Boolean(config.optional),
     note: "",
   };
 
@@ -437,6 +463,241 @@ async function captureEmbeddedPatientViewSeries(page) {
       await captureLocatorOrFallback(page, summaryCard, "33-patient-summary-card.png", false);
     },
   });
+
+  // Multi-source Patient Summary item → confidence-ranked document picker.
+  await withCapture(page, {
+    file: "34-patient-summary-source-picker.png",
+    route: "/",
+    target: "Patient Summary multi-source document picker",
+    optional: true,
+    run: async () => {
+      const multiSource = page
+        .locator('[data-testid="patient-summary-card-scroll"] button[aria-label*="choose from"]')
+        .first();
+      if (!(await waitForLocator(multiSource, 6000))) {
+        throw new Error("No multi-source Patient Summary item for the opened patient");
+      }
+      await multiSource.scrollIntoViewIfNeeded().catch(() => {});
+      await multiSource.click();
+      const menu = page.locator('[role="menu"]').first();
+      if (!(await waitForLocator(menu, 5000))) {
+        throw new Error("Document picker menu did not open");
+      }
+      await sleep(400);
+      await captureLocatorOrFallback(page, menu, "34-patient-summary-source-picker.png", false);
+      await page.keyboard.press("Escape").catch(() => {});
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Additional feature captures (Theme Builder, standalone patient + Document
+// Viewer, and interaction states). These use withCapture with optional:true so
+// a data- or selector-dependent miss is reported but never fails the run.
+// ---------------------------------------------------------------------------
+
+function documentViewerCard(page) {
+  return page.locator('.MuiCard-root:has([aria-label="Document viewer controls"])').first();
+}
+
+async function loadStandalonePatient(page, patientId) {
+  await gotoRoute(page, "/patient");
+  const idField = page.getByLabel("Patient ID").first();
+  const hasField = await waitForLocator(idField, 8000);
+  if (!hasField) {
+    throw new Error("Patient Lookup field not found");
+  }
+  await idField.fill(patientId);
+  const loadButton = page.getByRole("button", { name: /^Load Patient$/ }).first();
+  await loadButton.click();
+  // The section titles are MUI CardHeader spans, not heading-role elements, so
+  // wait on their text and on the "Loaded patient:" status line instead.
+  const loaded = await waitForLocator(
+    page.getByText(`Loaded patient:`, { exact: false }).first(),
+    25000
+  );
+  const hasDetail = await waitForLocator(
+    page.getByText("Cancer and Tumor Detail", { exact: false }).first(),
+    8000
+  );
+  if (!loaded && !hasDetail) {
+    throw new Error(`Patient ${patientId} did not load`);
+  }
+  await sleep(900);
+}
+
+async function captureThemeBuilder(page) {
+  await withCapture(page, {
+    file: "05-theme-builder.png",
+    route: "/",
+    target: "Theme Builder dialog",
+    optional: true,
+    run: async () => {
+      await gotoRoute(page, "/");
+      await openThemeMenu(page);
+      const item = page.getByRole("option", { name: /Theme Builder/i }).first();
+      const hasItem = await waitForLocator(item, 5000);
+      if (!hasItem) {
+        throw new Error("Theme Builder menu item not found");
+      }
+      await item.click();
+      const dialog = page.getByRole("dialog", { name: /Theme Builder/i }).first();
+      const opened = await waitForLocator(dialog, 6000);
+      if (!opened) {
+        throw new Error("Theme Builder dialog did not open");
+      }
+      await sleep(400);
+      await captureLocatorOrFallback(page, dialog, "05-theme-builder.png", false);
+      await page.keyboard.press("Escape").catch(() => {});
+    },
+  });
+}
+
+async function captureStandaloneSeries(page) {
+  // Standalone Patient Lookup form (before loading a patient).
+  await withCapture(page, {
+    file: "40-standalone-patient-lookup.png",
+    route: "/patient",
+    target: "Standalone Patient Lookup form",
+    optional: true,
+    run: async () => {
+      await gotoRoute(page, "/patient");
+      const form = page.locator('.MuiPaper-root:has(input[name="patient-id"])').first();
+      const hasForm = await waitForLocator(form, 8000);
+      if (!hasForm) {
+        throw new Error("Patient Lookup form not found");
+      }
+      await page.getByLabel("Patient ID").first().fill(DOC_PATIENT_ID);
+      await captureLocatorOrFallback(page, form, "40-standalone-patient-lookup.png", false);
+    },
+  });
+
+  // Load the deterministic patient once; reuse for the Document Viewer shots.
+  let patientLoaded = true;
+  try {
+    await loadStandalonePatient(page, DOC_PATIENT_ID);
+  } catch (error) {
+    patientLoaded = false;
+    console.warn(`Standalone patient captures skipped: ${error.message}`);
+  }
+
+  if (!patientLoaded) {
+    for (const file of [
+      "41-patient-fact-linked-timeline.png",
+      "42-document-viewer-concept-list.png",
+      "43-document-viewer-group-filter.png",
+      "44-document-viewer-confidence-filter.png",
+    ]) {
+      await withCapture(page, {
+        file,
+        route: "/patient",
+        target: "Standalone patient (unavailable)",
+        optional: true,
+        run: async () => {
+          throw new Error(`Patient ${DOC_PATIENT_ID} did not load.`);
+        },
+      });
+    }
+    return;
+  }
+
+  // Document Viewer — Concept List (default tab).
+  await withCapture(page, {
+    file: "42-document-viewer-concept-list.png",
+    route: "/patient",
+    target: "Document Viewer — Concept List",
+    optional: true,
+    run: async () => {
+      const card = documentViewerCard(page);
+      if ((await card.count()) === 0) {
+        throw new Error("Document Viewer card not found");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "42-document-viewer-concept-list.png", false);
+    },
+  });
+
+  // Document Viewer — Group Filter tab.
+  await withCapture(page, {
+    file: "43-document-viewer-group-filter.png",
+    route: "/patient",
+    target: "Document Viewer — Group Filter",
+    optional: true,
+    run: async () => {
+      const tab = page.getByRole("tab", { name: "Group Filter" }).first();
+      if (!(await waitForLocator(tab, 5000))) {
+        throw new Error("Group Filter tab not found");
+      }
+      await tab.click();
+      await sleep(400);
+      await captureLocatorOrFallback(page, documentViewerCard(page), "43-document-viewer-group-filter.png", false);
+    },
+  });
+
+  // Document Viewer — Confidence Filter tab.
+  await withCapture(page, {
+    file: "44-document-viewer-confidence-filter.png",
+    route: "/patient",
+    target: "Document Viewer — Confidence Filter",
+    optional: true,
+    run: async () => {
+      const tab = page.getByRole("tab", { name: "Confidence Filter" }).first();
+      if (!(await waitForLocator(tab, 5000))) {
+        throw new Error("Confidence Filter tab not found");
+      }
+      await tab.click();
+      await sleep(400);
+      await captureLocatorOrFallback(
+        page,
+        documentViewerCard(page),
+        "44-document-viewer-confidence-filter.png",
+        false
+      );
+    },
+  });
+
+  // Cancer/Tumor fact selected → fact-linked timeline (dashed markers).
+  await withCapture(page, {
+    file: "41-patient-fact-linked-timeline.png",
+    route: "/patient",
+    target: "Selected cancer/tumor fact with linked timeline",
+    optional: true,
+    fallbackFullPage: true,
+    run: async () => {
+      // Fact badges are buttons inside the Cancer and Tumor Detail card.
+      const detailCard = page
+        .locator('.MuiCard-root:has(:text("Cancer and Tumor Detail"))')
+        .first();
+      const factButton = detailCard.locator("button").first();
+      if ((await factButton.count()) === 0) {
+        throw new Error("No selectable cancer/tumor fact found");
+      }
+      await factButton.click();
+      await sleep(700);
+      await captureViewport(page, "41-patient-fact-linked-timeline.png", false);
+    },
+  });
+}
+
+async function captureCollapsedDateTimeline(page) {
+  await withCapture(page, {
+    file: "45-collapsed-date-episode-controls.png",
+    route: "/patient",
+    target: "Timeline collapsed-date episode controls",
+    optional: true,
+    run: async () => {
+      await loadStandalonePatient(page, COLLAPSED_DATE_PATIENT_ID);
+      const timelineCard = page.locator('.MuiCard-root:has(:text("Patient Document Timeline"))').first();
+      const showAll = timelineCard.getByText("Show all documents", { exact: true }).first();
+      if (!(await waitForLocator(showAll, 5000))) {
+        throw new Error(
+          `Patient ${COLLAPSED_DATE_PATIENT_ID} does not show the collapsed-date fallback`
+        );
+      }
+      await captureLocatorOrFallback(page, timelineCard, "45-collapsed-date-episode-controls.png", false);
+    },
+  });
 }
 
 async function run() {
@@ -505,7 +766,15 @@ async function run() {
 
     // Cohort filtering: one representative filter card.
     await captureFilterCard(page, "09-filter-age-at-dx.png", "Age at Dx");
+    // A low-count filter card with patient dots (bars behind dots is on by default).
+    await captureFilterCard(page, "10-patient-dots-bars-behind.png", "Age at Dx");
 
+    // Reference & Explore-a-Patient captures.
+    await captureThemeBuilder(page);
+    await captureStandaloneSeries(page);
+    await captureCollapsedDateTimeline(page);
+
+    await gotoRoute(page, "/");
     const activeSelection = await activateFilterSelection(page);
     await withCapture(page, {
       file: "21-filter-selection-active-state.png",
@@ -526,6 +795,22 @@ async function run() {
       },
     });
 
+    // Re-capture the patient-count panel now that a filter is active, so the
+    // results guide shows the "N of total patients selected" state (the earlier
+    // 03 capture shows the unfiltered "All N patients" state).
+    if (activeSelection.activated) {
+      await withCapture(page, {
+        file: "03-identified-patients-panel.png",
+        route: "/",
+        target: "Identified Patients panel (filtered/active count)",
+        fallbackFullPage: false,
+        run: async () => {
+          const panel = page.locator("[data-testid='identified-patients-panel']").first();
+          await captureLocatorOrFallback(page, panel, "03-identified-patients-panel.png", false);
+        },
+      });
+    }
+
     await capturePatientDetailsSeries(page);
     await captureEmbeddedPatientViewSeries(page);
 
@@ -541,6 +826,7 @@ async function run() {
           route: "n/a",
           target: "Post-run validation",
           status: "failed",
+          optional: OPTIONAL_SCREENSHOTS.includes(file),
           note: "Screenshot file was not generated.",
         });
       }
@@ -549,15 +835,31 @@ async function run() {
     await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
 
     const total = SCREENSHOT_ORDER.length;
-    console.log(`Capture complete. Feature screenshots targeted: ${total}. Issues: ${failures.length}.`);
+    const requiredFailures = failures.filter(
+      (entry) => !entry.optional && !OPTIONAL_SCREENSHOTS.includes(entry.file)
+    );
+    const optionalFailures = failures.filter(
+      (entry) => entry.optional || OPTIONAL_SCREENSHOTS.includes(entry.file)
+    );
+    console.log(
+      `Capture complete. Targeted: ${total} (${REQUIRED_SCREENSHOTS.length} required). ` +
+        `Required issues: ${requiredFailures.length}. Optional issues: ${optionalFailures.length}.`
+    );
     console.log(`Summary written to ${SUMMARY_PATH}`);
 
-    if (failures.length > 0) {
-      const detail = failures
+    if (optionalFailures.length > 0) {
+      console.warn(
+        "Optional captures not produced (pages fall back to prose / keep existing images):\n" +
+          optionalFailures.map((entry) => `- ${entry.file}: ${entry.note || "not captured"}`).join("\n")
+      );
+    }
+
+    if (requiredFailures.length > 0) {
+      const detail = requiredFailures
         .map((entry) => `- ${entry.file}: ${entry.note || "could not be captured as intended"}`)
         .join("\n");
       throw new Error(
-        `One or more feature screenshots could not be captured cleanly:\n${detail}\n` +
+        `One or more required feature screenshots could not be captured cleanly:\n${detail}\n` +
           "Fix the app state or selectors and re-run before publishing the guide."
       );
     }

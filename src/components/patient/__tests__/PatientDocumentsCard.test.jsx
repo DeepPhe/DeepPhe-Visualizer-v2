@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import PatientDocumentsCard from "../PatientDocumentsCard";
+import PatientDocumentsCard, { resolveResponsiveTickCount } from "../PatientDocumentsCard";
 import { transformDocumentTimeline } from "../../../utils/patientView/transformDocumentTimeline";
 
 function renderComponent(element) {
@@ -79,6 +79,13 @@ function buildCollapsedTimelineData() {
 }
 
 describe("PatientDocumentsCard", () => {
+  it("reduces date tick density as the available plot width narrows", () => {
+    expect(resolveResponsiveTickCount(1064, 7)).toBe(7);
+    expect(resolveResponsiveTickCount(704, 7)).toBe(5);
+    expect(resolveResponsiveTickCount(364, 7)).toBe(3);
+    expect(resolveResponsiveTickCount(588, 4)).toBe(4);
+  });
+
   it("renders a graphical timeline with document points", () => {
     const { container, unmount } = renderComponent(
       <PatientDocumentsCard timelineData={buildTimelineData()} />
@@ -88,6 +95,9 @@ describe("PatientDocumentsCard", () => {
     expect(svg).not.toBeNull();
     expect(container.querySelectorAll("circle[data-document-id]")).toHaveLength(3);
     expect(container.querySelectorAll("select")).toHaveLength(0);
+
+    const viewBox = svg.getAttribute("viewBox").split(" ").map(Number);
+    expect(viewBox[3]).toBe(180);
 
     unmount();
   });
@@ -106,6 +116,61 @@ describe("PatientDocumentsCard", () => {
     });
 
     expect(onSelectDocument).toHaveBeenCalledWith("doc-2");
+    unmount();
+  });
+
+  it("spreads timeline points along the date axis when zoomed in, and restores on reset", () => {
+    const { container, unmount } = renderComponent(
+      <PatientDocumentsCard timelineData={buildTimelineData()} />
+    );
+
+    const readSpread = () => {
+      const xs = [...container.querySelectorAll("circle[data-document-id]")].map((circle) =>
+        Number(circle.getAttribute("cx"))
+      );
+      return Math.max(...xs) - Math.min(...xs);
+    };
+
+    const baselineSpread = readSpread();
+    expect(baselineSpread).toBeGreaterThan(0);
+
+    const zoomInButton = container.querySelector('[aria-label="Zoom in timeline"]');
+    expect(zoomInButton).not.toBeNull();
+
+    act(() => {
+      zoomInButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(readSpread()).toBeGreaterThan(baselineSpread + 1);
+
+    const resetButton = container.querySelector('[aria-label="Reset timeline zoom"]');
+    act(() => {
+      resetButton.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    expect(readSpread()).toBeCloseTo(baselineSpread, 3);
+
+    unmount();
+  });
+
+  it("leaves wheel gestures available for native scrolling instead of zooming", () => {
+    const { container, unmount } = renderComponent(
+      <PatientDocumentsCard timelineData={buildTimelineData()} />
+    );
+
+    const svg = container.querySelector('svg[aria-label="Patient document timeline chart"]');
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      deltaY: -120,
+    });
+
+    act(() => {
+      svg.dispatchEvent(wheelEvent);
+    });
+
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(container.textContent).toContain("100%");
+    expect(container.textContent).toContain("Scrolling moves through the patient view.");
+
     unmount();
   });
 

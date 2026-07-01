@@ -238,6 +238,39 @@ function normalizeSummaryRecordForGrid(summary) {
   };
 }
 
+function resolveSummaryDocumentCount(...sources) {
+  const countCandidates = sources.flatMap((source) => [
+    source?.doc_count,
+    source?.docCount,
+    source?.document_count,
+    source?.documentCount,
+    source?.note_count,
+    source?.noteCount,
+  ]);
+  const positiveCount = countCandidates
+    .map((value) => Number(value))
+    .find((value) => Number.isFinite(value) && value > 0);
+
+  if (positiveCount !== undefined) {
+    return Math.trunc(positiveCount);
+  }
+
+  const documentArrays = sources.flatMap((source) => [
+    source?.documents,
+    source?.docs,
+    source?.notes,
+    source?.note_ids,
+    source?.noteIds,
+    source?.document_ids,
+    source?.documentIds,
+  ]);
+  const populatedDocuments = documentArrays.find(
+    (documents) => Array.isArray(documents) && documents.length > 0
+  );
+
+  return populatedDocuments?.length || 0;
+}
+
 export function transformSummaryToGridRow(summary) {
   const normalizedSummary = normalizeSummaryRecordForGrid(summary);
   const demographics = normalizedSummary?.demographics || {};
@@ -538,6 +571,7 @@ export function transformSummaryToGridRow(summary) {
     patientId: String(
       normalizedSummary?.patient_id ?? normalizedSummary?.patientId ?? summary?.patient_id ?? summary?.patientId ?? ""
     ).trim(),
+    docCount: resolveSummaryDocumentCount(normalizedSummary, summary),
     ageAtDx,
     gender: GENDER_MAP[demographics?.gender] || demographics?.gender || "Unknown",
     race: demographics?.race || "Unknown",
@@ -676,27 +710,9 @@ export function buildPatientSummaryFromFilterSummary(payload, patientId) {
 
   const diagnosisItems = Array.isArray(summaryPayload?.diagnoses) ? summaryPayload.diagnoses : [];
   const findingItems = Array.isArray(summaryPayload?.findings) ? summaryPayload.findings : [];
-  const docCountField = Number(
-    summaryPayload?.doc_count ??
-      summaryPayload?.docCount ??
-      summaryPayload?.document_count ??
-      summaryPayload?.documentCount ??
-      summaryPayload?.note_count ??
-      summaryPayload?.noteCount
-  );
-  const docCountArrayFallback =
-    (Array.isArray(summaryPayload?.documents) && summaryPayload.documents.length) ||
-    (Array.isArray(summaryPayload?.docs) && summaryPayload.docs.length) ||
-    (Array.isArray(summaryPayload?.notes) && summaryPayload.notes.length) ||
-    (Array.isArray(summaryPayload?.note_ids) && summaryPayload.note_ids.length) ||
-    (Array.isArray(summaryPayload?.noteIds) && summaryPayload.noteIds.length) ||
-    (Array.isArray(summaryPayload?.document_ids) && summaryPayload.document_ids.length) ||
-    (Array.isArray(summaryPayload?.documentIds) && summaryPayload.documentIds.length) ||
-    0;
-
   return {
     patientId: summaryPatientId || normalizedPatientId,
-    docCount: Number.isFinite(docCountField) && docCountField > 0 ? docCountField : docCountArrayFallback,
+    docCount: resolveSummaryDocumentCount(summaryPayload, matchingRow),
     activeDx: normalizeSummaryList(
       diagnosisItems.filter((item) => !Boolean(item?.negated)),
       { includeUncertain: true }

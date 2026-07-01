@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -10,6 +10,8 @@ import {
   ListSubheader,
   Menu,
   MenuItem,
+  Slider,
+  Stack,
   Tooltip,
   Typography,
   useMediaQuery,
@@ -26,6 +28,19 @@ function formatConfidencePercent(value) {
     return "—";
   }
   return `${Math.round(numericValue * 100)}%`;
+}
+
+// A finding's confidence is the highest mention confidence across its source
+// documents (0–1). Returns null when the finding has no traceable mention, so
+// callers can distinguish "unknown" from "low confidence".
+function getItemConfidence(item) {
+  const best = Number(item?.selection?.bestConfidence);
+  if (Number.isFinite(best) && best > 0) {
+    return best;
+  }
+  const ranking = item?.selection?.documentRanking;
+  const top = Array.isArray(ranking) && ranking.length ? Number(ranking[0]?.confidence) : Number.NaN;
+  return Number.isFinite(top) && top > 0 ? top : null;
 }
 
 /**
@@ -66,6 +81,10 @@ function SummaryItem({
   // directly on click.
   const canShowMenu = isClickable && documentCount > 1 && typeof onOpenMenu === "function";
 
+  const confidence = getItemConfidence(item);
+  const confidencePercent = formatConfidencePercent(confidence);
+  const confidenceTitle = `Confidence: ${confidencePercent}`;
+
   const textColor = isNegated
     ? "text.disabled"
     : isHistoric
@@ -82,23 +101,13 @@ function SummaryItem({
           aria-hidden="true"
           sx={{ ml: 0.4, fontSize: "0.6rem", fontWeight: 700, color: "text.secondary" }}
         >
-          ({documentCount})
+          {confidence != null ? `${confidencePercent} ` : ""}({documentCount})
         </Box>
       ) : null}
     </>
   );
 
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        alignItems: "baseline",
-        flexWrap: "wrap",
-        gap: 0.35,
-        py: 0.12,
-      }}
-    >
-      {isClickable ? (
+  const nameElement = isClickable ? (
         <Box
           component="button"
           type="button"
@@ -127,7 +136,7 @@ function SummaryItem({
           aria-haspopup={canShowMenu ? "menu" : undefined}
           aria-label={`${name}: ${
             documentCount > 1
-              ? `choose from ${documentCount} source documents`
+              ? `${confidence != null ? `${confidencePercent} confidence, ` : ""}choose from ${documentCount} source documents`
               : "open source document"
           }`}
           sx={{
@@ -171,7 +180,22 @@ function SummaryItem({
         >
           {nameContent}
         </Typography>
-      )}
+      );
+
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "baseline",
+        flexWrap: "wrap",
+        gap: 0.35,
+        py: 0.12,
+      }}
+    >
+      {/* Hover/focus hint surfacing the finding's extraction confidence. */}
+      <Tooltip title={confidenceTitle} describeChild placement="top-start">
+        {nameElement}
+      </Tooltip>
 
       {isUncertain ? (
         <Chip
@@ -252,6 +276,8 @@ export default function PatientSummaryCard({
   onSelectDocumentForItem = undefined,
   selectedFactId = "",
   selectedDocumentId = "",
+  confidenceThreshold: controlledConfidenceThreshold = undefined,
+  onConfidenceThresholdChange = undefined,
 }) {
   const theme = useTheme();
   const upSm = useMediaQuery(theme.breakpoints.up("sm"));
@@ -261,6 +287,50 @@ export default function PatientSummaryCard({
   // Single document-picker menu shared by all items, anchored at the cursor (or
   // the item's rect when opened via keyboard).
   const [contextMenu, setContextMenu] = useState(null);
+
+  // Minimum-confidence filter (percent). Findings below the threshold are hidden;
+  // findings with no traceable confidence are always kept so we never silently
+  // drop data we can't score.
+  const [internalConfidenceThreshold, setInternalConfidenceThreshold] = useState(100);
+  const hasControlledConfidenceThreshold = Number.isFinite(
+    Number(controlledConfidenceThreshold)
+  );
+  const confidenceThreshold = hasControlledConfidenceThreshold
+    ? Math.min(100, Math.max(50, Number(controlledConfidenceThreshold)))
+    : internalConfidenceThreshold;
+  const handleConfidenceThresholdChange = (nextValue) => {
+    const normalizedValue = Math.min(100, Math.max(50, Number(nextValue) || 50));
+    if (!hasControlledConfidenceThreshold) {
+      setInternalConfidenceThreshold(normalizedValue);
+    }
+    onConfidenceThresholdChange?.(normalizedValue);
+  };
+  const thresholdFraction = confidenceThreshold / 100;
+
+  const filteredSections = useMemo(() => {
+    if (thresholdFraction <= 0) {
+      return sections;
+    }
+    return sections
+      .map((section) => ({
+        ...section,
+        items: (section.items || []).filter((item) => {
+          const confidence = getItemConfidence(item);
+          return confidence == null || confidence >= thresholdFraction - 1e-9;
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [sections, thresholdFraction]);
+
+  const totalItemCount = useMemo(
+    () => sections.reduce((count, section) => count + (section.items?.length || 0), 0),
+    [sections]
+  );
+  const visibleItemCount = useMemo(
+    () => filteredSections.reduce((count, section) => count + (section.items?.length || 0), 0),
+    [filteredSections]
+  );
+  const hiddenItemCount = totalItemCount - visibleItemCount;
 
   const handleOpenItemMenu = (selection, position) => {
     if (!selection || !Array.isArray(selection.documentRanking) || selection.documentRanking.length <= 1) {
@@ -287,11 +357,11 @@ export default function PatientSummaryCard({
   // renders an empty trailing column, then spread sections across them by
   // estimated height so the tall BIOMARKERS block doesn't strand a column.
   const maxColumns = upXl ? 4 : upLg ? 3 : upSm ? 2 : 1;
-  const columnCount = Math.max(1, Math.min(maxColumns, sections.length || 1));
+  const columnCount = Math.max(1, Math.min(maxColumns, filteredSections.length || 1));
   const balancedColumns = (() => {
     const columns = Array.from({ length: columnCount }, () => ({ items: [], height: 0 }));
     const estimateHeight = (section) => 30 + (section.items?.length || 0) * 22;
-    sections.forEach((section) => {
+    filteredSections.forEach((section) => {
       const target = columns.reduce(
         (shortest, column) => (column.height < shortest.height ? column : shortest),
         columns[0]
@@ -361,21 +431,82 @@ export default function PatientSummaryCard({
     >
       <CardHeader
         title="Patient Summary"
-        sx={{ py: 0.75, px: 1.25 }}
+        sx={{
+          py: 0.75,
+          px: 1.25,
+          gap: 1,
+          "& .MuiCardHeader-content": { minWidth: 0 },
+          // Keep the slider control vertically centred against the title rather
+          // than pinned to the top like a lone icon button.
+          "& .MuiCardHeader-action": { alignSelf: "center", m: 0 },
+        }}
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
         action={
-          onToggleCollapse ? (
-            <Tooltip title="Collapse Patient Summary">
-              <IconButton
-                size="small"
-                aria-label="Collapse Patient Summary"
-                aria-expanded
-                onClick={() => onToggleCollapse()}
-              >
-                <RemoveIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          ) : undefined
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {sections.length > 0 ? (
+              <Tooltip title="Hide findings below this extraction confidence">
+                <Stack
+                  direction="row"
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ pr: 0.5 }}
+                >
+                  <Typography
+                    component="span"
+                    sx={{
+                      fontSize: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Confidence:{" "}
+                    <Box component="span" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                      {"50%"}
+                    </Box>
+                  </Typography>
+                  <Slider
+                    size="small"
+                    value={confidenceThreshold}
+                    min={50}
+                    max={100}
+                    step={5}
+                    onChange={(_event, value) =>
+                      handleConfidenceThresholdChange(Array.isArray(value) ? value[0] : value)
+                    }
+                    aria-label="Minimum finding confidence percent"
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(value) => `${value}%`}
+                    sx={{ width: { xs: 84, sm: 116 } }}
+                  />
+                  <Typography
+                    variant="caption"
+                    aria-hidden
+                    sx={{
+                      fontSize: "inherit",
+                      minWidth: 34,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      fontWeight: 700,
+                      color: "text.secondary",
+                    }}
+                  >
+                    100%
+                  </Typography>
+                </Stack>
+              </Tooltip>
+            ) : null}
+            {onToggleCollapse ? (
+              <Tooltip title="Collapse Patient Summary">
+                <IconButton
+                  size="small"
+                  aria-label="Collapse Patient Summary"
+                  aria-expanded
+                  onClick={() => onToggleCollapse()}
+                >
+                  <RemoveIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+          </Stack>
         }
       />
       <Divider />
@@ -399,6 +530,23 @@ export default function PatientSummaryCard({
             py: 0.75,
           }}
         >
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            aria-live="polite"
+            sx={{ display: "block", px: 0.25, pb: hiddenItemCount > 0 ? 0.6 : 0 }}
+          >
+            {hiddenItemCount > 0
+              ? `${hiddenItemCount} finding${hiddenItemCount === 1 ? "" : "s"} hidden below ${confidenceThreshold}% confidence.`
+              : ""}
+          </Typography>
+
+          {filteredSections.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ px: 0.25 }}>
+              No findings at or above {confidenceThreshold}% confidence. Lower the confidence
+              filter to show more.
+            </Typography>
+          ) : (
           <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
             {balancedColumns.map((column, columnIndex) => (
               <Box
@@ -448,6 +596,7 @@ export default function PatientSummaryCard({
               </Box>
             ))}
           </Box>
+          )}
         </Box>
       )}
 
@@ -601,6 +750,8 @@ PatientSummaryCard.propTypes = {
   selectedFactId: PropTypes.string,
   // id of the document currently open in the viewer, to flag it in the picker.
   selectedDocumentId: PropTypes.string,
+  confidenceThreshold: PropTypes.number,
+  onConfidenceThresholdChange: PropTypes.func,
   sections: PropTypes.arrayOf(
     PropTypes.shape({
       key: PropTypes.string.isRequired,

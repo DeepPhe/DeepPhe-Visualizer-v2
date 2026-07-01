@@ -179,6 +179,14 @@ const EMPTY_OMOP_DETAILS = Object.freeze({
   cancerTypes: [],
 });
 
+function normalizePatientConfidenceThreshold(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 100;
+  }
+  return Math.min(100, Math.max(50, Math.round(numericValue / 5) * 5));
+}
+
 async function loadPatientOmopDetails(patientId) {
   const normalizedPatientId = String(patientId || "").trim();
   if (!normalizedPatientId) {
@@ -225,6 +233,10 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const patientSummaryRequestIdRef = useRef(0);
   const [omopDetails, setOmopDetails] = useState(EMPTY_OMOP_DETAILS);
   const [patientSummaryData, setPatientSummaryData] = useState(null);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(100);
+  const handleConfidenceThresholdChange = useCallback((nextValue) => {
+    setConfidenceThreshold(normalizePatientConfidenceThreshold(nextValue));
+  }, []);
 
   useEffect(() => {
     const normalizedId = String(patientId || "").trim();
@@ -235,8 +247,11 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       setSelectionContext(null);
       setOmopDetails(EMPTY_OMOP_DETAILS);
       setPatientSummaryData(null);
+      setConfidenceThreshold(100);
       return undefined;
     }
+
+    setConfidenceThreshold(100);
 
     loadPatient(normalizedId).then((result) => {
       if (!result) return;
@@ -650,9 +665,12 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       sx={{
         display: "flex",
         flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden",
+        // Let the patient tab own vertical scrolling. A natural-height child
+        // prevents the lower summary/viewer row from being clipped when the
+        // drawer is shorter than the combined panel minimums.
+        height: "auto",
+        minHeight: "100%",
+        overflow: "visible",
       }}
     >
       {patientOverviewEntries.length > 0 ? (
@@ -867,18 +885,11 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           display: "grid",
           gridTemplateColumns: {
             xs: "minmax(0, 1fr)",
-            lg: "fit-content(62%) minmax(0, 1fr)",
+            lg: "minmax(340px, 32%) minmax(0, 1fr)",
           },
-          alignItems: "stretch",
-          // Hold the intended height instead of shrinking when the drawer is
-          // short — otherwise the timeline cell collapses and scrolls internally.
+          alignItems: "start",
+          gap: 1,
           flex: "0 0 auto",
-          minHeight: { xs: 0, lg: 360 },
-          height: { xs: "auto", lg: 360 },
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 1,
-          overflow: "hidden",
           mx: 1.5,
           mb: 1,
         }}
@@ -891,15 +902,16 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             minHeight: 0,
             display: "flex",
             flexDirection: "column",
-            justifySelf: { lg: "start" },
-            width: { lg: "fit-content" },
-            maxWidth: { lg: "100%" },
-            // Let the card scroll internally (like the Patient Summary panel)
-            // rather than clipping its overflow at this wrapper.
+            width: "100%",
+            alignSelf: "start",
             overflow: "hidden",
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
           }}
         >
           <CancerTumorSummaryCard
+            contentAutoHeight
             embedded
             cancers={cancerSummary}
             factSelection={factSelection}
@@ -913,13 +925,15 @@ export default function EmbeddedPatientView({ patientId = "" }) {
         <Box
           sx={{
             minWidth: 0,
-            minHeight: 0,
             display: "flex",
             flexDirection: "column",
-            overflow: "hidden",
-            borderTop: { xs: 1, lg: 0 },
-            borderLeft: { lg: 1 },
+            alignSelf: "start",
+            overflow: "visible",
+            minHeight: 0,
+            height: "auto",
+            border: 1,
             borderColor: "divider",
+            borderRadius: 1,
           }}
         >
           <PatientDocumentsCard
@@ -939,7 +953,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             minHeight: bottomCollapsedAlone ? 0 : { xs: 0, lg: 220 },
             width: bottomCollapsedAlone ? { lg: "fit-content" } : undefined,
             maxWidth: matchCancerWidth
-              ? { lg: cancerDetailWidth ? `${cancerDetailWidth}px` : "62%" }
+              ? { lg: cancerDetailWidth ? `${cancerDetailWidth}px` : "32%" }
               : undefined,
             alignSelf: matchCancerWidth ? { lg: "flex-start" } : undefined,
             display: "grid",
@@ -967,6 +981,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
                 onSelectDocumentForItem={handleSelectSummaryDocument}
                 selectedFactId={summarySelection?.factId || ""}
                 selectedDocumentId={selectedDocumentId}
+                confidenceThreshold={confidenceThreshold}
+                onConfidenceThresholdChange={handleConfidenceThresholdChange}
               />
             </Box>
           ) : null}
@@ -992,6 +1008,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
                 factSelection={activeSelection}
                 selectionContext={selectionContext}
                 onClose={handleCloseDocument}
+                confidenceThreshold={confidenceThreshold}
+                onConfidenceThresholdChange={handleConfidenceThresholdChange}
               />
             </Box>
           ) : null}

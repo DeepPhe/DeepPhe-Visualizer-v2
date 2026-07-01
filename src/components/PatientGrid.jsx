@@ -144,6 +144,7 @@ function PatientGrid({
 
       const candidateValues = [
         row.original?.patientId,
+        row.original?.docCount,
         row.original?.ageAtDx,
         row.original?.gender,
         row.original?.race,
@@ -640,6 +641,7 @@ PatientGrid.propTypes = {
   data: PropTypes.arrayOf(
     PropTypes.shape({
       patientId: PropTypes.string,
+      docCount: PropTypes.number,
       ageAtDx: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
       gender: PropTypes.string,
       race: PropTypes.string,

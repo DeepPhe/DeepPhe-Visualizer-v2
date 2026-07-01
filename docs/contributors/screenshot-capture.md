@@ -5,39 +5,43 @@ sidebar_label: Screenshot capture
 
 # Maintain documentation screenshots
 
-This contributor page describes how screenshots used by the end-user guide are produced.
+This page describes how the end-user guide's screenshots are produced.
 
 ## Prerequisites
 
 | Requirement | Check |
 | --- | --- |
-| Node.js 20 or later | `node --version` |
-| Visualizer on port 3000 | `curl -s http://localhost:3000` |
+| Node.js 18 or later (Playwright requirement) | `node --version` |
+| Visualizer reachable (see `APP_URL`) | `curl -s "$APP_URL"` |
 | Data API on port 3333 | `curl -s http://localhost:3333/health` |
 | Playwright Chromium | `npx playwright install chromium` |
 
-## Capture and build
+Capture against a **production build** of the Visualizer (for example, build the app and serve `build/` as a single-page app). A production build hides development-only diagnostics, so the images are clean.
 
-Start the Visualizer and Data API, then run:
+## Capture and build
 
 ```bash
 npm run capture:screenshots
 npm run docs:build
 ```
 
-The capture script writes numbered source images to:
+Useful environment variables:
 
-```text
-../Viz2_screenshots/playwright/
-```
+- `APP_URL` — the Visualizer base URL (default `http://localhost:3000`).
+- `VIZ2_SCREENSHOT_DIR` — where source captures are written (default `../Viz2_screenshots`).
+- `DOC_PATIENT_ID` — the synthetic patient used for the standalone-patient and Document Viewer captures (default `fake_patient3`).
+- `COLLAPSED_DATE_PATIENT_ID` — a synthetic patient whose notes collapse to one date, used for the timeline's episode-dropdown fallback capture (optional).
 
-`scripts/prepare-docs.mjs` maps the source captures to stable, task-oriented names under:
+The capture script forces the **Standard** theme so images are consistent, disables animations, and waits for content to load before each shot.
 
-```text
-docs/assets/screenshots/end-user/
-```
+## Required vs. optional captures
 
-The Docusaurus site is generated in `site/`.
+`scripts/capture-screenshots.mjs` splits its targets into two sets:
+
+- **Required** captures back pages that always show an image; the run fails if any required capture cannot be produced cleanly.
+- **Optional** captures back newer interaction states that depend on data (for example, the collapsed-date timeline) or that are illustrative extras. A missed optional capture is reported but does not fail the run.
+
+`scripts/prepare-docs.mjs` maps the numbered source captures to stable, task-oriented names under `docs/assets/screenshots/end-user/`. For an optional capture that was not produced, it keeps any existing tracked image and never leaves a broken reference. If neither a fresh capture nor a tracked image exists, the page falls back to prose only.
 
 ## Generate the full feature guide
 
@@ -45,8 +49,15 @@ The Docusaurus site is generated in `site/`.
 npm run docs:generate
 ```
 
-This captures the feature screenshots, builds the Docusaurus site, and exports the printable guide PDF.
+This captures the feature screenshots, builds the Docusaurus site, and exports the printable-guide PDF.
 
 ## Safety
 
-Use synthetic demonstration data for documentation captures. Inspect every image before committing it to confirm that it contains no protected health information or unintended patient identifiers.
+- Use only **synthetic** demonstration data and **fake** patient identifiers.
+- Never capture real patient information.
+- Visually inspect every generated image for unintended identifiers before committing it.
+- Run the automated identifier check, but do not treat it as a substitute for visual review:
+
+```bash
+npm run lint:patient-ids
+```

@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { Box, Button, Chip, Typography, useMediaQuery } from "@mui/material";
+import { Box, Button, Chip, Slider, Stack, Tooltip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import Masonry from "@mui/lab/Masonry";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
@@ -38,6 +38,52 @@ function getDetailSections(rawPatientSummary) {
     ...section,
     items: toArray(rawPatientSummary?.[section.key]),
   })).filter((section) => section.items.length > 0);
+}
+
+function normalizeDetailConfidence(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  const normalizedValue = numericValue > 1 ? numericValue / 100 : numericValue;
+  return Math.max(0, Math.min(1, normalizedValue));
+}
+
+// Filter-summary payloads can expose confidence directly on an item or through
+// the same selection/document ranking used by the full patient viewer.
+function getDetailItemConfidence(item) {
+  const directCandidates = [
+    item?.selection?.bestConfidence,
+    item?.bestConfidence,
+    item?.best_confidence,
+    item?.confidence,
+    item?.confidenceScore,
+    item?.confidence_score,
+    item?.score,
+  ];
+
+  for (const candidate of directCandidates) {
+    const confidence = normalizeDetailConfidence(candidate);
+    if (confidence !== null) {
+      return confidence;
+    }
+  }
+
+  const ranking = Array.isArray(item?.selection?.documentRanking)
+    ? item.selection.documentRanking
+    : Array.isArray(item?.documentRanking)
+    ? item.documentRanking
+    : [];
+  const rankedConfidences = ranking
+    .map((entry) => normalizeDetailConfidence(entry?.confidence))
+    .filter((confidence) => confidence !== null);
+
+  return rankedConfidences.length > 0 ? Math.max(...rankedConfidences) : null;
 }
 
 function renderDetailItemChips(item) {
@@ -89,6 +135,7 @@ function getDetailNameStyle(item) {
 
 function DetailPanel({ row, onPatientOpen }) {
   const theme = useTheme();
+  const [confidenceThreshold, setConfidenceThreshold] = useState(50);
   // Resolve the responsive column count to a single number so Masonry's SSR
   // fast path (defaultColumns/defaultHeight/defaultSpacing) can render a
   // multi-column grid on first paint instead of flashing a single vertical
@@ -107,11 +154,37 @@ function DetailPanel({ row, onPatientOpen }) {
     : isSmUp
     ? DETAIL_PANEL_COLUMNS.sm
     : DETAIL_PANEL_COLUMNS.xs;
-  const details = getDetailSections(row?.original?._raw);
+  const rawPatientSummary = row?.original?._raw;
+  const allDetails = useMemo(() => getDetailSections(rawPatientSummary), [rawPatientSummary]);
+  const thresholdFraction = confidenceThreshold / 100;
+  const details = useMemo(() => {
+    if (thresholdFraction <= 0) {
+      return allDetails;
+    }
+
+    return allDetails
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => {
+          const confidence = getDetailItemConfidence(item);
+          return confidence === null || confidence >= thresholdFraction - 1e-9;
+        }),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [allDetails, thresholdFraction]);
+  const totalItemCount = allDetails.reduce(
+    (count, section) => count + section.items.length,
+    0
+  );
+  const visibleItemCount = details.reduce(
+    (count, section) => count + section.items.length,
+    0
+  );
+  const hiddenItemCount = totalItemCount - visibleItemCount;
   const patientId = String(row?.original?.patientId || "").trim();
   const canShowDocumentViewerButton = typeof onPatientOpen === "function" && Boolean(patientId);
   const detailPanelHeader = (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+    <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1 }}>
       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
         Patient Summary
       </Typography>
@@ -136,10 +209,57 @@ function DetailPanel({ row, onPatientOpen }) {
           Show in Document Viewer
         </Button>
       ) : null}
+      {allDetails.length > 0 ? (
+        <Tooltip title="Hide findings below this extraction confidence">
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            sx={{ ml: "auto", pr: 0.5 }}
+          >
+            <Typography component="span" sx={{ fontSize: "inherit", whiteSpace: "nowrap" }}>
+              Confidence:{" "}
+              <Box component="span" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                {">=50%"}
+              </Box>
+            </Typography>
+            <Slider
+              size="small"
+              value={confidenceThreshold}
+              min={50}
+              max={100}
+              step={5}
+              onChange={(_event, value) =>
+                setConfidenceThreshold(Array.isArray(value) ? value[0] : value)
+              }
+              aria-label="Minimum patient drawer finding confidence percent"
+              valueLabelDisplay="auto"
+              valueLabelFormat={(value) => `${value}%`}
+              sx={{ width: { xs: 84, sm: 116 } }}
+            />
+            <Typography
+              variant="caption"
+              aria-hidden
+              sx={{
+                fontSize: "inherit",
+                minWidth: 34,
+                textAlign: "right",
+                fontVariantNumeric: "tabular-nums",
+                fontWeight: 700,
+                color: "text.secondary",
+              }}
+            >
+              100%
+            </Typography>
+          </Stack>
+        </Tooltip>
+      ) : null}
     </Box>
   );
 
-  if (details.length === 0) {
+  if (allDetails.length === 0) {
     return (
       <Box sx={{ px: 2, py: 0.75 }}>
         <Box sx={{ mb: 0.4 }}>{detailPanelHeader}</Box>
@@ -191,7 +311,18 @@ function DetailPanel({ row, onPatientOpen }) {
       }}
     >
       {detailPanelHeader}
-      <Masonry
+      {hiddenItemCount > 0 ? (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          aria-live="polite"
+          sx={{ px: 0.25 }}
+        >
+          {hiddenItemCount} finding{hiddenItemCount === 1 ? "" : "s"} hidden below {confidenceThreshold}% confidence.
+        </Typography>
+      ) : null}
+      {details.length > 0 ? (
+        <Masonry
         columns={DETAIL_PANEL_COLUMNS}
         spacing={1}
         defaultColumns={Math.max(1, Math.min(resolvedDetailColumns, details.length))}
@@ -205,8 +336,8 @@ function DetailPanel({ row, onPatientOpen }) {
           width: "100%",
           alignContent: "flex-start",
         }}
-      >
-        {details.map((section) => (
+        >
+          {details.map((section) => (
           <Box
             key={section.key}
             component="div"
@@ -339,8 +470,13 @@ function DetailPanel({ row, onPatientOpen }) {
               })}
             </Box>
           </Box>
-        ))}
-      </Masonry>
+          ))}
+        </Masonry>
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ px: 0.25 }}>
+          No findings at or above {confidenceThreshold}% confidence. Lower the confidence filter to show more.
+        </Typography>
+      )}
     </Box>
   );
 }

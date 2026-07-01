@@ -17,6 +17,7 @@ import {
   Popover,
   Radio,
   RadioGroup,
+  Slider,
   Stack,
   Tab,
   Tabs,
@@ -33,6 +34,9 @@ import {
 } from "../../utils/patientView/documentMentions";
 
 const DEFAULT_GROUP_COLOR = "#e0e0e0";
+const MIN_CONFIDENCE_PERCENT = 50;
+const MAX_CONFIDENCE_PERCENT = 100;
+const CONFIDENCE_STEP_PERCENT = 5;
 
 const GROUP_FAMILY_ORDER = [
   "Anatomy",
@@ -119,6 +123,180 @@ function sortGroupNames(groupNames = []) {
   });
 }
 
+function humanizeMetadataKey(value) {
+  return String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/^./, (character) => character.toUpperCase());
+}
+
+function formatMetadataValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => formatMetadataValue(item)).filter(Boolean).join(", ");
+  }
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch (_error) {
+      return String(value);
+    }
+  }
+  return String(value ?? "").trim();
+}
+
+function buildConfidenceSummary(mentionRecords = []) {
+  const confidenceValues = mentionRecords
+    .map((record) => Number(record?.confidencePercent))
+    .filter(Number.isFinite);
+  if (confidenceValues.length === 0) {
+    return "Unknown";
+  }
+
+  const highest = Math.max(...confidenceValues);
+  const lowest = Math.min(...confidenceValues);
+  if (highest === lowest) {
+    return `${highest}%`;
+  }
+
+  const average = Math.round(
+    confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length
+  );
+  return `${highest}% highest · ${average}% average · ${lowest}–${highest}% range`;
+}
+
+function ConceptMetadataRow({ label, value }) {
+  if (!String(value ?? "").trim()) {
+    return null;
+  }
+
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: "112px minmax(0, 1fr)", gap: 1 }}>
+      <Typography component="dt" variant="caption" sx={{ m: 0, fontWeight: 700, color: "inherit" }}>
+        {label}
+      </Typography>
+      <Typography
+        component="dd"
+        variant="caption"
+        sx={{ m: 0, color: "inherit", overflowWrap: "anywhere" }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+ConceptMetadataRow.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+};
+
+function ConceptDetailsTooltip({ conceptRow, concept = {}, mentionRecords = [], documentText = "" }) {
+  const conceptName = String(concept?.name || "").trim();
+  const preferredText = String(concept?.preferredText || "").trim();
+  const confidenceSummary = buildConfidenceSummary(mentionRecords);
+  const handledKeys = new Set([
+    "id",
+    "name",
+    "preferredText",
+    "classUri",
+    "dpheGroup",
+    "mentionIds",
+    "confidence",
+    "negated",
+    "uncertain",
+    "historic",
+  ]);
+  const additionalMetadata = Object.entries(concept || {})
+    .filter(([key, value]) => {
+      if (handledKeys.has(key) || value == null) {
+        return false;
+      }
+      return Boolean(formatMetadataValue(value));
+    })
+    .map(([key, value]) => ({
+      key,
+      label: humanizeMetadataKey(key),
+      value: formatMetadataValue(value),
+    }));
+
+  return (
+    <Box sx={{ width: "min(480px, 80vw)", py: 0.25 }} data-testid="concept-details-tooltip">
+      <Typography variant="subtitle2" sx={{ color: "inherit", fontWeight: 700, mb: 0.75 }}>
+        {conceptRow.label}
+      </Typography>
+      <Box component="dl" sx={{ m: 0, display: "grid", gap: 0.35 }}>
+        <ConceptMetadataRow label="Name" value={conceptName || conceptRow.label} />
+        {preferredText && preferredText !== conceptName ? (
+          <ConceptMetadataRow label="Preferred text" value={preferredText} />
+        ) : null}
+        <ConceptMetadataRow label="Concept type" value={conceptRow.group || "Unknown"} />
+        <ConceptMetadataRow label="Confidence" value={confidenceSummary} />
+        <ConceptMetadataRow label="Mentions" value={conceptRow.mentionCount} />
+        <ConceptMetadataRow label="Concept ID" value={conceptRow.conceptId} />
+        <ConceptMetadataRow label="Class URI" value={conceptRow.classUri} />
+        {additionalMetadata.map((entry) => (
+          <ConceptMetadataRow key={entry.key} label={entry.label} value={entry.value} />
+        ))}
+      </Box>
+
+      {mentionRecords.length > 0 ? (
+        <Box sx={{ mt: 1 }}>
+          <Divider sx={{ borderColor: "rgba(255,255,255,0.3)", mb: 0.75 }} />
+          <Typography variant="caption" sx={{ color: "inherit", fontWeight: 700 }}>
+            Linked mentions
+          </Typography>
+          <Stack spacing={0.75} sx={{ mt: 0.5 }}>
+            {mentionRecords.map((mention, index) => {
+              const mentionText = String(documentText || "")
+                .slice(mention.begin, mention.end)
+                .replace(/\s+/g, " ")
+                .trim();
+              const assertionState = [
+                mention.negated ? "Negated" : "Affirmed",
+                mention.uncertain ? "Uncertain" : "Certain",
+                mention.historic ? "Historic" : "Current",
+              ].join(" · ");
+
+              return (
+                <Box
+                  key={mention.mentionId || `${conceptRow.conceptId}-${index}`}
+                  sx={{ pl: 1, borderLeft: "2px solid rgba(255,255,255,0.45)" }}
+                >
+                  <Typography variant="caption" sx={{ display: "block", color: "inherit", fontWeight: 700 }}>
+                    {`${index + 1}. ${mentionText || "Mention"} — ${mention.confidencePercent}%`}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: "block", color: "inherit" }}>
+                    {assertionState}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ display: "block", color: "inherit", opacity: 0.85, overflowWrap: "anywhere" }}
+                  >
+                    {`Offsets ${mention.begin}–${mention.end} · ID ${mention.mentionId}`}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Stack>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+ConceptDetailsTooltip.propTypes = {
+  conceptRow: PropTypes.shape({
+    conceptId: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    classUri: PropTypes.string,
+    group: PropTypes.string,
+    mentionCount: PropTypes.number,
+  }).isRequired,
+  concept: PropTypes.object,
+  mentionRecords: PropTypes.arrayOf(PropTypes.object),
+  documentText: PropTypes.string,
+};
+
 function TabPanel({ value, index, children = null }) {
   if (value !== index) {
     return null;
@@ -146,7 +324,7 @@ function ConfidenceHistogram({
   groupNames = [],
   groupColorByName = {},
   mode = "byMention",
-  minConfidencePercent = 0,
+  minConfidencePercent = MIN_CONFIDENCE_PERCENT,
   onConfidenceChange,
 }) {
   const chartRef = useRef(null);
@@ -160,10 +338,17 @@ function ConfidenceHistogram({
   const plotWidth = chartWidth - margin.left - margin.right;
   const plotHeight = chartHeight - margin.top - margin.bottom;
   const valueKey = mode === "byConcept" ? "byConcept" : "byMention";
+  const visibleBuckets = useMemo(
+    () =>
+      buckets.filter(
+        (bucket) => Number(bucket?.binEnd) * 100 > MIN_CONFIDENCE_PERCENT
+      ),
+    [buckets]
+  );
 
   const sortedGroupNames = useMemo(() => {
     const nextNames = new Set(groupNames);
-    buckets.forEach((bucket) => {
+    visibleBuckets.forEach((bucket) => {
       Object.keys(bucket?.[valueKey] || {}).forEach((groupName) => {
         if (groupName) {
           nextNames.add(groupName);
@@ -171,34 +356,51 @@ function ConfidenceHistogram({
       });
     });
     return sortGroupNames([...nextNames]);
-  }, [buckets, groupNames, valueKey]);
+  }, [groupNames, valueKey, visibleBuckets]);
 
   const bucketTotals = useMemo(
     () =>
-      buckets.map((bucket) =>
+      visibleBuckets.map((bucket) =>
         sortedGroupNames.reduce((sum, groupName) => sum + Number(bucket?.[valueKey]?.[groupName] || 0), 0)
       ),
-    [buckets, sortedGroupNames, valueKey]
+    [sortedGroupNames, valueKey, visibleBuckets]
   );
 
   const maxOccurrences = Math.max(1, ...bucketTotals);
-  const bucketWidth = plotWidth / Math.max(1, buckets.length || 1);
+  const bucketWidth = plotWidth / Math.max(1, visibleBuckets.length || 1);
   const barWidth = Math.max(3, bucketWidth - 3);
-  const thresholdX = plotLeft + (clamp(minConfidencePercent, 0, 100) / 100) * plotWidth;
+  const confidenceRange = MAX_CONFIDENCE_PERCENT - MIN_CONFIDENCE_PERCENT;
+  const normalizedThreshold =
+    (clamp(
+      minConfidencePercent,
+      MIN_CONFIDENCE_PERCENT,
+      MAX_CONFIDENCE_PERCENT
+    ) -
+      MIN_CONFIDENCE_PERCENT) /
+    confidenceRange;
+  const thresholdX = plotLeft + normalizedThreshold * plotWidth;
 
   const readPercentFromClientX = useCallback(
     (clientX) => {
       const containerRect = chartRef.current?.getBoundingClientRect();
       if (!containerRect || containerRect.width <= 0) {
-        return clamp(minConfidencePercent, 0, 100);
+        return clamp(
+          minConfidencePercent,
+          MIN_CONFIDENCE_PERCENT,
+          MAX_CONFIDENCE_PERCENT
+        );
       }
 
       const svgX = ((clientX - containerRect.left) / containerRect.width) * chartWidth;
       const clampedX = clamp(svgX, plotLeft, plotLeft + plotWidth);
       const ratio = (clampedX - plotLeft) / plotWidth;
-      return Math.round(ratio * 100);
+      const confidencePercent = MIN_CONFIDENCE_PERCENT + ratio * confidenceRange;
+      return (
+        Math.round(confidencePercent / CONFIDENCE_STEP_PERCENT) *
+        CONFIDENCE_STEP_PERCENT
+      );
     },
-    [chartWidth, minConfidencePercent, plotLeft, plotWidth]
+    [chartWidth, confidenceRange, minConfidencePercent, plotLeft, plotWidth]
   );
 
   const updateConfidenceFromClientX = useCallback(
@@ -298,7 +500,7 @@ function ConfidenceHistogram({
             );
           })}
 
-          {buckets.map((bucket, bucketIndex) => {
+          {visibleBuckets.map((bucket, bucketIndex) => {
             const barLeft = plotLeft + bucketIndex * bucketWidth + (bucketWidth - barWidth) / 2;
             const isFilteredOut = bucket.binEnd * 100 <= minConfidencePercent;
             const barOpacity = isFilteredOut ? 0.3 : 1;
@@ -328,14 +530,35 @@ function ConfidenceHistogram({
                   );
                 })}
 
+              </g>
+            );
+          })}
+
+          {Array.from({ length: visibleBuckets.length + 1 }, (_unused, index) => {
+            const x = plotLeft + index * bucketWidth;
+            const label =
+              index === 0
+                ? `${MIN_CONFIDENCE_PERCENT}%`
+                : visibleBuckets[index - 1]?.bucket;
+
+            return (
+              <g key={`confidence-tick-${label}`}>
+                <line
+                  x1={x}
+                  y1={plotTop + plotHeight}
+                  x2={x}
+                  y2={plotTop + plotHeight + 4}
+                  stroke="#8f8f8f"
+                  strokeWidth="1"
+                />
                 <text
-                  x={barLeft + barWidth / 2}
-                  y={plotTop + plotHeight + 14}
+                  x={x}
+                  y={plotTop + plotHeight + 16}
                   textAnchor="middle"
                   fontSize="10"
                   fill="#666"
                 >
-                  {bucket.bucket}
+                  {label}
                 </text>
               </g>
             );
@@ -566,10 +789,36 @@ export default function PatientDocumentViewerCard({
   embedded = false,
   selectionContext = null,
   onClose = undefined,
+  confidenceThreshold: controlledConfidenceThreshold = undefined,
+  onConfidenceThresholdChange = undefined,
 }) {
   const NO_ENABLED_GROUP_SENTINEL = "__NO_ENABLED_GROUPS__";
   const [activeTab, setActiveTab] = useState(0);
-  const [minConfidencePercent, setMinConfidencePercent] = useState(0);
+  const [internalMinConfidencePercent, setInternalMinConfidencePercent] = useState(100);
+  const hasControlledConfidenceThreshold = Number.isFinite(
+    Number(controlledConfidenceThreshold)
+  );
+  const minConfidencePercent = hasControlledConfidenceThreshold
+    ? clamp(
+        Number(controlledConfidenceThreshold),
+        MIN_CONFIDENCE_PERCENT,
+        MAX_CONFIDENCE_PERCENT
+      )
+    : internalMinConfidencePercent;
+  const handleConfidenceThresholdChange = useCallback(
+    (nextValue) => {
+      const normalizedValue = clamp(
+        Number(nextValue) || MIN_CONFIDENCE_PERCENT,
+        MIN_CONFIDENCE_PERCENT,
+        MAX_CONFIDENCE_PERCENT
+      );
+      if (!hasControlledConfidenceThreshold) {
+        setInternalMinConfidencePercent(normalizedValue);
+      }
+      onConfidenceThresholdChange?.(normalizedValue);
+    },
+    [hasControlledConfidenceThreshold, onConfidenceThresholdChange]
+  );
   const [enabledGroupByName, setEnabledGroupByName] = useState({});
   const [selectedConceptIds, setSelectedConceptIds] = useState([]);
   const [confidenceMode, setConfidenceMode] = useState("byMention");
@@ -858,6 +1107,43 @@ export default function PatientDocumentViewerCard({
                 ...(embedded ? { flex: 1, minHeight: 0 } : {}),
               }}
             >
+              <Box sx={{ px: 1.25, py: 0.75, borderBottom: 1, borderColor: "divider" }}>
+                <Stack direction="row" spacing={0.75} alignItems="center">
+                  <Typography component="span" sx={{ fontSize: "inherit", whiteSpace: "nowrap" }}>
+                    Confidence:{" "}
+                    <Box component="span" sx={{ color: "text.secondary", fontWeight: 600 }}>
+                      50%
+                    </Box>
+                  </Typography>
+                  <Slider
+                    size="small"
+                    value={minConfidencePercent}
+                    min={MIN_CONFIDENCE_PERCENT}
+                    max={MAX_CONFIDENCE_PERCENT}
+                    step={CONFIDENCE_STEP_PERCENT}
+                    onChange={(_event, value) =>
+                      handleConfidenceThresholdChange(Array.isArray(value) ? value[0] : value)
+                    }
+                    aria-label="Document viewer confidence percent"
+                    valueLabelDisplay="auto"
+                    valueLabelFormat={(value) => `${value}%`}
+                    sx={{ flex: 1, minWidth: 72 }}
+                  />
+                  <Typography
+                    component="span"
+                    aria-hidden
+                    sx={{
+                      minWidth: 34,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      fontWeight: 700,
+                      color: "text.secondary",
+                    }}
+                  >
+                    100%
+                  </Typography>
+                </Stack>
+              </Box>
               <Tabs
                 value={activeTab}
                 onChange={(_, nextTab) => setActiveTab(nextTab)}
@@ -1137,7 +1423,7 @@ export default function PatientDocumentViewerCard({
                       groupColorByName={highlightModel.groupColorByName}
                       mode={confidenceMode}
                       minConfidencePercent={minConfidencePercent}
-                      onConfidenceChange={(nextValue) => setMinConfidencePercent(clamp(nextValue, 0, 100))}
+                      onConfidenceChange={handleConfidenceThresholdChange}
                     />
 
                     <Typography variant="h6" sx={{ fontWeight: 700 }}>
@@ -1313,6 +1599,8 @@ PatientDocumentViewerCard.propTypes = {
   }),
   embedded: PropTypes.bool,
   onClose: PropTypes.func,
+  confidenceThreshold: PropTypes.number,
+  onConfidenceThresholdChange: PropTypes.func,
   selectionContext: PropTypes.shape({
     source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document", "summary"]),
     documentType: PropTypes.string,

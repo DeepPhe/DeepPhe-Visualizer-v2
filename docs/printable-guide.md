@@ -4,50 +4,56 @@ sidebar_label: Printable Guide
 description: A concise printable workflow for the DeepPhe Patient Cohort Explorer.
 ---
 
-# DeepPhe Patient Cohort Explorer
+# DeepPhe Visualizer — quick guide
 
-This guide follows the three core features in order: **build a cohort**, **review patient results**, then **explore an individual patient**.
+Build a cohort, review patient results, then explore an individual patient.
 
-![Patient Cohort Explorer](assets/screenshots/end-user/cohort-explorer-overview.png)
+![The Cohort Explorer](assets/screenshots/end-user/cohort-explorer-overview.png)
 
 ## 1. Build a cohort
 
 1. Find a filter card and select a value.
-2. Add values from the same filter as alternatives.
-3. Add selections from different filters to narrow the cohort.
+2. Add values in the **same** card as alternatives (**OR**).
+3. Add selections from **different** cards to narrow the cohort (**AND**).
 
-Filtering rules:
+- The toolbar shows **All *N* patients**, then ***N* of *total* patients selected**.
+- A value that can no longer add a matching patient is **disabled**; a value you already selected stays removable.
+- Select a value again to remove it. **Reset filters** clears all selections.
+- After criteria are active, a value may read `included / total` — how many of that value's patients remain in the cohort.
 
-- Multiple values in one filter mean **value A or value B**.
-- Different filters mean **filter A and filter B**.
-- Select an active value again to remove it.
-- Select **Reset filters** to clear the cohort.
+![A selected filter value](assets/screenshots/end-user/active-filter-selection.png)
 
-An unfiltered value normally shows its total count. After criteria are active, another value may display `included/total`, showing how many patients with that value remain in the current cohort.
+## 2. Low-count patient dots
 
-![Active filter selection](assets/screenshots/end-user/active-filter-selection.png)
+When a value represents **20 or fewer** patients, each patient is a **dot**. **Hover** a dot to preview the patient; **click** a dot on a card to open that patient as a drawer tab (this never changes the cohort). **Bars behind dots** adds a faint bar for scale.
 
 <div className="print-page-break" />
 
-## 2. Review patient results
+## 3. Review patient results
 
-Check the count in the Selected Patients drawer, then expand it to review the loaded patient page. The drawer supports search, sorting, column visibility, pagination, row expansion, and patient tabs. Patient search applies to the currently loaded page.
+Open the **Selected Patients drawer**. It loads **10 patients per page** (**40** when maximized).
 
-![Selected Patients drawer](assets/screenshots/end-user/selected-patients-drawer.png)
+- **Search** and **sort** apply to the **loaded page** only.
+- Click a row to **expand** it; only one row is expanded at a time.
+- Indicators: **negated**, **historic**, **uncertain**, **conflicted**, and **source**.
 
-## 3. Explore an individual patient
+![The Selected Patients drawer](assets/screenshots/end-user/selected-patients-drawer.png)
 
-Open a single patient with **Show in Document Viewer** when source-level context is needed, or select a **patient dot** on any filter bar to open that patient directly (hovering a dot previews its summary). The patient opens as a tab inside the drawer, showing demographics, cancer and tumor summaries, the document timeline, source text with concept overlays, and a structured Patient Summary Card when the data is available.
+## 4. Explore a patient
 
-![Embedded patient view](assets/screenshots/end-user/embedded-patient-view.png)
+Open a patient from a **dot** or from **Show in Document Viewer** in an expanded row.
 
-## Export
+- **Patient Summary** items that resolve to notes are links: a single source opens directly; a multi-source item opens a **confidence-ranked** picker.
+- On the **timeline**, click a document to open it; the open note has a larger ringed marker, and fact-linked notes have dashed outlines.
+- In the **Document Viewer**, filter highlights with **Concept List**, **Group Filter** (CHECK ALL / UNCHECK ALL), and **Confidence Filter** (By Mention / By Concept).
 
-The CSV download includes the currently loaded page after its search and sort are applied. Only visible columns are included.
+## 5. Export
+
+CSV export includes the **currently loaded page** only, after its search and sort, with visible columns.
 
 ## Important limitations
 
-- Available filters depend on the loaded dataset and service configuration.
-- Extracted concepts may require validation against source documents.
-- An absent value is not automatically a confirmed negative clinical fact.
-- Exported files may contain patient-identifying information and must be handled appropriately.
+- Available filters depend on the loaded dataset and services.
+- Extracted concepts and structured findings may require validation against source notes.
+- An absent value is **not** a confirmed negative clinical fact.
+- Exported files may contain patient-identifying information; handle them accordingly.

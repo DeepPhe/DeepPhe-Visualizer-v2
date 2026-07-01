@@ -5,52 +5,55 @@ sidebar_label: Understanding results
 
 # Understand cohort results
 
-## Matching-patient count
+The Visualizer gives you several kinds of feedback as you build a cohort. This page explains each one.
 
-After you select a filter, the Selected Patients drawer shows the number of matching patients.
+## The toolbar patient count
 
-![Identified patients summary](../assets/screenshots/end-user/identified-patients-summary.png)
+The count beside the title is the size of your cohort:
 
-The count updates when criteria are added or removed. While a request is running, the drawer indicates that the cohort is being updated.
+- **All *N* patients** before any selection — the whole dataset.
+- ***N* of *total* patients selected** once filters are active.
+
+While a new result is being calculated the count **dims**, then brightens when it is ready.
+
+![The toolbar showing an active "N of total patients selected" count](../assets/screenshots/end-user/identified-patients-summary.png)
 
 ## Counts inside filter cards
 
-When no filters are active, a value usually shows its total patient count.
-
-After filters are active, other cards can show:
+When no filters are active, a value shows its total patient count. Once other filters are active, a value can show two numbers:
 
 ```text
-included/total
+included / total
 ```
 
-For example, `12/40` means:
+For example `12/40` means:
 
-- 40 patients have that value in the broader data; and
-- 12 of those patients also satisfy the current criteria from other filters.
+- **40** patients have that value in the broader data (the denominator), and
+- **12** of those also satisfy your current criteria from other cards (the numerator).
 
-This lets you preview how a value relates to the current cohort before selecting it.
+This previews how a value relates to your current cohort *before* you select it. A value whose numerator is **0** is [disabled](selecting-filters.md#values-that-cant-add-anyone-are-disabled).
 
-## Patient dots
+## In the Selected Patients drawer
 
-When a filter value matches a small number of patients, each patient appears as a **dot** on that value's bar.
+The [Selected Patients drawer](selected-patients.md) adds more context:
 
-- **Hover** a dot to preview that patient's summary without leaving the screen.
-- **Select** a dot to open that patient's document view as a tab in the Selected Patients drawer. This works even when no filters are active and does not change the current cohort.
+- The **active-filter summary** above the drawer lists your current filter selections, each with a per-filter patient count.
+- When the drawer is minimized, a **plain-language summary** describes the cohort — for example, *"7 asian female patients with breast cancer."*
 
-See [View an individual patient](viewing-a-patient.md) for what the document view contains.
+Each filter matches patients **independently**; your cohort is the **intersection** of those matches. A value can match many patients on its own and still contribute to a small cohort once combined with other cards.
 
-## Zero results
+## When no patients match
 
-If no patients satisfy the selected criteria:
+If your criteria produce zero patients, the drawer explains *why*, in one of two ways:
 
-1. review the most recent selection;
-2. remove one restrictive value;
-3. broaden alternatives within the same filter; or
-4. select **Reset filters**.
+- **One filter matched nobody.** If a single filter matches 0 patients on its own, the Visualizer names that filter — for example, *"Grade matched 0 patients before intersection. Check spelling and selected values."* Review that filter's selected values.
+- **The filters don't overlap.** If every filter matches patients on its own but their intersection is empty, the Visualizer explains that the filters have no overlap and suggests broadening one — *"Each filter matches patients independently, but their overlap is 0. Try broadening one filter."*
+
+To recover, remove or broaden your most recent criterion, or use **Reset filters** to start over.
 
 ## Data availability
 
-A missing filter or value does not necessarily mean the clinical fact is absent. It may reflect the loaded data, extraction configuration, service availability, or terminology normalization.
+A missing filter, value, or finding does not necessarily mean a clinical fact is absent. It may reflect the loaded data, the extraction configuration, service availability, or terminology normalization.
 
 :::caution
 

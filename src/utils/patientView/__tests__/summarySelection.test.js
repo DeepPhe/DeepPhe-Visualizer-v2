@@ -102,3 +102,105 @@ describe("resolveSummarySelection", () => {
     expect(resolveSummarySelection({ documents: [] }, { name: "In Situ" }, {})).toBeNull();
   });
 });
+
+// A Patient Summary finding must link only to source documents that genuinely
+// contain that finding's concept. The resolver matches whole normalized tokens
+// (name / preferred text / class token), never substrings, abbreviations, or
+// individual words — so it can never invent a link like the ones observed in
+// upstream data: "BP" -> Bleomycin/Cisplatin, "dedicated" -> Dedicated Blood
+// Product Donation, "Start" -> Collagen Tile Brachytherapy, or "Re-image" ->
+// Rasmussen Subacute Encephalitis. These tests lock that contract in so a future
+// change can't loosen matching into those false positives.
+describe("resolveSummarySelection — no spurious source links", () => {
+  function oneConceptDoc({ id, classUri, name, preferredText }) {
+    return {
+      concepts: [{ id: "c", classUri, name, preferredText, mentionIds: ["m"] }],
+      documents: [{ id, type: "NOTE", mentions: [{ id: "m", classUri, confidence: 0.99 }] }],
+    };
+  }
+
+  it("does not match an abbreviation to an unrelated concept (BP ↛ Bleomycin / Cisplatin)", () => {
+    const data = oneConceptDoc({
+      id: "doc-chemo",
+      classUri: "Bleomycin_sl_Cisplatin",
+      name: "Bleomycin / Cisplatin",
+    });
+    expect(resolveSummarySelection(data, { name: "BP" }, { sectionKey: "treatments" })).toBeNull();
+  });
+
+  it("does not match a contained word to a longer concept (dedicated ↛ Dedicated Blood Product Donation)", () => {
+    const data = oneConceptDoc({
+      id: "doc-donation",
+      classUri: "DedicatedBloodProductDonation",
+      name: "Dedicated Blood Product Donation",
+    });
+    expect(resolveSummarySelection(data, { name: "Dedicated" }, { sectionKey: "procedures" })).toBeNull();
+  });
+
+  it("does not match a common word to an unrelated concept (Start ↛ Collagen Tile Brachytherapy)", () => {
+    const data = oneConceptDoc({
+      id: "doc-brachy",
+      classUri: "CollagenTileBrachytherapy",
+      name: "Collagen Tile Brachytherapy",
+    });
+    expect(resolveSummarySelection(data, { name: "Start" }, { sectionKey: "treatments" })).toBeNull();
+  });
+
+  it("does not match a hyphenated fragment to unrelated concepts (Re-image ↛ Rasmussen / Crohn)", () => {
+    const data = {
+      concepts: [
+        { id: "c1", classUri: "RasmussenSubacuteEncephalitis", name: "Rasmussen Subacute Encephalitis", mentionIds: ["m1"] },
+        { id: "c2", classUri: "CrohnDisease", name: "Crohn Disease", mentionIds: ["m2"] },
+      ],
+      documents: [
+        {
+          id: "doc-neuro",
+          type: "NOTE",
+          mentions: [
+            { id: "m1", classUri: "RasmussenSubacuteEncephalitis", confidence: 0.99 },
+            { id: "m2", classUri: "CrohnDisease", confidence: 0.99 },
+          ],
+        },
+      ],
+    };
+    expect(resolveSummarySelection(data, { name: "Re-image" }, { sectionKey: "findings" })).toBeNull();
+  });
+
+  it("links a real finding to its own concept only, without bleeding into a co-located concept", () => {
+    // "Breast Coil" (an imaging device) and "Dedicated Blood Product Donation"
+    // are mentioned in the same note. Selecting "Breast Coil" must resolve to the
+    // breast-coil concept alone — not the donation concept that shares no whole
+    // token — and must not pick up the donation mention.
+    const data = {
+      concepts: [
+        { id: "c-coil", classUri: "BreastCoil", name: "Breast Coil", mentionIds: ["m-coil"] },
+        {
+          id: "c-donation",
+          classUri: "DedicatedBloodProductDonation",
+          name: "Dedicated Blood Product Donation",
+          mentionIds: ["m-donation"],
+        },
+      ],
+      documents: [
+        {
+          id: "doc-rad",
+          type: "NOTE",
+          mentions: [
+            { id: "m-coil", classUri: "BreastCoil", confidence: 0.9 },
+            { id: "m-donation", classUri: "DedicatedBloodProductDonation", confidence: 0.9 },
+          ],
+        },
+      ],
+    };
+
+    const selection = resolveSummarySelection(data, { name: "Breast Coil" }, { sectionKey: "findings" });
+    expect(selection).not.toBeNull();
+    expect(selection.documentIds).toEqual(["doc-rad"]);
+    expect(selection.conceptIds).toEqual(["c-coil"]);
+    expect(selection.mentionIds).toContain("m-coil");
+    expect(selection.mentionIds).not.toContain("m-donation");
+
+    // The lone word "Coil" is not a whole-token match for any concept.
+    expect(resolveSummarySelection(data, { name: "Coil" }, { sectionKey: "findings" })).toBeNull();
+  });
+});
