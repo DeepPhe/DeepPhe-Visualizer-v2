@@ -21,7 +21,7 @@ export function toFilterItem(type, className, values) {
   };
 }
 
-function getFilterClassKey(type, className) {
+export function getFilterClassKey(type, className) {
   return `${String(type || "")
     .trim()
     .toLowerCase()}:${String(className || "").trim()}`;

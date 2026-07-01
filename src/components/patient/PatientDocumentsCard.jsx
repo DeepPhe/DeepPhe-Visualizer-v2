@@ -13,7 +13,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import { buildTimelineChartModel } from "../../utils/patientView/timelineChartLayout";
 
 const RELATED_STROKE = "#1976d2";
@@ -97,6 +97,11 @@ export default function PatientDocumentsCard({
   onSelectDocument = undefined,
   embedded = false,
 }) {
+  const theme = useTheme();
+  // High-contrast foreground for the "currently viewed" marker so its ring stays
+  // visible on every theme (near-black on light themes, near-white on dark ones).
+  // A hardcoded near-black ring is ~1.2:1 on the dark theme's navy panel.
+  const selectedMarkerColor = theme.palette.text.primary;
   const [hiddenEpisodes, setHiddenEpisodes] = useState(() => new Set());
   const [episodeSelections, setEpisodeSelections] = useState({});
 
@@ -387,6 +392,21 @@ export default function PatientDocumentsCard({
                             />
                           ) : null}
 
+                          {isSelected ? (
+                            // Prominent hollow ring marking the document currently
+                            // open in the viewer — ~3x a normal dot so it's easy to
+                            // spot, but see-through so it never hides neighbors.
+                            <circle
+                              cx={point.x}
+                              cy={point.y}
+                              r={14}
+                              fill="none"
+                              stroke={selectedMarkerColor}
+                              strokeWidth={2.25}
+                              pointerEvents="none"
+                            />
+                          ) : null}
+
                           <circle
                             className="patient-timeline-point"
                             data-document-id={point.id}
@@ -395,11 +415,15 @@ export default function PatientDocumentsCard({
                             data-selected={isSelected ? "true" : "false"}
                             cx={point.x}
                             cy={point.y}
-                            r={isSelected ? 5.5 : 4.5}
+                            r={isSelected ? 7 : 4.5}
                             fill={point.episodeColor}
                             fillOpacity={isSelected ? 0.95 : 0.72}
                             stroke={
-                              isSelected ? "#101010" : isRelated ? RELATED_STROKE : alpha("#111", 0.55)
+                              isSelected
+                                ? selectedMarkerColor
+                                : isRelated
+                                ? RELATED_STROKE
+                                : alpha("#111", 0.55)
                             }
                             strokeWidth={isSelected ? 2 : isRelated ? 1.4 : 1}
                             tabIndex={0}

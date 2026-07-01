@@ -139,6 +139,7 @@ function HorizontalBarFilter({
   barRegionScale = 1,
   density = "standard",
   className = "",
+  sectionLabel = "",
 }) {
   const isCompactDensity = density === "compact";
   const theme = useTheme();
@@ -422,8 +423,14 @@ function HorizontalBarFilter({
   const showInlineTitle = showTitle && resolvedTitle.length > 0;
   const shouldRenderHeaderRow = allowCollapse || showInlineTitle || showSortCycleControl;
   const chartAriaLabel = resolvedTitle ? `${resolvedTitle} horizontal bar chart` : DEFAULT_TITLE;
+  // Qualify the region landmark with its section so charts that share a title
+  // across sections (e.g. two "Tissue" filters) stay uniquely named — otherwise
+  // axe's landmark-unique rule flags the collision.
+  const resolvedSectionLabel = String(sectionLabel || "").trim();
   const chartRegionAriaLabel = resolvedTitle
-    ? `${resolvedTitle} chart region`
+    ? resolvedSectionLabel
+      ? `${resolvedTitle} chart region, ${resolvedSectionLabel}`
+      : `${resolvedTitle} chart region`
     : "Horizontal bar chart region";
   const toggleButtonLabel = resolvedTitle
     ? `${isChartExpanded ? "Collapse" : "Expand"} ${resolvedTitle} chart`
@@ -1304,6 +1311,8 @@ HorizontalBarFilter.propTypes = {
   barRegionScale: PropTypes.number,
   density: PropTypes.oneOf(["standard", "compact"]),
   className: PropTypes.string,
+  // Section/group label used to disambiguate the chart's region landmark name.
+  sectionLabel: PropTypes.string,
 };
 
 // Memoized so the chart's SVG layout/draw is skipped when its props are

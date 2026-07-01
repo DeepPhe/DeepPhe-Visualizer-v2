@@ -83,16 +83,6 @@ const GROUP_FAMILY_RANK = GROUP_FAMILY_ORDER.reduce((accumulator, familyName, in
   return accumulator;
 }, {});
 
-const GROUP_FAMILY_PREFIX = {
-  Anatomy: "A",
-  Device: "Dv",
-  Finding: "F",
-  Disorder: "D",
-  Severity: "Sv",
-  Attribute: "At",
-  Intervention: "Rx",
-};
-
 const GROUP_FAMILY_COLOR = {
   Anatomy: "#99E6E6",
   Device: "#785ef0",
@@ -102,11 +92,6 @@ const GROUP_FAMILY_COLOR = {
   Attribute: "#ffef00",
   Intervention: "#ca99f4",
 };
-
-function getGroupPrefix(groupName) {
-  const family = GROUP_FAMILY_BY_NAME[groupName];
-  return GROUP_FAMILY_PREFIX[family] || groupName.slice(0, 2).toUpperCase();
-}
 
 function clamp(value, minValue, maxValue) {
   return Math.min(maxValue, Math.max(minValue, value));
@@ -486,6 +471,23 @@ function SelectionSummary({ context }) {
       break;
     }
 
+    case "summary": {
+      push("Patient summary", "muted");
+      if (context.categoryName) push(context.categoryName, "meta");
+      if (context.prettyName) push(context.prettyName, "strong");
+      if (context.documentType) push(formatDocumentType(context.documentType), "meta");
+      if (context.documentDate) push(context.documentDate, "meta");
+      const rawConfidence = Number(context.documentConfidence);
+      const confidenceText =
+        Number.isFinite(rawConfidence) && rawConfidence > 0
+          ? `${Math.round((rawConfidence > 1 ? rawConfidence / 100 : rawConfidence) * 100)}% confidence`
+          : "";
+      const sourcesText = Number(context.documentCount) > 1 ? `${context.documentCount} sources` : "";
+      const summaryTail = [confidenceText, sourcesText].filter(Boolean).join(" · ");
+      if (summaryTail) push(summaryTail, "muted");
+      break;
+    }
+
     default:
       break;
   }
@@ -543,7 +545,7 @@ function SelectionSummary({ context }) {
 
 SelectionSummary.propTypes = {
   context: PropTypes.shape({
-    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document"]),
+    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document", "summary"]),
     documentType: PropTypes.string,
     documentDate: PropTypes.string,
     episodeLabel: PropTypes.string,
@@ -552,6 +554,8 @@ SelectionSummary.propTypes = {
     isTumorLevel: PropTypes.bool,
     cancerIndex: PropTypes.number,
     tumorIndex: PropTypes.number,
+    documentCount: PropTypes.number,
+    documentConfidence: PropTypes.number,
   }),
 };
 
@@ -887,7 +891,6 @@ export default function PatientDocumentViewerCard({
                         aria-label="Concept group legend"
                       >
                         {sortedGroupNames.map((groupName) => {
-                          const prefix = getGroupPrefix(groupName);
                           const color = highlightModel.groupColorByName[groupName] || DEFAULT_GROUP_COLOR;
                           return (
                             <Box
@@ -911,7 +914,7 @@ export default function PatientDocumentViewerCard({
                                 color="text.secondary"
                                 sx={{ fontSize: "0.68rem" }}
                               >
-                                <strong>{prefix}</strong> · {groupName}
+                                {groupName}
                               </Typography>
                             </Box>
                           );
@@ -972,7 +975,7 @@ export default function PatientDocumentViewerCard({
                                   pr: allMentionsNegated ? 1.1 : 0,
                                 }}
                               >
-                                {`${getGroupPrefix(conceptRow.group)} · ${conceptRow.label} (${conceptRow.mentionCount})`}
+                                {`${conceptRow.label} (${conceptRow.mentionCount})`}
                                 {allMentionsNegated ? (
                                   <Box
                                     component="span"
@@ -1311,7 +1314,7 @@ PatientDocumentViewerCard.propTypes = {
   embedded: PropTypes.bool,
   onClose: PropTypes.func,
   selectionContext: PropTypes.shape({
-    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document"]),
+    source: PropTypes.oneOf(["auto", "timeline", "fact", "related-document", "summary"]),
     documentType: PropTypes.string,
     documentDate: PropTypes.string,
     episodeLabel: PropTypes.string,
@@ -1320,5 +1323,7 @@ PatientDocumentViewerCard.propTypes = {
     isTumorLevel: PropTypes.bool,
     cancerIndex: PropTypes.number,
     tumorIndex: PropTypes.number,
+    documentCount: PropTypes.number,
+    documentConfidence: PropTypes.number,
   }),
 };

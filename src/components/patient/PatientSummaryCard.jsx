@@ -1,15 +1,47 @@
-import React from "react";
+import React, { useState } from "react";
 import PropTypes from "prop-types";
-import { Box, Card, CardHeader, Chip, Divider, IconButton, Tooltip, Typography, useMediaQuery } from "@mui/material";
+import {
+  Box,
+  Card,
+  CardHeader,
+  Chip,
+  Divider,
+  IconButton,
+  ListSubheader,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CheckIcon from "@mui/icons-material/Check";
 import RemoveIcon from "@mui/icons-material/Remove";
 import { alpha, useTheme } from "@mui/material/styles";
+
+// Normalized 0–1 confidence → rounded percentage for display; "—" when absent.
+function formatConfidencePercent(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return "—";
+  }
+  return `${Math.round(numericValue * 100)}%`;
+}
 
 /**
  * A single concept item within a section. Negated items are struck through and
  * dimmed; historic items are secondary; uncertain/conflicted get small chips.
+ *
+ * When the item resolves to source documents (item.documentIds) and an
+ * onSelectItem handler is provided, the name renders as a keyboard-operable
+ * button that opens the source document(s) in the viewer.
  */
-function SummaryItem({ item }) {
+function SummaryItem({
+  item,
+  onSelectItem = undefined,
+  onOpenMenu = undefined,
+  selectedFactId = "",
+}) {
   const theme = useTheme();
 
   const name = String(item?.name ?? item?.value ?? "").trim() || "Unnamed";
@@ -19,11 +51,42 @@ function SummaryItem({ item }) {
   const isConflicted = Boolean(item?.conflicted);
   const source = item?.source ? String(item.source).trim() : null;
 
+  const selection = item?.selection || null;
+  const documentIds = Array.isArray(item?.documentIds)
+    ? item.documentIds
+    : Array.isArray(selection?.documentIds)
+    ? selection.documentIds
+    : [];
+  const isClickable = typeof onSelectItem === "function" && documentIds.length > 0;
+  const isSelected =
+    isClickable && Boolean(selectedFactId) && selection?.factId === selectedFactId;
+  const documentCount = documentIds.length;
+  // Multi-source items open a document picker so the reader can choose which
+  // source document to view; single-source items open their one document
+  // directly on click.
+  const canShowMenu = isClickable && documentCount > 1 && typeof onOpenMenu === "function";
+
   const textColor = isNegated
     ? "text.disabled"
     : isHistoric
     ? "text.secondary"
     : "text.primary";
+
+  const nameContent = (
+    <>
+      {isNegated ? <Box component="span" sx={{ fontWeight: 600 }}>No </Box> : null}
+      {name}
+      {isClickable && documentCount > 1 ? (
+        <Box
+          component="span"
+          aria-hidden="true"
+          sx={{ ml: 0.4, fontSize: "0.6rem", fontWeight: 700, color: "text.secondary" }}
+        >
+          ({documentCount})
+        </Box>
+      ) : null}
+    </>
+  );
 
   return (
     <Box
@@ -35,16 +98,80 @@ function SummaryItem({ item }) {
         py: 0.12,
       }}
     >
-      <Typography
-        variant="body2"
-        component="span"
-        sx={{
-          color: textColor,
-          lineHeight: 1.25,
-        }}
-      >
-        {isNegated ? <Box component="span" sx={{ fontWeight: 600 }}>No </Box> : null}{name}
-      </Typography>
+      {isClickable ? (
+        <Box
+          component="button"
+          type="button"
+          onClick={(event) => {
+            // Multi-source findings open the document picker so the reader can
+            // choose which source document to view; single-source findings have
+            // only one document, so open it directly. Anchor the picker to the
+            // item's bottom-left so mouse and keyboard activation match.
+            if (canShowMenu) {
+              const rect = event.currentTarget.getBoundingClientRect();
+              onOpenMenu(selection, { x: Math.round(rect.left), y: Math.round(rect.bottom) });
+            } else {
+              onSelectItem(selection);
+            }
+          }}
+          onContextMenu={(event) => {
+            // The document picker is now a left-click action; still suppress the
+            // browser's native context menu and keep right-click opening the
+            // picker too for users who reach for it out of habit.
+            event.preventDefault();
+            if (canShowMenu) {
+              onOpenMenu(selection, { x: event.clientX, y: event.clientY });
+            }
+          }}
+          aria-pressed={isSelected}
+          aria-haspopup={canShowMenu ? "menu" : undefined}
+          aria-label={`${name}: ${
+            documentCount > 1
+              ? `choose from ${documentCount} source documents`
+              : "open source document"
+          }`}
+          sx={{
+            appearance: "none",
+            border: "none",
+            m: 0,
+            mx: isSelected ? -0.4 : 0,
+            px: isSelected ? 0.4 : 0,
+            py: 0,
+            borderRadius: 0.5,
+            font: "inherit",
+            fontSize: "0.875rem",
+            lineHeight: 1.25,
+            textAlign: "left",
+            cursor: "pointer",
+            color: isNegated || isHistoric ? textColor : "primary.main",
+            bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.14) : "transparent",
+            textDecoration: "underline",
+            textDecorationStyle: "dotted",
+            textUnderlineOffset: "2px",
+            "&:hover": {
+              textDecorationStyle: "solid",
+              bgcolor: alpha(theme.palette.primary.main, 0.08),
+            },
+            "&:focus-visible": {
+              outline: `2px solid ${theme.palette.primary.main}`,
+              outlineOffset: "1px",
+            },
+          }}
+        >
+          {nameContent}
+        </Box>
+      ) : (
+        <Typography
+          variant="body2"
+          component="span"
+          sx={{
+            color: textColor,
+            lineHeight: 1.25,
+          }}
+        >
+          {nameContent}
+        </Typography>
+      )}
 
       {isUncertain ? (
         <Chip
@@ -100,7 +227,16 @@ SummaryItem.propTypes = {
     uncertain: PropTypes.bool,
     conflicted: PropTypes.bool,
     source: PropTypes.string,
+    documentIds: PropTypes.arrayOf(PropTypes.string),
+    selection: PropTypes.shape({
+      factId: PropTypes.string,
+      documentIds: PropTypes.arrayOf(PropTypes.string),
+      documentRanking: PropTypes.arrayOf(PropTypes.object),
+    }),
   }),
+  onSelectItem: PropTypes.func,
+  onOpenMenu: PropTypes.func,
+  selectedFactId: PropTypes.string,
 };
 
 /**
@@ -112,11 +248,40 @@ export default function PatientSummaryCard({
   sections = [],
   collapsed = false,
   onToggleCollapse = undefined,
+  onSelectItem = undefined,
+  onSelectDocumentForItem = undefined,
+  selectedFactId = "",
+  selectedDocumentId = "",
 }) {
   const theme = useTheme();
   const upSm = useMediaQuery(theme.breakpoints.up("sm"));
   const upLg = useMediaQuery(theme.breakpoints.up("lg"));
   const upXl = useMediaQuery(theme.breakpoints.up("xl"));
+
+  // Single document-picker menu shared by all items, anchored at the cursor (or
+  // the item's rect when opened via keyboard).
+  const [contextMenu, setContextMenu] = useState(null);
+
+  const handleOpenItemMenu = (selection, position) => {
+    if (!selection || !Array.isArray(selection.documentRanking) || selection.documentRanking.length <= 1) {
+      return;
+    }
+    setContextMenu({ mouseX: position.x, mouseY: position.y, selection });
+  };
+
+  const handleCloseMenu = () => setContextMenu(null);
+
+  const handleMenuSelect = (documentId) => {
+    const selection = contextMenu?.selection;
+    setContextMenu(null);
+    if (selection && typeof onSelectDocumentForItem === "function") {
+      onSelectDocumentForItem(selection, documentId);
+    }
+  };
+
+  const menuRanking = Array.isArray(contextMenu?.selection?.documentRanking)
+    ? contextMenu.selection.documentRanking
+    : [];
 
   // Cap the number of columns at the number of sections so a wide layout never
   // renders an empty trailing column, then spread sections across them by
@@ -270,7 +435,13 @@ export default function PatientSummaryCard({
                       </Typography>
                     </Box>
                     {section.items.map((item, itemIndex) => (
-                      <SummaryItem key={`${section.key}-${itemIndex}`} item={item} />
+                      <SummaryItem
+                        key={`${section.key}-${itemIndex}`}
+                        item={item}
+                        onSelectItem={onSelectItem}
+                        onOpenMenu={handleOpenItemMenu}
+                        selectedFactId={selectedFactId}
+                      />
                     ))}
                   </Box>
                 ))}
@@ -279,6 +450,141 @@ export default function PatientSummaryCard({
           </Box>
         </Box>
       )}
+
+      <Menu
+        open={Boolean(contextMenu)}
+        onClose={handleCloseMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined
+        }
+        MenuListProps={{
+          dense: true,
+          "aria-label": contextMenu
+            ? `Source documents for ${contextMenu.selection.prettyName}`
+            : undefined,
+        }}
+        slotProps={{ paper: { sx: { maxHeight: 360, maxWidth: 420 } } }}
+      >
+        <ListSubheader
+          component="div"
+          sx={{
+            py: 0.5,
+            lineHeight: 1.35,
+            color: "text.secondary",
+            bgcolor: "background.paper",
+          }}
+        >
+          <Box
+            component="div"
+            sx={{
+              fontWeight: 700,
+              fontSize: "0.7rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {contextMenu?.selection?.prettyName} — source documents
+          </Box>
+          <Box
+            component="div"
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 1.5,
+              mt: 0.25,
+            }}
+          >
+            <Box component="span" sx={{ fontSize: "0.68rem", fontWeight: 400 }}>
+              Select to open
+            </Box>
+            <Box
+              component="span"
+              sx={{
+                fontSize: "0.62rem",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                color: "text.disabled",
+              }}
+            >
+              Confidence
+            </Box>
+          </Box>
+        </ListSubheader>
+        {menuRanking.map((entry, entryIndex) => {
+          const documentId = String(entry?.documentId || "").trim();
+          const isActive = Boolean(selectedDocumentId) && documentId === selectedDocumentId;
+          const isHighest = entryIndex === 0;
+          const confidenceLabel = formatConfidencePercent(entry?.confidence);
+          const metaLabel =
+            [entry?.type, entry?.formattedDate].filter(Boolean).join(" · ") ||
+            String(entry?.document?.name || documentId);
+
+          return (
+            <MenuItem
+              key={documentId}
+              selected={isActive}
+              onClick={() => handleMenuSelect(documentId)}
+              aria-label={`Open ${metaLabel}, confidence ${confidenceLabel}${
+                isHighest ? ", highest confidence" : ""
+              }${isActive ? ", currently open" : ""}`}
+              sx={{ py: 0.5 }}
+            >
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1.5,
+                  width: "100%",
+                }}
+              >
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, minWidth: 0 }}>
+                  <CheckIcon
+                    fontSize="small"
+                    color="primary"
+                    sx={{ visibility: isActive ? "visible" : "hidden", flexShrink: 0 }}
+                  />
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{ fontWeight: isActive ? 700 : 500, minWidth: 0 }}
+                  >
+                    {metaLabel}
+                  </Typography>
+                  {isHighest ? (
+                    <Chip
+                      label="highest"
+                      size="small"
+                      sx={{
+                        height: 16,
+                        fontSize: "0.6rem",
+                        fontWeight: 700,
+                        bgcolor: alpha(theme.palette.success.main, 0.13),
+                        color: theme.palette.success.dark,
+                        "& .MuiChip-label": { px: 0.6 },
+                      }}
+                    />
+                  ) : null}
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontWeight: 700,
+                    color: "text.secondary",
+                    fontVariantNumeric: "tabular-nums",
+                    flexShrink: 0,
+                  }}
+                >
+                  {confidenceLabel}
+                </Typography>
+              </Box>
+            </MenuItem>
+          );
+        })}
+      </Menu>
     </Card>
   );
 }
@@ -286,6 +592,15 @@ export default function PatientSummaryCard({
 PatientSummaryCard.propTypes = {
   collapsed: PropTypes.bool,
   onToggleCollapse: PropTypes.func,
+  // Called with a resolved selection object when a clickable item is activated.
+  onSelectItem: PropTypes.func,
+  // Called with (selection, documentId) when a document is chosen from the
+  // document picker.
+  onSelectDocumentForItem: PropTypes.func,
+  // factId of the currently selected summary item, for highlighting.
+  selectedFactId: PropTypes.string,
+  // id of the document currently open in the viewer, to flag it in the picker.
+  selectedDocumentId: PropTypes.string,
   sections: PropTypes.arrayOf(
     PropTypes.shape({
       key: PropTypes.string.isRequired,
@@ -299,6 +614,8 @@ PatientSummaryCard.propTypes = {
           uncertain: PropTypes.bool,
           conflicted: PropTypes.bool,
           source: PropTypes.string,
+          documentIds: PropTypes.arrayOf(PropTypes.string),
+          selection: PropTypes.object,
         })
       ).isRequired,
     })

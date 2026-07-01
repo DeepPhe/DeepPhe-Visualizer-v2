@@ -3,6 +3,7 @@ import PropTypes from "prop-types";
 import { Box, Button, Chip, Typography, useMediaQuery } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import Masonry from "@mui/lab/Masonry";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 
 // Responsive column counts for the detail Masonry. Kept as a named constant so
 // the SSR-fallback resolution below stays in sync with the `columns` prop.
@@ -110,19 +111,27 @@ function DetailPanel({ row, onPatientOpen }) {
   const patientId = String(row?.original?.patientId || "").trim();
   const canShowDocumentViewerButton = typeof onPatientOpen === "function" && Boolean(patientId);
   const detailPanelHeader = (
-    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
         Patient Summary
       </Typography>
       {canShowDocumentViewerButton ? (
         <Button
           size="small"
-          variant="outlined"
+          variant="contained"
+          color="primary"
+          disableElevation
+          startIcon={<ArticleOutlinedIcon />}
           onClick={(event) => {
             event.stopPropagation();
             onPatientOpen(patientId);
           }}
-          sx={{ textTransform: "none", fontWeight: 600 }}
+          sx={{
+            textTransform: "none",
+            fontWeight: 700,
+            boxShadow: 1,
+            "&:hover": { boxShadow: 3 },
+          }}
         >
           Show in Document Viewer
         </Button>

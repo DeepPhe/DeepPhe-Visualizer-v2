@@ -6,6 +6,7 @@ import HorizontalBarFilter from "../../components/HorizontalBarFilter";
 function FilterSectionCard({
   classNameKey = "",
   classDisplayName = "",
+  sectionLabel = "",
   classError = "",
   sortMode = "",
   density = "standard",
@@ -93,6 +94,7 @@ function FilterSectionCard({
             key={`inline:${filterType}:${classNameKey}:${sortMode}`}
             className="filter-card-chart"
             title={classDisplayName}
+            sectionLabel={sectionLabel}
             showTitle={false}
             allowCollapse={false}
             showSortDimensionToggle={false}
@@ -120,6 +122,7 @@ function FilterSectionCard({
 FilterSectionCard.propTypes = {
   classNameKey: PropTypes.string,
   classDisplayName: PropTypes.string,
+  sectionLabel: PropTypes.string,
   classError: PropTypes.string,
   sortMode: PropTypes.string,
   density: PropTypes.string,

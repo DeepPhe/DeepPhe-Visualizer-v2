@@ -243,6 +243,8 @@ export default function PatientView() {
     <ThemeProvider theme={activeTheme}>
       <CssBaseline />
       <Box
+        component="main"
+        aria-labelledby="patient-page-title"
         sx={{
           minHeight: "100vh",
           bgcolor: "background.default",
@@ -274,7 +276,12 @@ export default function PatientView() {
                   </Typography>
                 </MuiLink>
                 <Divider orientation="vertical" flexItem />
-                <Typography component="h1" variant="subtitle1" sx={{ fontWeight: 800 }}>
+                <Typography
+                  id="patient-page-title"
+                  component="h1"
+                  variant="subtitle1"
+                  sx={{ fontWeight: 800 }}
+                >
                   Patient View
                 </Typography>
               </Stack>

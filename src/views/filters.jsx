@@ -33,7 +33,7 @@ import {
   buildThemeColorOverridePatch,
   collectThemeColorEntries,
 } from "./filters/themeColorOverrides";
-import { normalizeClassName } from "../utils/dataProcessing";
+import { normalizeClassName, summarizeInstances } from "../utils/dataProcessing";
 import { endSpan, logMilestone, startSpan } from "../utils/perfTracker";
 import { resolveFilterSetsWithExtras, resolveFilterSetsForAttributesAndConcepts } from "./filterSets";
 import { buildFilterSectionLayout, estimateCardHeight } from "./filterLayout";
@@ -86,6 +86,7 @@ import {
   withCompactFilterLabels,
 } from "./filters/filterDefinitions";
 import { buildIdentifiedSummary, formatSelectionText } from "./filters/cohortNarrative";
+import { buildPatientIdIndex, computeFilterPatientSet } from "./filters/clientFilterMath";
 import {
   buildActiveFilters,
   getFilterRowKey,
@@ -122,6 +123,12 @@ const SLOW_QUERY_THRESHOLD_MS = 100;
 const PATIENT_GRID_DEFAULT_PAGE_SIZE = 10;
 const PATIENT_GRID_MAXIMIZED_PAGE_SIZE = 40;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
+// Below this cohort size, load the per-instance patient-id breakdown once and
+// compute row numerators / dot patient ids in the browser via set intersection
+// (see clientFilterMath) instead of asking the server for every row on each
+// selection. Above it, the per-instance patient-id payload gets large, so we
+// keep the server-side included-counts batch.
+const CLIENT_FILTER_MATH_MAX_PATIENTS = 300;
 const FILTER_LAYOUT_MODE = {
   STACKED: "stacked",
   PER_CARD_COLUMN: "per-card-column",
@@ -399,6 +406,10 @@ function FiltersView() {
   const [isInitialIncludedCountsReady, setIsInitialIncludedCountsReady] = useState(false);
   const includedPatientIdsByRowKeyRef = useRef({});
   const hasCompletedInitialIncludedCountsLoadRef = useRef(false);
+  // Per-instance patient-id index for client-side numerator/dot computation,
+  // or null when the cohort is too large (server batch is used instead). Built
+  // by the effect below once the total patient count is known.
+  const [clientFilterIndex, setClientFilterIndex] = useState(null);
   const [countError, setCountError] = useState("");
   const [isCountLoading, setIsCountLoading] = useState(false);
   const [currentPatientGridPage, setCurrentPatientGridPage] = useState(0);
@@ -970,6 +981,58 @@ function FiltersView() {
       };
     }
 
+    // Client-side fast path: when the patient-id index is available, resolve
+    // every queued row by set intersection in the browser — no network. The
+    // requests were built with the exact same resolveRequestFilters output the
+    // server would receive, so the counts match. If any request references a
+    // class the index doesn't cover, computeFilterPatientSet returns null and
+    // we abandon the fast path entirely, falling through to the server batch.
+    if (clientFilterIndex) {
+      const clientCountsStartTime =
+        typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+      const nextCountsByRowKey = { ...staticCountsByRowKey };
+      const nextPatientIdsByRowKey = { ...staticPatientIdsByRowKey };
+      let resolvedEntirelyClientSide = true;
+
+      for (const request of countRequests) {
+        const patientSet = computeFilterPatientSet(request.rowRequestFilters, clientFilterIndex);
+        if (patientSet === null) {
+          resolvedEntirelyClientSide = false;
+          break;
+        }
+        nextCountsByRowKey[request.rowKey] = patientSet.size;
+        if (
+          request.includePatientIds &&
+          patientSet.size > 0 &&
+          patientSet.size <= INLINE_PATIENT_IDS_THRESHOLD
+        ) {
+          nextPatientIdsByRowKey[request.rowKey] = [...patientSet];
+        }
+      }
+
+      if (resolvedEntirelyClientSide) {
+        setIncludedCountByRowKey(nextCountsByRowKey);
+        setIncludedPatientIdsByRowKey(nextPatientIdsByRowKey);
+        markInitialIncludedCountsReady();
+        if (SHOULD_LOG_FILTERS_PERF) {
+          logMilestone(
+            "Row counts ready (client)",
+            Math.round(
+              ((typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()) -
+                clientCountsStartTime) *
+                100
+            ) / 100,
+            { requests: countRequests.length }
+          );
+        }
+        return () => {
+          isActive = false;
+        };
+      }
+    }
+
     const loadIncludedCounts = async () => {
       const includedCountsStartTime =
         typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
@@ -1132,6 +1195,7 @@ function FiltersView() {
     ageAtDxSelectionMode,
     ageDecileInstanceMap,
     chartClassRows,
+    clientFilterIndex,
     hasSelections,
     isAttributeLoading,
     isConceptLoading,
@@ -1512,6 +1576,40 @@ function FiltersView() {
         includePatientIds: true,
       });
 
+      // Client-side fast path: resolve the cohort count AND the drawer's patient
+      // IDs from the in-browser index, skipping the server round-trip the drawer
+      // would otherwise wait on. This is the same set-intersection math used for
+      // the row numerators (and the patient dots), so it stays consistent with
+      // them. Falls through to the server when the index can't cover a selected
+      // class (computeFilterPatientSet returns null).
+      if (clientFilterIndex) {
+        const cohortPatientSet = computeFilterPatientSet(requestFilters, clientFilterIndex);
+        if (cohortPatientSet !== null) {
+          // Per-filter individual counts, aligned to requestFilters exactly as
+          // the server returns them, so the zero-result hint keeps working.
+          const itemCounts = requestFilters.map((filter) => {
+            const filterSet = computeFilterPatientSet([filter], clientFilterIndex);
+            return filterSet ? filterSet.size : null;
+          });
+          const clientResult = {
+            count: cohortPatientSet.size,
+            patientIds: [...cohortPatientSet],
+            timing: { totalMs: 0, itemCounts },
+          };
+          if (!isActive) {
+            endSpan(filterSpan, "cancelled", { resultCount: clientResult.count });
+            return;
+          }
+          endSpan(filterSpan, "ok", { resultCount: clientResult.count, totalMs: 0 });
+          if (SHOULD_LOG_FILTERS_PERF) {
+            logMilestone("Filter query (client)", 0, { count: clientResult.count });
+          }
+          setCountResult(clientResult);
+          setIsCountLoading(false);
+          return;
+        }
+      }
+
       try {
         // Resolve the count and the patient IDs in a single round-trip. The
         // patient drawer always needs the IDs, and the previous two-step pass
@@ -1562,7 +1660,7 @@ function FiltersView() {
     return () => {
       isActive = false;
     };
-  }, [hasSelections, requestFilters]);
+  }, [clientFilterIndex, hasSelections, requestFilters]);
 
   useEffect(() => {
     let isActive = true;
@@ -1624,6 +1722,83 @@ function FiltersView() {
       isActive = false;
     };
   }, []);
+
+  // Build the client-side patient-id index for small cohorts. With it, row
+  // numerators and dot patient ids are computed in the browser via set
+  // intersection (see the included-counts effect) instead of a per-selection
+  // round-trip to the server for every row. Any failure leaves the index null,
+  // which transparently falls back to the server batch.
+  useEffect(() => {
+    if (
+      totalPatientCount === null ||
+      totalPatientCount <= 0 ||
+      totalPatientCount > CLIENT_FILTER_MATH_MAX_PATIENTS
+    ) {
+      setClientFilterIndex(null);
+      return undefined;
+    }
+
+    let isActive = true;
+
+    const toSummaryByClass = (summary) => {
+      const classes = Array.isArray(summary?.classes) ? summary.classes : [];
+      const instancesByClass = summary?.instancesByClass || {};
+      const summaryByClass = {};
+      classes.forEach((className) => {
+        const classKey = String(className);
+        summaryByClass[classKey] = summarizeInstances(classKey, instancesByClass[classKey] || []);
+      });
+      return summaryByClass;
+    };
+
+    const buildIndex = async () => {
+      const indexStartTime =
+        typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+      try {
+        const [omopSummary, attributeSummary, conceptSummary] = await Promise.all([
+          getOmopSummary({ includePatientIds: true }),
+          getAttributesSummary({ includePatientIds: true }),
+          getConceptsSummary({ includePatientIds: true }),
+        ]);
+        if (!isActive) {
+          return;
+        }
+        const index = buildPatientIdIndex([
+          { type: "omop", summaryByClass: toSummaryByClass(omopSummary) },
+          { type: "attributes", summaryByClass: toSummaryByClass(attributeSummary) },
+          { type: "concepts", summaryByClass: toSummaryByClass(conceptSummary) },
+        ]);
+        if (!isActive) {
+          return;
+        }
+        setClientFilterIndex(index);
+        if (SHOULD_LOG_FILTERS_PERF) {
+          logMilestone(
+            "Client filter index built",
+            Math.round(
+              ((typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()) -
+                indexStartTime) *
+                100
+            ) / 100,
+            { classes: index.size, patients: totalPatientCount }
+          );
+        }
+      } catch (error) {
+        if (isActive) {
+          // Leave the index null so the server-side batch remains in charge.
+          setClientFilterIndex(null);
+        }
+      }
+    };
+
+    buildIndex();
+
+    return () => {
+      isActive = false;
+    };
+  }, [totalPatientCount]);
 
   const timing = useMemo(() => countResult?.timing || {}, [countResult?.timing]);
   const isSlowQuery = Number(timing.totalMs || 0) > SLOW_QUERY_THRESHOLD_MS;
@@ -2855,6 +3030,7 @@ function FiltersView() {
           <FilterSectionCard
             classNameKey={className}
             classDisplayName={classDisplayName}
+            sectionLabel={filterSet.label}
             classError={classError}
             sortMode={sortMode}
             density={isCompactDensity ? "compact" : "standard"}
@@ -3018,6 +3194,7 @@ function FiltersView() {
           key={`${cardKeyPrefix}${keyPrefix}:${filterSet.id}:${className}`}
           classNameKey={className}
           classDisplayName={classDisplayName}
+          sectionLabel={filterSet.label}
           classError={classError}
           sortMode={sortMode}
           density={isCompactDensity ? "compact" : "standard"}

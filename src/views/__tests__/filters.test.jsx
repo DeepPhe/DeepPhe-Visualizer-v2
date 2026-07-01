@@ -1464,6 +1464,92 @@ describe("FiltersView", () => {
     unmount();
   });
 
+  it("computes row numerators client-side from the patient-id index for small cohorts", async () => {
+    // Summaries WITH patient ids -> totalPatientCount resolves (5, under the
+    // threshold) -> the client-side patient-id index builds, and row numerators
+    // are computed in the browser via set intersection rather than the server
+    // included-counts batch.
+    getOmopSummary.mockResolvedValue({
+      classes: ["GENDER", "RACE"],
+      instancesByClass: {
+        GENDER: [
+          { gender: "Female", count: 4, patient_ids: ["p1", "p2", "p3", "p5"] },
+          { gender: "Male", count: 1, patient_ids: ["p4"] },
+        ],
+        RACE: [
+          { race: "White", count: 3, patient_ids: ["p1", "p2", "p4"] },
+          { race: "Black", count: 1, patient_ids: ["p3"] },
+          { race: "Asian", count: 1, patient_ids: ["p5"] },
+          { race: "Other", count: 1, patient_ids: ["p4"] },
+        ],
+      },
+      timing: { totalMs: 1 },
+    });
+    getAttributeSummary.mockResolvedValue({ classes: [], instancesByClass: {}, timing: { totalMs: 1 } });
+    getConceptsSummary.mockResolvedValue({ classes: [], instancesByClass: {}, timing: { totalMs: 1 } });
+
+    // Make the server return NOTHING for any count query, and reject the
+    // included-counts batch. With the client fast path engaged, the cohort
+    // count, the drawer's patient ids, and the row numerators are all computed
+    // in the browser — so the asserted values below can only come from the
+    // client math, and the empty server response can't pollute them.
+    fetchDeepPheFilterCount.mockResolvedValue({
+      count: 0,
+      patient_ids: [],
+      timing: { totalMs: 1, itemCounts: [0] },
+    });
+    fetchDeepPheFilterCountBatch.mockRejectedValue(new Error("server path should not run on the client fast path"));
+    fetchDeepPheFilterSummary.mockResolvedValue([]);
+
+    const { unmount } = renderComponent(<FiltersView />);
+
+    const getLatestChartProps = (title) =>
+      [...mockHorizontalBarFilter.mock.calls]
+        .reverse()
+        .map(([props]) => props)
+        .find((props) => props.title === title);
+
+    await waitFor(() => {
+      expect(getLatestChartProps("Gender")).toBeDefined();
+      expect(getLatestChartProps("Race")).toBeDefined();
+    });
+
+    await act(async () => {
+      getLatestChartProps("Gender").onSelectionChange(["Female"]);
+      await Promise.resolve();
+    });
+
+    // Numerators for Race given Gender=Female {p1,p2,p3,p5}:
+    //   White {p1,p2,p4} -> {p1,p2} = 2
+    //   Black {p3}       -> {p3}    = 1
+    //   Asian {p5}       -> {p5}    = 1
+    //   Other {p4}       -> {}      = 0  (zero numerator -> row disabled)
+    await waitFor(() => {
+      const raceData = getLatestChartProps("Race")?.data || [];
+      const byLabel = (label) => raceData.find((row) => row.label === label);
+      expect(byLabel("White")?.includedValue).toBe(2);
+      expect(byLabel("Black")?.includedValue).toBe(1);
+      expect(byLabel("Asian")?.includedValue).toBe(1);
+      expect(byLabel("Other")?.includedValue).toBe(0);
+    });
+
+    // The drawer's patient set is resolved client-side too: the cohort for
+    // Gender=Female is {p1,p2,p3,p5}, so the page summary is fetched for those
+    // ids. The server returned an empty cohort, so these ids can only have come
+    // from the in-browser index.
+    await waitFor(() => {
+      const requestedSummaryIds = fetchDeepPheFilterSummary.mock.calls.flatMap(([ids]) =>
+        Array.isArray(ids) ? ids : []
+      );
+      expect(requestedSummaryIds).toEqual(expect.arrayContaining(["p1", "p2", "p3", "p5"]));
+    });
+
+    // The client path never falls back to the server included-counts batch.
+    expect(fetchDeepPheFilterCountBatch).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
   it("renders patient grid in a bottom drawer with 10-row pagination and expand/collapse controls", async () => {
     const patientIds = Array.from({ length: 12 }, (_, index) =>
       `PATIENT-${String(index + 1).padStart(3, "0")}`

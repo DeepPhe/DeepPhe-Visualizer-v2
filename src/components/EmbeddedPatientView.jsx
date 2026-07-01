@@ -11,10 +11,11 @@ import { loadPatientFilterSummary } from "../controllers/patient";
 import { usePatientData } from "../hooks/usePatientData";
 import { asRowArray, getValueFromRow } from "../utils/dataProcessing";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
+import { resolveSummarySelection } from "../utils/patientView/summarySelection";
 
 /**
  * @typedef {Object} SelectionContext
- * @property {"auto"|"timeline"|"fact"|"related-document"} source
+ * @property {"auto"|"timeline"|"fact"|"related-document"|"summary"} source
  * @property {string|null} [documentType]   - report type, e.g. "NOTE"
  * @property {string|null} [documentDate]   - formatted date string, e.g. "2010/02/05"
  * @property {string|null} [episodeLabel]   - e.g. "Treatment"
@@ -23,6 +24,7 @@ import { resolveFactSelection } from "../utils/patientView/factLinking";
  * @property {boolean}     [isTumorLevel]   - true when fact is on a tumor, not the cancer
  * @property {number|null} [cancerIndex]    - 1-based position in cancerSummary array
  * @property {number|null} [tumorIndex]     - 1-based position in cancer's tumor list
+ * @property {number}      [documentCount]  - number of source documents for a summary item
  */
 
 const DETAIL_SECTION_DEFINITIONS = [
@@ -213,6 +215,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
   const [factSelection, setFactSelection] = useState(null);
+  const [summarySelection, setSummarySelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectionContext, setSelectionContext] = useState(null);
   const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
@@ -227,6 +230,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     const normalizedId = String(patientId || "").trim();
     if (!normalizedId) {
       setFactSelection(null);
+      setSummarySelection(null);
       setSelectedDocumentId("");
       setSelectionContext(null);
       setOmopDetails(EMPTY_OMOP_DETAILS);
@@ -237,6 +241,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     loadPatient(normalizedId).then((result) => {
       if (!result) return;
       setFactSelection(null);
+      setSummarySelection(null);
       setSelectedDocumentId("");
       setSelectionContext(null);
     });
@@ -372,6 +377,52 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     [patientData, patientSummaryData]
   );
 
+  // Timeline report metadata keyed by document id, for labeling the document
+  // picker with the same "type · date" the timeline shows.
+  const reportById = useMemo(() => {
+    const map = new Map();
+    (timelineData?.reportData || []).forEach((report) => {
+      const id = String(report?.id || "").trim();
+      if (id) {
+        map.set(id, report);
+      }
+    });
+    return map;
+  }, [timelineData]);
+
+  // Resolve each summary item to its source documents from the local mention
+  // graph so it can open the document viewer on click. Items that can't be
+  // tied to any source document keep no selection and render non-interactive.
+  const enrichedSummarySections = useMemo(
+    () =>
+      patientSummarySections.map((section) => ({
+        ...section,
+        items: section.items.map((item) => {
+          const selection = resolveSummarySelection(patientData, item, {
+            sectionKey: section.key,
+            sectionLabel: section.label,
+          });
+          if (!selection) {
+            return item;
+          }
+          const documentRanking = selection.documentRanking.map((entry) => {
+            const report = reportById.get(entry.documentId);
+            return {
+              ...entry,
+              type: String(report?.type || entry.document?.type || "").trim(),
+              formattedDate: String(report?.formattedDate || entry.document?.date || "").trim(),
+            };
+          });
+          return {
+            ...item,
+            selection: { ...selection, documentRanking },
+            documentIds: selection.documentIds,
+          };
+        }),
+      })),
+    [patientSummarySections, patientData, reportById]
+  );
+
   const handleSelectDocumentFromTimeline = useCallback(
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
@@ -443,6 +494,72 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     [factSelection, timelineData, resolveCancerTumorIndex]
   );
 
+  // Open a specific source document for a summary item. Summary selections and
+  // cancer/tumor fact selections are mutually exclusive — only one drives the
+  // viewer at a time.
+  const openSummaryDocument = useCallback(
+    (selection, documentId) => {
+      const normalizedDocId = String(documentId || "").trim();
+      if (!selection || !normalizedDocId) {
+        return;
+      }
+
+      setFactSelection(null);
+      setSummarySelection(selection);
+      setSelectedDocumentId(normalizedDocId);
+
+      const report = (timelineData?.reportData || []).find(
+        (r) => String(r?.id || "").trim() === normalizedDocId
+      );
+
+      const rankingEntry = Array.isArray(selection.documentRanking)
+        ? selection.documentRanking.find(
+            (entry) => String(entry?.documentId || "").trim() === normalizedDocId
+          )
+        : null;
+
+      setSelectionContext({
+        source: "summary",
+        categoryName: selection.categoryName || null,
+        prettyName: selection.prettyName || null,
+        documentCount: Array.isArray(selection.documentIds) ? selection.documentIds.length : 0,
+        documentConfidence: rankingEntry ? rankingEntry.confidence : null,
+        documentType: String(report?.type || "").trim() || null,
+        documentDate: String(report?.formattedDate || "").trim() || null,
+      });
+    },
+    [timelineData]
+  );
+
+  // Single-source findings: open their one source document on click, toggling
+  // off when the same item is clicked again. (Multi-source findings open the
+  // document picker instead and route through handleSelectSummaryDocument.)
+  const handleSelectSummaryItem = useCallback(
+    (selection) => {
+      if (!selection || !Array.isArray(selection.documentIds) || selection.documentIds.length === 0) {
+        return;
+      }
+
+      if (summarySelection?.factId === selection.factId) {
+        setSummarySelection(null);
+        setSelectedDocumentId("");
+        setSelectionContext(null);
+        return;
+      }
+
+      openSummaryDocument(selection, selection.documentIds[0]);
+    },
+    [summarySelection, openSummaryDocument]
+  );
+
+  // Document picker: open the specific source document chosen from the list.
+  const handleSelectSummaryDocument = useCallback(
+    (selection, documentId) => {
+      openSummaryDocument(selection, documentId);
+    },
+    [openSummaryDocument]
+  );
+
   const handleFactSelect = (factId) => {
     const normalizedFactId = String(factId || "").trim();
     if (!normalizedFactId || !patientData) return;
@@ -453,6 +570,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       return;
     }
 
+    // Cancer/tumor fact selection supersedes any active summary selection.
+    setSummarySelection(null);
     const nextSelection = resolveFactSelection(patientData, normalizedFactId);
     setFactSelection(nextSelection);
 
@@ -499,7 +618,11 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     return null;
   }
 
-  const hasSummary = patientSummarySections.length > 0;
+  // Either a cancer/tumor fact or a Patient Summary item drives the document
+  // viewer and the related-document highlights — never both at once.
+  const activeSelection = factSelection || summarySelection;
+
+  const hasSummary = enrichedSummarySections.length > 0;
   const summaryCollapsed = hasSummary && isSummaryCollapsed;
   // A collapsed summary with no open document only needs a slim rail, so the
   // bottom region shrinks to it instead of holding a tall, mostly-empty box.
@@ -803,7 +926,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             embedded
             timelineData={timelineData}
             selectedDocumentId={selectedDocumentId}
-            relatedDocumentIds={factSelection?.documentIds || []}
+            relatedDocumentIds={activeSelection?.documentIds || []}
             onSelectDocument={handleSelectDocumentFromTimeline}
           />
         </Box>
@@ -837,9 +960,13 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           {hasSummary ? (
             <Box sx={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <PatientSummaryCard
-                sections={patientSummarySections}
+                sections={enrichedSummarySections}
                 collapsed={isSummaryCollapsed}
                 onToggleCollapse={() => setIsSummaryCollapsed((previous) => !previous)}
+                onSelectItem={handleSelectSummaryItem}
+                onSelectDocumentForItem={handleSelectSummaryDocument}
+                selectedFactId={summarySelection?.factId || ""}
+                selectedDocumentId={selectedDocumentId}
               />
             </Box>
           ) : null}
@@ -862,7 +989,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
                 embedded
                 document={selectedDocument}
                 concepts={patientData.concepts}
-                factSelection={factSelection}
+                factSelection={activeSelection}
                 selectionContext={selectionContext}
                 onClose={handleCloseDocument}
               />
