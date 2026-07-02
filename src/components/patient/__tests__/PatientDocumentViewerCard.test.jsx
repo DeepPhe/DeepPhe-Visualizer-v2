@@ -42,8 +42,10 @@ function buildConceptPayload() {
     {
       id: "c-neoplasm",
       name: "Neoplasm",
+      preferredText: "Tumor",
       classUri: "Neoplasm",
       dpheGroup: "Neoplasm",
+      codingScheme: "SNOMED CT",
       mentionIds: ["m-neoplasm"],
     },
     {
@@ -192,6 +194,101 @@ describe("PatientDocumentViewerCard", () => {
     expect(mentionButtons.length).toBeGreaterThan(0);
     expect(container.textContent).toContain("Neoplasm (1)");
     expect(container.textContent).toContain("Side (1)");
+
+    unmount();
+  });
+
+  test("lets an embedded viewer grow to its full content without nested scrolling", () => {
+    const { container, unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        embedded
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+        confidenceThreshold={50}
+        collapsiblePanelId="natural-height-viewer"
+      />
+    );
+
+    const card = container.querySelector('[data-testid="patient-document-viewer-card"]');
+    const content = container.querySelector("#natural-height-viewer");
+    const textPane = container.querySelector('[data-testid="patient-document-text-pane"]');
+    const conceptPanelBody = container.querySelector('[role="tabpanel"]').parentElement;
+
+    expect(window.getComputedStyle(card).height).toBe("auto");
+    expect(window.getComputedStyle(content).overflow).toBe("visible");
+    expect(window.getComputedStyle(textPane).height).toBe("auto");
+    expect(window.getComputedStyle(textPane).overflowY).toBe("visible");
+    expect(window.getComputedStyle(conceptPanelBody).overflow).toBe("visible");
+
+    unmount();
+  });
+
+  test("shows complete concept and mention details when a concept is hovered", () => {
+    jest.useFakeTimers();
+    const { container, unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+        confidenceThreshold={50}
+      />
+    );
+
+    const conceptChip = container.querySelector('[role="button"][aria-label^="Neoplasm."]');
+    expect(conceptChip).not.toBeNull();
+    expect(conceptChip.getAttribute("aria-label")).toContain("Confidence 95%");
+
+    act(() => {
+      conceptChip.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      jest.advanceTimersByTime(300);
+    });
+
+    const tooltip = document.body.querySelector('[data-testid="concept-details-tooltip"]');
+    expect(tooltip).not.toBeNull();
+    expect(tooltip.textContent).toContain("Preferred textTumor");
+    expect(tooltip.textContent).toContain("Concept typeNeoplasm");
+    expect(tooltip.textContent).toContain("Confidence95%");
+    expect(tooltip.textContent).toContain("Coding SchemeSNOMED CT");
+    expect(tooltip.textContent).toContain("Tumor — 95%");
+    expect(tooltip.textContent).toContain("Affirmed · Certain · Current");
+    expect(tooltip.textContent).toContain("Offsets 0–5 · ID m-neoplasm");
+
+    unmount();
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  test("collapses the whole viewer to its header while keeping close reachable", () => {
+    const onToggleExpanded = jest.fn();
+    const onClose = jest.fn();
+    const { container, unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        embedded
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+        confidenceThreshold={50}
+        expanded={false}
+        onToggleExpanded={onToggleExpanded}
+        onClose={onClose}
+        collapsiblePanelId="viewer-panel-body"
+      />
+    );
+
+    const toggle = container.querySelector(
+      'button[aria-label="Expand Document Viewer section"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("viewer-panel-body");
+    // Report text + concept controls are hidden while collapsed…
+    expect(container.querySelector('[data-testid="patient-document-text-pane"]')).toBeNull();
+    expect(container.querySelector("#viewer-panel-body")).toBeNull();
+    // …but the close button stays in the header.
+    expect(container.querySelector('button[aria-label="Close document"]')).not.toBeNull();
+
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 
     unmount();
   });

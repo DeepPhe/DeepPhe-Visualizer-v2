@@ -96,8 +96,9 @@ describe("PatientDocumentsCard", () => {
     expect(container.querySelectorAll("circle[data-document-id]")).toHaveLength(3);
     expect(container.querySelectorAll("select")).toHaveLength(0);
 
+    // Height is content-sized: plotTop(10) + rows(2) * rowHeight(40) + footer(38).
     const viewBox = svg.getAttribute("viewBox").split(" ").map(Number);
-    expect(viewBox[3]).toBe(180);
+    expect(viewBox[3]).toBe(128);
 
     unmount();
   });
@@ -222,6 +223,36 @@ describe("PatientDocumentsCard", () => {
     });
 
     expect(onSelectDocument).toHaveBeenCalledWith("patient-collapsed_16032025025912_D_2");
+    unmount();
+  });
+
+  it("collapses to its header, hiding the timeline chart", () => {
+    const onToggleExpanded = jest.fn();
+    const { container, unmount } = renderComponent(
+      <PatientDocumentsCard
+        timelineData={buildTimelineData()}
+        expanded={false}
+        onToggleExpanded={onToggleExpanded}
+        collapsiblePanelId="timeline-panel-body"
+      />
+    );
+
+    const toggle = container.querySelector(
+      'button[aria-label="Expand Patient Document Timeline section"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("timeline-panel-body");
+    expect(
+      container.querySelector('svg[aria-label="Patient document timeline chart"]')
+    ).toBeNull();
+    expect(container.querySelector("#timeline-panel-body")).toBeNull();
+
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
     unmount();
   });
 });

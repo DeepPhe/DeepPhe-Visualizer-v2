@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { toDisplayName } from "../../utils/displayNames";
+import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const SUMMARY_CATEGORY_PRIORITY = [
   "Location",
@@ -270,6 +271,10 @@ export default function CancerTumorSummaryCard({
   onFactSelect = undefined,
   onSelectDocument = undefined,
   contentAutoHeight = false,
+  expanded = true,
+  onToggleExpanded = undefined,
+  collapsiblePanelId = undefined,
+  sectionLabel = "Cancer and Tumor Detail",
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
   const normalizedCancers = Array.isArray(cancers) ? cancers : [];
@@ -283,9 +288,9 @@ export default function CancerTumorSummaryCard({
         borderRadius: 0,
         display: "flex",
         flexDirection: "column",
-        height: contentAutoHeight ? "auto" : "100%",
-        minHeight: contentAutoHeight ? "unset" : 0,
-        overflow: contentAutoHeight ? "visible" : "hidden",
+        height: contentAutoHeight || !expanded ? "auto" : "100%",
+        minHeight: contentAutoHeight || !expanded ? "unset" : 0,
+        overflow: contentAutoHeight || !expanded ? "visible" : "hidden",
       }}
     >
       <CardHeader
@@ -297,26 +302,39 @@ export default function CancerTumorSummaryCard({
         }}
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
         action={
-          normalizedCancers.length > 0 ? (
-            <Typography
-              variant="caption"
-              sx={{
-                display: "inline-block",
-                px: 1,
-                py: 0.25,
-                borderRadius: 999,
-                fontWeight: 600,
-                bgcolor: "info.main",
-                color: "#fff",
-              }}
-            >
-              {normalizedCancers.length} cancer{normalizedCancers.length !== 1 ? "s" : ""}
-            </Typography>
-          ) : null
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {normalizedCancers.length > 0 ? (
+              <Typography
+                variant="caption"
+                sx={{
+                  display: "inline-block",
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: 999,
+                  fontWeight: 600,
+                  bgcolor: "info.main",
+                  color: "#fff",
+                }}
+              >
+                {normalizedCancers.length} cancer{normalizedCancers.length !== 1 ? "s" : ""}
+              </Typography>
+            ) : null}
+            {onToggleExpanded ? (
+              <SectionCollapseToggle
+                expanded={expanded}
+                onToggle={onToggleExpanded}
+                label={sectionLabel}
+                panelId={collapsiblePanelId}
+              />
+            ) : null}
+          </Stack>
         }
       />
+      {expanded ? (
+        <>
       <Divider />
       <CardContent
+        id={collapsiblePanelId}
         sx={{
           px: 1.25,
           py: 0.75,
@@ -364,22 +382,23 @@ export default function CancerTumorSummaryCard({
                     "& .MuiTypography-root": { lineHeight: 1.2 },
                   }}
                 >
-                  {/* Cancer-level facts — a vertical reference grid that keeps
-                      the timeline's primary canvas wide. */}
+                  {/* Cancer-level facts flow and wrap so label/value groups pack
+                      onto as few lines as the panel width allows. */}
                   <Box
                     data-testid="cancer-fact-grid"
                     sx={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      display: "flex",
+                      flexWrap: "wrap",
                       alignItems: "center",
-                      gap: "6px 10px",
+                      columnGap: 1.75,
+                      rowGap: 0.5,
                       minWidth: 0,
                     }}
                   >
                     <Tooltip title={`Full ID: ${cancer.title}`} placement="top-start">
                       <Typography
                         variant="subtitle2"
-                        sx={{ fontWeight: 700, cursor: "default", gridColumn: "1 / -1" }}
+                        sx={{ fontWeight: 700, cursor: "default", flexBasis: "100%" }}
                       >
                         Cancer {cancerIndex + 1}
                       </Typography>
@@ -390,7 +409,6 @@ export default function CancerTumorSummaryCard({
                       facts={locationFacts}
                       activeFactId={activeFactId}
                       onFactSelect={onFactSelect}
-                      sx={{ gridColumn: "1 / -1" }}
                     />
                     <FactBadgeGroup
                       label="Grade"
@@ -411,7 +429,6 @@ export default function CancerTumorSummaryCard({
                         flexWrap: "nowrap",
                         alignItems: "center",
                         gap: "6px 8px",
-                        gridColumn: "1 / -1",
                         minWidth: 0,
                       }}
                     >
@@ -448,11 +465,12 @@ export default function CancerTumorSummaryCard({
                             key={`${cancerId}-${tumor.id}`}
                             data-testid="tumor-fact-grid"
                             sx={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                              display: "flex",
+                              flexWrap: "wrap",
                               alignItems: "center",
-                              gap: "6px 10px",
-                              pt: 0.75,
+                              columnGap: 1.75,
+                              rowGap: 0.5,
+                              pt: 0.6,
                               minWidth: 0,
                               borderTop: 1,
                               borderColor: "divider",
@@ -465,7 +483,6 @@ export default function CancerTumorSummaryCard({
                                 sx={{
                                   fontWeight: 700,
                                   cursor: "default",
-                                  gridColumn: "1 / -1",
                                 }}
                               >
                                 {tumorLabel}
@@ -478,11 +495,6 @@ export default function CancerTumorSummaryCard({
                                 facts={group.facts}
                                 activeFactId={activeFactId}
                                 onFactSelect={onFactSelect}
-                                sx={
-                                  group.label === "Location"
-                                    ? { gridColumn: "1 / -1" }
-                                    : undefined
-                                }
                               />
                             ))}
                           </Box>
@@ -536,6 +548,8 @@ export default function CancerTumorSummaryCard({
           </Stack>
         )}
       </CardContent>
+        </>
+      ) : null}
     </Card>
   );
 }
@@ -553,4 +567,8 @@ CancerTumorSummaryCard.propTypes = {
   onFactSelect: PropTypes.func,
   onSelectDocument: PropTypes.func,
   contentAutoHeight: PropTypes.bool,
+  expanded: PropTypes.bool,
+  onToggleExpanded: PropTypes.func,
+  collapsiblePanelId: PropTypes.string,
+  sectionLabel: PropTypes.string,
 };

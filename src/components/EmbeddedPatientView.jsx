@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Alert, Box, CircularProgress, Typography } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
@@ -226,9 +226,26 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const [summarySelection, setSummarySelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [selectionContext, setSelectionContext] = useState(null);
-  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false);
-  const [cancerDetailWidth, setCancerDetailWidth] = useState(null);
-  const cancerResizeObserverRef = useRef(null);
+  // Each of the four patient panels can be collapsed independently. All start
+  // expanded; collapsing is opt-in and preserves the multi-panel comparison
+  // workflow (e.g. keep the timeline + document open, hide the rest).
+  const [collapsedSections, setCollapsedSections] = useState({
+    cancer: false,
+    timeline: false,
+    summary: false,
+    viewer: false,
+  });
+  const toggleSection = useCallback((sectionKey) => {
+    setCollapsedSections((previous) => ({
+      ...previous,
+      [sectionKey]: !previous[sectionKey],
+    }));
+  }, []);
+  const panelIdBase = useId();
+  const cancerPanelId = `${panelIdBase}-cancer`;
+  const timelinePanelId = `${panelIdBase}-timeline`;
+  const summaryPanelId = `${panelIdBase}-summary`;
+  const viewerPanelId = `${panelIdBase}-viewer`;
   const omopRequestIdRef = useRef(0);
   const patientSummaryRequestIdRef = useRef(0);
   const [omopDetails, setOmopDetails] = useState(EMPTY_OMOP_DETAILS);
@@ -462,25 +479,6 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     setSelectionContext(null);
   }, []);
 
-  // Track the Cancer & Tumor Detail panel's actual rendered width so Patient
-  // Summary can be sized to match it (it is content-sized, not a fixed %).
-  const registerCancerCell = useCallback((node) => {
-    if (cancerResizeObserverRef.current) {
-      cancerResizeObserverRef.current.disconnect();
-      cancerResizeObserverRef.current = null;
-    }
-    if (node && typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver((entries) => {
-        const nextWidth = Math.round(entries[0]?.contentRect?.width || 0);
-        if (nextWidth > 0) {
-          setCancerDetailWidth(nextWidth);
-        }
-      });
-      observer.observe(node);
-      cancerResizeObserverRef.current = observer;
-    }
-  }, []);
-
   const handleSelectRelatedDocument = useCallback(
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
@@ -638,27 +636,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const activeSelection = factSelection || summarySelection;
 
   const hasSummary = enrichedSummarySections.length > 0;
-  const summaryCollapsed = hasSummary && isSummaryCollapsed;
-  // A collapsed summary with no open document only needs a slim rail, so the
-  // bottom region shrinks to it instead of holding a tall, mostly-empty box.
-  const bottomCollapsedAlone = summaryCollapsed && !selectedDocument;
-
-  let bottomGridColumnsLg;
-  if (summaryCollapsed) {
-    bottomGridColumnsLg = selectedDocument ? "48px minmax(0, 1fr)" : "48px";
-  } else if (hasSummary && selectedDocument) {
-    bottomGridColumnsLg = "minmax(280px, 1fr) minmax(0, 1.7fr)";
-  } else if (hasSummary) {
-    // No document open: single column; the box itself is capped to the measured
-    // Cancer & Tumor Detail width so the two left-hand panels line up.
-    bottomGridColumnsLg = "minmax(0, 1fr)";
-  } else {
-    bottomGridColumnsLg = "minmax(0, 1fr)";
-  }
-
-  // When only the (expanded) summary is showing, match Cancer & Tumor Detail's
-  // actual rendered width instead of a fixed percentage.
-  const matchCancerWidth = hasSummary && !summaryCollapsed && !selectedDocument;
+  const summaryExpanded = !collapsedSections.summary;
+  const viewerExpanded = !collapsedSections.viewer;
 
   return (
     <Box
@@ -692,7 +671,19 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           }}
         >
           {patientOverviewEntries.map((entry, index) => (
-            <Box key={`${entry.label || "patient-id"}-${entry.value}`} sx={{ display: "flex", alignItems: "baseline", gap: 0.5 }}>
+            <Box
+              key={`${entry.label || "patient-id"}-${entry.value}`}
+              sx={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 0.5,
+                // A subtle left divider (instead of a floating "·") keeps entries
+                // legible when they wrap onto multiple lines on narrow screens.
+                ...(index > 0
+                  ? { pl: 1.25, borderLeft: 1, borderColor: "divider" }
+                  : {}),
+              }}
+            >
               {entry.label ? (
                 <Typography variant="caption" color="text.secondary">
                   {entry.label}
@@ -707,11 +698,6 @@ export default function EmbeddedPatientView({ patientId = "" }) {
               >
                 {entry.value}
               </Typography>
-              {index < patientOverviewEntries.length - 1 ? (
-                <Typography variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
-                  ·
-                </Typography>
-              ) : null}
             </Box>
           ))}
         </Box>
@@ -882,9 +868,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
 
       <Box
         sx={{
-          display: "grid",
+          display: { xs: "flex", lg: "grid" },
+          flexDirection: "column",
           gridTemplateColumns: {
-            xs: "minmax(0, 1fr)",
             lg: "minmax(340px, 32%) minmax(0, 1fr)",
           },
           alignItems: "start",
@@ -894,89 +880,71 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           mb: 1,
         }}
       >
-        {/* Cancer and Tumor Detail */}
-        <Box
-          ref={registerCancerCell}
-          sx={{
-            minWidth: 0,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            width: "100%",
-            alignSelf: "start",
-            overflow: "hidden",
-            border: 1,
-            borderColor: "divider",
-            borderRadius: 1,
-          }}
-        >
-          <CancerTumorSummaryCard
-            contentAutoHeight
-            embedded
-            cancers={cancerSummary}
-            factSelection={factSelection}
-            selectedDocumentId={selectedDocumentId}
-            onFactSelect={handleFactSelect}
-            onSelectDocument={handleSelectRelatedDocument}
-          />
-        </Box>
-
-        {/* Patient Document Timeline */}
+        {/* Independent left rail: cancer detail followed immediately by summary. */}
         <Box
           sx={{
             minWidth: 0,
-            display: "flex",
+            display: { xs: "contents", lg: "flex" },
             flexDirection: "column",
-            alignSelf: "start",
-            overflow: "visible",
-            minHeight: 0,
-            height: "auto",
-            border: 1,
-            borderColor: "divider",
-            borderRadius: 1,
+            gap: 1,
           }}
+          data-testid="patient-left-rail"
         >
-          <PatientDocumentsCard
-            embedded
-            timelineData={timelineData}
-            selectedDocumentId={selectedDocumentId}
-            relatedDocumentIds={activeSelection?.documentIds || []}
-            onSelectDocument={handleSelectDocumentFromTimeline}
-          />
-        </Box>
-      </Box>
+          <Box
+            sx={{
+              order: 1,
+              minWidth: 0,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              alignSelf: "start",
+              overflow: "hidden",
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 1,
+            }}
+            data-testid="patient-cancer-panel"
+          >
+            <CancerTumorSummaryCard
+              contentAutoHeight
+              embedded
+              cancers={cancerSummary}
+              factSelection={factSelection}
+              selectedDocumentId={selectedDocumentId}
+              onFactSelect={handleFactSelect}
+              onSelectDocument={handleSelectRelatedDocument}
+              expanded={!collapsedSections.cancer}
+              onToggleExpanded={() => toggleSection("cancer")}
+              collapsiblePanelId={cancerPanelId}
+            />
+          </Box>
 
-      {hasSummary || selectedDocument ? (
-        <Box
-          sx={{
-            flex: bottomCollapsedAlone ? "0 0 auto" : 1,
-            minHeight: bottomCollapsedAlone ? 0 : { xs: 0, lg: 220 },
-            width: bottomCollapsedAlone ? { lg: "fit-content" } : undefined,
-            maxWidth: matchCancerWidth
-              ? { lg: cancerDetailWidth ? `${cancerDetailWidth}px` : "32%" }
-              : undefined,
-            alignSelf: matchCancerWidth ? { lg: "flex-start" } : undefined,
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "minmax(0, 1fr)",
-              lg: bottomGridColumnsLg,
-            },
-            alignItems: "stretch",
-            border: 1,
-            borderColor: "divider",
-            borderRadius: 1,
-            overflow: "hidden",
-            mx: 1.5,
-            mb: 1.5,
-          }}
-        >
-          {/* Patient Summary */}
           {hasSummary ? (
-            <Box sx={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <Box
+              sx={{
+                order: 3,
+                minWidth: 0,
+                minHeight: summaryExpanded ? 420 : "unset",
+                width: "100%",
+                height: summaryExpanded
+                  ? { xs: "clamp(420px, 70vh, 720px)", lg: "clamp(420px, 58vh, 760px)" }
+                  : "auto",
+                alignSelf: "flex-start",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                border: 1,
+                borderColor: "divider",
+                borderRadius: 1,
+              }}
+              data-testid="patient-summary-panel"
+            >
               <PatientSummaryCard
                 sections={enrichedSummarySections}
-                collapsed={isSummaryCollapsed}
-                onToggleCollapse={() => setIsSummaryCollapsed((previous) => !previous)}
+                expanded={summaryExpanded}
+                onToggleExpanded={() => toggleSection("summary")}
+                collapsiblePanelId={summaryPanelId}
                 onSelectItem={handleSelectSummaryItem}
                 onSelectDocumentForItem={handleSelectSummaryDocument}
                 selectedFactId={summarySelection?.factId || ""}
@@ -986,20 +954,64 @@ export default function EmbeddedPatientView({ patientId = "" }) {
               />
             </Box>
           ) : null}
+        </Box>
 
-          {/* Document Viewer */}
+        {/* Independent right rail: timeline followed immediately by viewer. */}
+        <Box
+          sx={{
+            minWidth: 0,
+            display: { xs: "contents", lg: "flex" },
+            flexDirection: "column",
+            gap: 1,
+          }}
+          data-testid="patient-right-rail"
+        >
+          <Box
+            sx={{
+              order: 2,
+              minWidth: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignSelf: "start",
+              width: "100%",
+              overflow: "visible",
+              minHeight: 0,
+              height: "auto",
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 1,
+            }}
+            data-testid="patient-timeline-panel"
+          >
+            <PatientDocumentsCard
+              embedded
+              timelineData={timelineData}
+              selectedDocumentId={selectedDocumentId}
+              relatedDocumentIds={activeSelection?.documentIds || []}
+              onSelectDocument={handleSelectDocumentFromTimeline}
+              expanded={!collapsedSections.timeline}
+              onToggleExpanded={() => toggleSection("timeline")}
+              collapsiblePanelId={timelinePanelId}
+            />
+          </Box>
+
           {selectedDocument ? (
             <Box
               sx={{
+                order: 4,
                 minWidth: 0,
+                width: "100%",
+                maxWidth: "100%",
                 minHeight: 0,
+                height: "auto",
                 display: "flex",
                 flexDirection: "column",
-                overflow: "hidden",
-                borderTop: { xs: hasSummary ? 1 : 0, lg: 0 },
-                borderLeft: { lg: hasSummary ? 1 : 0 },
+                overflow: "visible",
+                border: 1,
                 borderColor: "divider",
+                borderRadius: 1,
               }}
+              data-testid="patient-document-panel"
             >
               <PatientDocumentViewerCard
                 embedded
@@ -1010,11 +1022,14 @@ export default function EmbeddedPatientView({ patientId = "" }) {
                 onClose={handleCloseDocument}
                 confidenceThreshold={confidenceThreshold}
                 onConfidenceThresholdChange={handleConfidenceThresholdChange}
+                expanded={viewerExpanded}
+                onToggleExpanded={() => toggleSection("viewer")}
+                collapsiblePanelId={viewerPanelId}
               />
             </Box>
           ) : null}
         </Box>
-      ) : null}
+      </Box>
     </Box>
   );
 }

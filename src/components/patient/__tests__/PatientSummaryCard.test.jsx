@@ -122,4 +122,42 @@ describe("PatientSummaryCard", () => {
 
     unmount();
   });
+
+  it("collapses to its header, hiding the findings body and confidence slider", () => {
+    const sections = [
+      {
+        key: "diagnoses",
+        label: "Diagnoses",
+        items: [{ name: "Some Finding" }],
+      },
+    ];
+    const onToggleExpanded = jest.fn();
+
+    const { container, unmount } = renderComponent(
+      <PatientSummaryCard
+        sections={sections}
+        expanded={false}
+        onToggleExpanded={onToggleExpanded}
+        collapsiblePanelId="summary-panel-body"
+      />
+    );
+
+    const toggle = container.querySelector(
+      'button[aria-label="Expand Patient Summary section"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("summary-panel-body");
+    // Body + confidence slider are gone while collapsed.
+    expect(container.querySelector('[data-testid="patient-summary-card-scroll"]')).toBeNull();
+    expect(container.querySelector('input[type="range"]')).toBeNull();
+    expect(container.textContent).not.toContain("Some Finding");
+
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
 });

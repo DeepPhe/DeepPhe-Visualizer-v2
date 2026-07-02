@@ -22,6 +22,7 @@ import {
   buildTimelineChartModel,
   resolveTicks,
 } from "../../utils/patientView/timelineChartLayout";
+import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 16;
@@ -75,11 +76,15 @@ export function resolveResponsiveTickCount(plotWidth, maxTickCount = 7) {
 function computeChartLayout({ width }) {
   const compact = width < COMPACT_WIDTH_BREAKPOINT;
 
-  const plotTop = compact ? 18 : 16;
-  const footerHeight = compact ? 44 : 44;
+  const plotTop = compact ? 12 : 10;
+  // Footer holds the date axis line, tick marks, tick labels (~baselineY+28) and
+  // the "Date" title (~baselineY+30); trimmed to just clear the label descenders.
+  const footerHeight = compact ? 40 : 38;
   const plotLeft = compact ? 16 : 236;
   const plotRight = compact ? 16 : 20;
-  const rowHeight = compact ? 72 : 60;
+  // Vertical distance between report-type lanes. Kept just above the selected
+  // ring diameter so lanes stay tight without dots colliding across rows.
+  const rowHeight = compact ? 52 : 40;
 
   const dimensions = {
     // Keep the viewBox at the rendered width so preserveAspectRatio never
@@ -186,6 +191,10 @@ export default function PatientDocumentsCard({
   relatedDocumentIds = [],
   onSelectDocument = undefined,
   embedded = false,
+  expanded = true,
+  onToggleExpanded = undefined,
+  collapsiblePanelId = undefined,
+  sectionLabel = "Patient Document Timeline",
 }) {
   const theme = useTheme();
   // High-contrast foreground for the "currently viewed" marker so its ring stays
@@ -199,6 +208,9 @@ export default function PatientDocumentsCard({
   const [viewport, setViewport] = useState({ zoom: MIN_ZOOM, panRatio: 0 });
   const svgRef = useRef(null);
   const dragStateRef = useRef(null);
+  // True while a click-drag pan is in progress, so the cursor can switch to
+  // "grabbing" for immediate feedback.
+  const [isDragging, setIsDragging] = useState(false);
   // Rendered width of the chart container, tracked so labels and ticks can
   // respond without coupling the chart to an arbitrary panel height.
   const [chartWidth, setChartWidth] = useState(1200);
@@ -436,6 +448,10 @@ export default function PatientDocumentsCard({
     if (startSvgX == null) {
       return;
     }
+    // Suppress the browser's native text/element selection so a horizontal
+    // press-and-drag reads as a pan rather than a selection gesture.
+    event.preventDefault();
+    setIsDragging(true);
     const drag = { startSvgX, startPanRatio: viewport.panRatio, moved: false };
     dragStateRef.current = drag;
 
@@ -460,6 +476,7 @@ export default function PatientDocumentsCard({
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      setIsDragging(false);
       if (drag.moved) {
         // Swallow the click synthesized from this pointerup, then clear.
         justDraggedRef.current = true;
@@ -510,6 +527,60 @@ export default function PatientDocumentsCard({
     }
   };
 
+  // Zoom/pan controls live in the card header, on the same line as the title.
+  // Only meaningful when the zoomable chart is shown (not the collapsed-timestamp
+  // dropdown mode and with at least one dated report).
+  const showZoomControls =
+    expanded && !isCollapsedTimestampMode && chartModel.totalReports > 0;
+  const zoomControls = (
+    <Stack direction="row" spacing={0.25} alignItems="center">
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        aria-live="polite"
+        sx={{ mr: 0.25, fontVariantNumeric: "tabular-nums" }}
+      >
+        {`${Math.round(viewport.zoom * 100)}%`}
+      </Typography>
+      <Tooltip title="Zoom out (−)">
+        <span>
+          <IconButton
+            size="small"
+            aria-label="Zoom out timeline"
+            onClick={() => applyZoomFactor(1 / ZOOM_STEP)}
+            disabled={viewport.zoom <= MIN_ZOOM + 1e-6}
+          >
+            <ZoomOutIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title="Zoom in (+)">
+        <span>
+          <IconButton
+            size="small"
+            aria-label="Zoom in timeline"
+            onClick={() => applyZoomFactor(ZOOM_STEP)}
+            disabled={viewport.zoom >= MAX_ZOOM - 1e-6}
+          >
+            <ZoomInIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title="Reset zoom (0)">
+        <span>
+          <IconButton
+            size="small"
+            aria-label="Reset timeline zoom"
+            onClick={handleResetView}
+            disabled={!isZoomed && viewport.panRatio === 0}
+          >
+            <RestartAltIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Stack>
+  );
+
   return (
     <Card
       elevation={0}
@@ -531,30 +602,42 @@ export default function PatientDocumentsCard({
       <CardHeader
         title="Patient Document Timeline"
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
-        sx={{ py: 1, px: 1.5 }}
+        sx={{ py: 1, px: 1.5, "& .MuiCardHeader-action": { alignSelf: "center", m: 0 } }}
         action={
-          chartModel.totalReports > 0 ? (
-            <Typography
-              variant="caption"
-              sx={{
-                display: "inline-block",
-                mt: 0.9,
-                mr: 0.75,
-                px: 1,
-                py: 0.25,
-                borderRadius: 999,
-                fontWeight: 600,
-                bgcolor: "info.main",
-                color: "#fff",
-              }}
-            >
-              {chartModel.totalReports} doc{chartModel.totalReports !== 1 ? "s" : ""}
-            </Typography>
-          ) : null
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {showZoomControls ? zoomControls : null}
+            {chartModel.totalReports > 0 ? (
+              <Typography
+                variant="caption"
+                sx={{
+                  display: "inline-block",
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: 999,
+                  fontWeight: 600,
+                  bgcolor: "info.main",
+                  color: "#fff",
+                }}
+              >
+                {chartModel.totalReports} doc{chartModel.totalReports !== 1 ? "s" : ""}
+              </Typography>
+            ) : null}
+            {onToggleExpanded ? (
+              <SectionCollapseToggle
+                expanded={expanded}
+                onToggle={onToggleExpanded}
+                label={sectionLabel}
+                panelId={collapsiblePanelId}
+              />
+            ) : null}
+          </Stack>
         }
       />
+      {expanded ? (
+        <>
       <Divider />
       <CardContent
+        id={collapsiblePanelId}
         sx={{
           px: 1.5,
           py: 1.25,
@@ -594,58 +677,6 @@ export default function PatientDocumentsCard({
 
             {!isCollapsedTimestampMode ? (
               <>
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  alignItems="center"
-                  justifyContent="flex-end"
-                  sx={{ minHeight: 32 }}
-                >
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    aria-live="polite"
-                    sx={{ mr: 0.5, fontVariantNumeric: "tabular-nums" }}
-                  >
-                    {`${Math.round(viewport.zoom * 100)}%`}
-                  </Typography>
-                  <Tooltip title="Zoom out (−)">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label="Zoom out timeline"
-                        onClick={() => applyZoomFactor(1 / ZOOM_STEP)}
-                        disabled={viewport.zoom <= MIN_ZOOM + 1e-6}
-                      >
-                        <ZoomOutIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="Zoom in (+)">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label="Zoom in timeline"
-                        onClick={() => applyZoomFactor(ZOOM_STEP)}
-                        disabled={viewport.zoom >= MAX_ZOOM - 1e-6}
-                      >
-                        <ZoomInIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="Reset zoom (0)">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label="Reset timeline zoom"
-                        onClick={handleResetView}
-                        disabled={!isZoomed && viewport.panRatio === 0}
-                      >
-                        <RestartAltIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </Stack>
                 <Box
                   ref={chartContainerRef}
                   sx={{
@@ -676,7 +707,11 @@ export default function PatientDocumentsCard({
                       width: "100%",
                       height: "100%",
                       display: "block",
-                      cursor: isZoomed ? "grab" : "default",
+                      cursor: isDragging ? "grabbing" : isZoomed ? "grab" : "default",
+                      // A press-and-drag pans the date axis; disable selection so
+                      // the drag never turns into a text/element selection.
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
                       // Vertical gestures always belong to the surrounding scroll
                       // container. Horizontal drag remains available for panning.
                       touchAction: "pan-y",
@@ -903,6 +938,8 @@ export default function PatientDocumentsCard({
           </Stack>
         )}
       </CardContent>
+        </>
+      ) : null}
     </Card>
   );
 }
@@ -917,4 +954,8 @@ PatientDocumentsCard.propTypes = {
   relatedDocumentIds: PropTypes.arrayOf(PropTypes.string),
   onSelectDocument: PropTypes.func,
   embedded: PropTypes.bool,
+  expanded: PropTypes.bool,
+  onToggleExpanded: PropTypes.func,
+  collapsiblePanelId: PropTypes.string,
+  sectionLabel: PropTypes.string,
 };

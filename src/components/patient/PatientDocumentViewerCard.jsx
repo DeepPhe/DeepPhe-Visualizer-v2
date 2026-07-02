@@ -25,13 +25,16 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import {
   buildConfidenceHistogram,
   buildMentionHighlightModel,
 } from "../../utils/patientView/documentMentions";
+import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const DEFAULT_GROUP_COLOR = "#e0e0e0";
 const MIN_CONFIDENCE_PERCENT = 50;
@@ -791,7 +794,18 @@ export default function PatientDocumentViewerCard({
   onClose = undefined,
   confidenceThreshold: controlledConfidenceThreshold = undefined,
   onConfidenceThresholdChange = undefined,
+  expanded = true,
+  onToggleExpanded = undefined,
+  collapsiblePanelId = undefined,
+  sectionLabel = "Document Viewer",
 }) {
+  const theme = useTheme();
+  // The concept/filter column is a secondary control surface. On narrow screens
+  // it stacks above the report text and buries it, so let the reader collapse it
+  // to a header there. On md+ it stays as the fixed left column.
+  const isConceptColumnCollapsible = useMediaQuery(theme.breakpoints.down("md"));
+  const [isConceptColumnCollapsed, setIsConceptColumnCollapsed] = useState(false);
+  const isConceptColumnExpanded = !isConceptColumnCollapsible || !isConceptColumnCollapsed;
   const NO_ENABLED_GROUP_SENTINEL = "__NO_ENABLED_GROUPS__";
   const [activeTab, setActiveTab] = useState(0);
   const [internalMinConfidencePercent, setInternalMinConfidencePercent] = useState(100);
@@ -924,6 +938,11 @@ export default function PatientDocumentViewerCard({
     if (!container) return;
     const firstMention = container.querySelector("[data-first-selected-mention]");
     if (firstMention) {
+      if (embedded) {
+        firstMention.scrollIntoView?.({ block: "center", behavior: "smooth" });
+        return;
+      }
+
       const containerRect = container.getBoundingClientRect();
       const mentionRect = firstMention.getBoundingClientRect();
       const viewportPadding = 10;
@@ -943,7 +962,7 @@ export default function PatientDocumentViewerCard({
         behavior: "smooth",
       });
     }
-  }, [selectedConceptIds]);
+  }, [embedded, selectedConceptIds]);
 
   const confidenceHistogram = useMemo(
     () =>
@@ -972,6 +991,26 @@ export default function PatientDocumentViewerCard({
     });
     return summaryByConceptId;
   }, [highlightModel.mentionRecords]);
+
+  const conceptDetailsById = useMemo(() => {
+    const detailsById = new Map();
+    highlightModel.conceptsInDocument.forEach((concept) => {
+      const conceptId = String(concept?.id || "").trim();
+      if (conceptId) {
+        detailsById.set(conceptId, { concept, mentionRecords: [] });
+      }
+    });
+    highlightModel.mentionRecords.forEach((mentionRecord) => {
+      const conceptId = String(mentionRecord?.conceptId || "").trim();
+      if (!conceptId) {
+        return;
+      }
+      const details = detailsById.get(conceptId) || { concept: {}, mentionRecords: [] };
+      details.mentionRecords.push(mentionRecord);
+      detailsById.set(conceptId, details);
+    });
+    return detailsById;
+  }, [highlightModel.conceptsInDocument, highlightModel.mentionRecords]);
 
   const handleConceptToggle = (conceptId) => {
     const normalizedConceptId = String(conceptId || "").trim();
@@ -1012,7 +1051,14 @@ export default function PatientDocumentViewerCard({
   const openHelpPopover = Boolean(helpAnchorEl);
 
   const cardSx = embedded
-    ? { border: 0, borderRadius: 0, display: "flex", flexDirection: "column", height: "100%" }
+    ? {
+        border: 0,
+        borderRadius: 0,
+        display: "flex",
+        flexDirection: "column",
+        height: "auto",
+        overflow: "visible",
+      }
     : { border: 1, borderColor: "divider" };
   const titleVariant = embedded ? "subtitle1" : "h6";
   const selectedDocument = document;
@@ -1036,7 +1082,7 @@ export default function PatientDocumentViewerCard({
   }
 
   return (
-    <Card elevation={0} sx={cardSx}>
+    <Card elevation={0} sx={cardSx} data-testid="patient-document-viewer-card">
       <CardHeader
         title={
           <span ref={headingRef} tabIndex={-1} style={{ outline: "none" }}>
@@ -1048,25 +1094,36 @@ export default function PatientDocumentViewerCard({
         titleTypographyProps={{ variant: titleVariant, sx: { fontWeight: 700 } }}
         subheaderTypographyProps={{ component: "div", variant: "caption" }}
         action={
-          onClose ? (
-            <Tooltip title="Close document">
-              <IconButton size="small" aria-label="Close document" onClick={onClose}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          ) : undefined
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {onToggleExpanded ? (
+              <SectionCollapseToggle
+                expanded={expanded}
+                onToggle={onToggleExpanded}
+                label={sectionLabel}
+                panelId={collapsiblePanelId}
+              />
+            ) : null}
+            {onClose ? (
+              <Tooltip title="Close document">
+                <IconButton size="small" aria-label="Close document" onClick={onClose}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+          </Stack>
         }
       />
+      {expanded ? (
+        <>
       <Divider />
       <CardContent
+        id={collapsiblePanelId}
         sx={
           embedded
             ? {
-                flex: 1,
-                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
-                overflow: "hidden",
+                overflow: "visible",
                 px: 1.5,
                 py: 1,
                 "&:last-child": { pb: 1 },
@@ -1077,21 +1134,19 @@ export default function PatientDocumentViewerCard({
         <Grid
           container
           spacing={2}
-          sx={embedded ? { flex: 1, minHeight: 0, overflow: "hidden", alignItems: "stretch" } : undefined}
+          sx={embedded ? { overflow: "visible", alignItems: "flex-start" } : undefined}
         >
           <Grid
             item
             xs={12}
             md={4}
             sx={
-              embedded
+              embedded && isConceptColumnExpanded
                 ? {
                     display: "flex",
                     flexDirection: "column",
-                    minHeight: 0,
-                    height: "100%",
-                    overflow: "hidden",
-                    alignSelf: "stretch",
+                    overflow: "visible",
+                    alignSelf: "flex-start",
                   }
                 : undefined
             }
@@ -1101,12 +1156,44 @@ export default function PatientDocumentViewerCard({
                 border: 1,
                 borderColor: "divider",
                 borderRadius: 1,
-                minHeight: 360,
+                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
-                ...(embedded ? { flex: 1, minHeight: 0 } : {}),
               }}
             >
+              {isConceptColumnCollapsible ? (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    px: 1.25,
+                    py: 0.5,
+                    ...(isConceptColumnExpanded
+                      ? { borderBottom: 1, borderColor: "divider" }
+                      : {}),
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                    Concepts &amp; Filters
+                  </Typography>
+                  <SectionCollapseToggle
+                    expanded={isConceptColumnExpanded}
+                    onToggle={() => setIsConceptColumnCollapsed((previous) => !previous)}
+                    label="Concepts and Filters"
+                    panelId={collapsiblePanelId ? `${collapsiblePanelId}-concepts` : undefined}
+                  />
+                </Box>
+              ) : null}
+              {isConceptColumnExpanded ? (
+                <Box
+                  id={collapsiblePanelId ? `${collapsiblePanelId}-concepts` : undefined}
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                  }}
+                >
               <Box sx={{ px: 1.25, py: 0.75, borderBottom: 1, borderColor: "divider" }}>
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <Typography component="span" sx={{ fontSize: "inherit", whiteSpace: "nowrap" }}>
@@ -1160,7 +1247,7 @@ export default function PatientDocumentViewerCard({
               </Tabs>
               <Divider />
 
-              <Box sx={{ p: 1.25, ...(embedded ? { flex: 1, minHeight: 0, overflowY: "auto" } : {}) }}>
+              <Box sx={{ p: 1.25, ...(embedded ? { overflow: "visible" } : {}) }}>
                 <TabPanel value={activeTab} index={0}>
                   <Stack spacing={1}>
                     {sortedGroupNames.length > 0 ? (
@@ -1247,60 +1334,91 @@ export default function PatientDocumentViewerCard({
                         );
                         const conceptColor =
                           familyColor ?? highlightModel.groupColorByName[conceptRow.group] ?? DEFAULT_GROUP_COLOR;
+                        const conceptDetails = conceptDetailsById.get(conceptRow.conceptId) || {
+                          concept: {},
+                          mentionRecords: [],
+                        };
+                        const confidenceSummary = buildConfidenceSummary(conceptDetails.mentionRecords);
                         return (
-                          <Chip
+                          <Tooltip
                             key={conceptRow.conceptId}
-                            size="small"
-                            clickable
-                            label={
-                              <Box
-                                component="span"
-                                sx={{
-                                  position: "relative",
-                                  display: "inline-block",
-                                  pr: allMentionsNegated ? 1.1 : 0,
-                                }}
-                              >
-                                {`${conceptRow.label} (${conceptRow.mentionCount})`}
-                                {allMentionsNegated ? (
-                                  <Box
-                                    component="span"
-                                    aria-hidden
-                                    sx={{
-                                      position: "absolute",
-                                      top: -5,
-                                      right: 0,
-                                      color: "error.main",
-                                      fontSize: 10,
-                                      fontWeight: 700,
-                                      lineHeight: 1,
-                                    }}
-                                  >
-                                    °
-                                  </Box>
-                                ) : null}
-                              </Box>
+                            arrow
+                            describeChild
+                            enterDelay={250}
+                            placement="right-start"
+                            title={
+                              <ConceptDetailsTooltip
+                                conceptRow={conceptRow}
+                                concept={conceptDetails.concept}
+                                mentionRecords={conceptDetails.mentionRecords}
+                                documentText={document?.text || ""}
+                              />
                             }
-                            onClick={() => handleConceptToggle(conceptRow.conceptId)}
-                            sx={{
-                              backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                              border: isSelected ? "1.5px solid #333" : "1px solid rgba(0,0,0,0.2)",
-                              fontWeight: isSelected ? 700 : 500,
-                              opacity: isDimmed ? 0.55 : 1,
-                              transition: "border-color 0.12s ease, border-width 0.12s ease",
-                              "&.MuiChip-clickable:hover": {
-                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                                opacity: isDimmed ? 0.55 : 1,
-                                border: isSelected ? "2px solid #333" : "2px solid rgba(0,0,0,0.45)",
+                            slotProps={{
+                              tooltip: {
+                                sx: {
+                                  maxWidth: "none",
+                                  maxHeight: "70vh",
+                                  overflowY: "auto",
+                                  p: 1.25,
+                                },
                               },
-                              "&.MuiChip-clickable:focus-visible": {
-                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                                opacity: isDimmed ? 0.55 : 1,
-                                border: "2px solid #333",
-                              },
-                              "& .MuiChip-label": { px: 0.9 },
                             }}
-                          />
+                          >
+                            <Chip
+                              size="small"
+                              clickable
+                              aria-label={`${conceptRow.label}. ${conceptRow.group}. Confidence ${confidenceSummary}. ${conceptRow.mentionCount} linked mention${conceptRow.mentionCount === 1 ? "" : "s"}.`}
+                              label={
+                                <Box
+                                  component="span"
+                                  sx={{
+                                    position: "relative",
+                                    display: "inline-block",
+                                    pr: allMentionsNegated ? 1.1 : 0,
+                                  }}
+                                >
+                                  {`${conceptRow.label} (${conceptRow.mentionCount})`}
+                                  {allMentionsNegated ? (
+                                    <Box
+                                      component="span"
+                                      aria-hidden
+                                      sx={{
+                                        position: "absolute",
+                                        top: -5,
+                                        right: 0,
+                                        color: "error.main",
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      °
+                                    </Box>
+                                  ) : null}
+                                </Box>
+                              }
+                              onClick={() => handleConceptToggle(conceptRow.conceptId)}
+                              sx={{
+                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
+                                border: isSelected ? "1.5px solid #333" : "1px solid rgba(0,0,0,0.2)",
+                                fontWeight: isSelected ? 700 : 500,
+                                opacity: isDimmed ? 0.55 : 1,
+                                transition: "border-color 0.12s ease, border-width 0.12s ease",
+                                "&.MuiChip-clickable:hover": {
+                                  backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
+                                  opacity: isDimmed ? 0.55 : 1,
+                                  border: isSelected ? "2px solid #333" : "2px solid rgba(0,0,0,0.45)",
+                                },
+                                "&.MuiChip-clickable:focus-visible": {
+                                  backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
+                                  opacity: isDimmed ? 0.55 : 1,
+                                  border: "2px solid #333",
+                                },
+                                "& .MuiChip-label": { px: 0.9 },
+                              }}
+                            />
+                          </Tooltip>
                         );
                       };
 
@@ -1432,6 +1550,8 @@ export default function PatientDocumentViewerCard({
                   </Stack>
                 </TabPanel>
               </Box>
+                </Box>
+              ) : null}
             </Box>
           </Grid>
 
@@ -1444,10 +1564,8 @@ export default function PatientDocumentViewerCard({
                 ? {
                     display: "flex",
                     flexDirection: "column",
-                    minHeight: 0,
-                    height: "100%",
-                    overflow: "hidden",
-                    alignSelf: "stretch",
+                    overflow: "visible",
+                    alignSelf: "flex-start",
                   }
                 : undefined
             }
@@ -1461,22 +1579,22 @@ export default function PatientDocumentViewerCard({
             <Box
               ref={documentScrollRef}
               data-testid="patient-document-text-pane"
-              onWheelCapture={(event) => {
-                event.stopPropagation();
-              }}
-              onTouchMoveCapture={(event) => {
-                event.stopPropagation();
-              }}
+              {...(!embedded
+                ? {
+                    onWheelCapture: (event) => event.stopPropagation(),
+                    onTouchMoveCapture: (event) => event.stopPropagation(),
+                  }
+                : {})}
               sx={{
                 border: 1,
                 borderColor: "divider",
                 borderRadius: 1,
                 p: 1.5,
                 minHeight: 280,
-                ...(embedded ? { flex: 1, minHeight: 0, height: 0 } : {}),
-                overflowY: "auto",
+                ...(embedded ? { height: "auto" } : {}),
+                overflowY: embedded ? "visible" : "auto",
                 overflowX: "hidden",
-                overscrollBehavior: "contain",
+                overscrollBehavior: embedded ? "auto" : "contain",
                 touchAction: "pan-y",
                 bgcolor: "background.paper",
               }}
@@ -1581,6 +1699,8 @@ export default function PatientDocumentViewerCard({
           </Typography>
         </Box>
       </Popover>
+        </>
+      ) : null}
     </Card>
   );
 }
@@ -1614,4 +1734,8 @@ PatientDocumentViewerCard.propTypes = {
     documentCount: PropTypes.number,
     documentConfidence: PropTypes.number,
   }),
+  expanded: PropTypes.bool,
+  onToggleExpanded: PropTypes.func,
+  collapsiblePanelId: PropTypes.string,
+  sectionLabel: PropTypes.string,
 };

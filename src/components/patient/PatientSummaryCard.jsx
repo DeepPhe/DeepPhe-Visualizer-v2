@@ -6,7 +6,6 @@ import {
   CardHeader,
   Chip,
   Divider,
-  IconButton,
   ListSubheader,
   Menu,
   MenuItem,
@@ -16,10 +15,9 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
 import CheckIcon from "@mui/icons-material/Check";
-import RemoveIcon from "@mui/icons-material/Remove";
 import { alpha, useTheme } from "@mui/material/styles";
+import SectionCollapseToggle from "./SectionCollapseToggle";
 
 // Normalized 0–1 confidence → rounded percentage for display; "—" when absent.
 function formatConfidencePercent(value) {
@@ -270,8 +268,10 @@ SummaryItem.propTypes = {
  */
 export default function PatientSummaryCard({
   sections = [],
-  collapsed = false,
-  onToggleCollapse = undefined,
+  expanded = true,
+  onToggleExpanded = undefined,
+  collapsiblePanelId = undefined,
+  sectionLabel = "Patient Summary",
   onSelectItem = undefined,
   onSelectDocumentForItem = undefined,
   selectedFactId = "",
@@ -372,50 +372,6 @@ export default function PatientSummaryCard({
     return columns;
   })();
 
-  if (collapsed) {
-    return (
-      <Box
-        sx={{
-          width: 48,
-          height: "100%",
-          minHeight: 140,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 0.75,
-          py: 0.75,
-          bgcolor: "background.paper",
-        }}
-      >
-        <Tooltip title="Expand Patient Summary" placement="right">
-          <IconButton
-            size="small"
-            aria-label="Expand Patient Summary"
-            aria-expanded={false}
-            onClick={() => onToggleCollapse?.()}
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Typography
-          variant="subtitle2"
-          onClick={() => onToggleCollapse?.()}
-          sx={{
-            writingMode: "vertical-rl",
-            transform: "rotate(180deg)",
-            fontWeight: 700,
-            color: "text.secondary",
-            cursor: "pointer",
-            userSelect: "none",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Patient Summary
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
     <Card
       elevation={0}
@@ -424,9 +380,9 @@ export default function PatientSummaryCard({
         borderRadius: 0,
         display: "flex",
         flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden",
+        height: expanded ? "100%" : "auto",
+        minHeight: expanded ? 0 : "unset",
+        overflow: expanded ? "hidden" : "visible",
       }}
     >
       <CardHeader
@@ -443,7 +399,7 @@ export default function PatientSummaryCard({
         titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
         action={
           <Stack direction="row" spacing={0.5} alignItems="center">
-            {sections.length > 0 ? (
+            {sections.length > 0 && expanded ? (
               <Tooltip title="Hide findings below this extraction confidence">
                 <Stack
                   direction="row"
@@ -494,21 +450,19 @@ export default function PatientSummaryCard({
                 </Stack>
               </Tooltip>
             ) : null}
-            {onToggleCollapse ? (
-              <Tooltip title="Collapse Patient Summary">
-                <IconButton
-                  size="small"
-                  aria-label="Collapse Patient Summary"
-                  aria-expanded
-                  onClick={() => onToggleCollapse()}
-                >
-                  <RemoveIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+            {onToggleExpanded ? (
+              <SectionCollapseToggle
+                expanded={expanded}
+                onToggle={onToggleExpanded}
+                label={sectionLabel}
+                panelId={collapsiblePanelId}
+              />
             ) : null}
           </Stack>
         }
       />
+      {expanded ? (
+        <>
       <Divider />
 
       {sections.length === 0 ? (
@@ -520,6 +474,7 @@ export default function PatientSummaryCard({
       ) : (
         <Box
           data-testid="patient-summary-card-scroll"
+          id={collapsiblePanelId}
           sx={{
             overflowX: "hidden",
             overflowY: "auto",
@@ -734,13 +689,17 @@ export default function PatientSummaryCard({
           );
         })}
       </Menu>
+        </>
+      ) : null}
     </Card>
   );
 }
 
 PatientSummaryCard.propTypes = {
-  collapsed: PropTypes.bool,
-  onToggleCollapse: PropTypes.func,
+  expanded: PropTypes.bool,
+  onToggleExpanded: PropTypes.func,
+  collapsiblePanelId: PropTypes.string,
+  sectionLabel: PropTypes.string,
   // Called with a resolved selection object when a clickable item is activated.
   onSelectItem: PropTypes.func,
   // Called with (selection, documentId) when a document is chosen from the

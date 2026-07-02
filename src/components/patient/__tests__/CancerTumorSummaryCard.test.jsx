@@ -76,8 +76,11 @@ describe("CancerTumorSummaryCard", () => {
 
     expect(window.getComputedStyle(card).height).toBe("auto");
     expect(window.getComputedStyle(record).display).toBe("grid");
-    expect(window.getComputedStyle(cancerFactGrid).display).toBe("grid");
-    expect(window.getComputedStyle(tumorFactGrid).display).toBe("grid");
+    // Fact groups flow and wrap for density rather than sitting in a rigid grid.
+    expect(window.getComputedStyle(cancerFactGrid).display).toBe("flex");
+    expect(window.getComputedStyle(cancerFactGrid).flexWrap).toBe("wrap");
+    expect(window.getComputedStyle(tumorFactGrid).display).toBe("flex");
+    expect(window.getComputedStyle(tumorFactGrid).flexWrap).toBe("wrap");
     expect(container.textContent).toContain("Cancer 1");
     expect(container.textContent).toContain("Gene(s)");
     expect(container.textContent).toContain("TNM");
@@ -91,6 +94,57 @@ describe("CancerTumorSummaryCard", () => {
       locationButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(onFactSelect).toHaveBeenCalledWith("c-location");
+
+    unmount();
+  });
+
+  it("exposes an accessible collapse toggle and hides the body when collapsed", () => {
+    const onToggleExpanded = jest.fn();
+    const { container, unmount } = renderComponent(
+      <CancerTumorSummaryCard
+        cancers={cancers}
+        contentAutoHeight
+        expanded
+        onToggleExpanded={onToggleExpanded}
+        collapsiblePanelId="cancer-panel-body"
+      />
+    );
+
+    const toggle = container.querySelector(
+      'button[aria-label="Collapse Cancer and Tumor Detail section"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.getAttribute("aria-controls")).toBe("cancer-panel-body");
+    expect(container.querySelector('[data-testid="cancer-summary-record"]')).not.toBeNull();
+    expect(container.querySelector("#cancer-panel-body")).not.toBeNull();
+
+    act(() => {
+      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it("renders only the header when collapsed", () => {
+    const { container, unmount } = renderComponent(
+      <CancerTumorSummaryCard
+        cancers={cancers}
+        contentAutoHeight
+        expanded={false}
+        onToggleExpanded={() => {}}
+        collapsiblePanelId="cancer-panel-body"
+      />
+    );
+
+    const toggle = container.querySelector(
+      'button[aria-label="Expand Cancer and Tumor Detail section"]'
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector('[data-testid="cancer-summary-record"]')).toBeNull();
+    expect(container.querySelector("#cancer-panel-body")).toBeNull();
 
     unmount();
   });

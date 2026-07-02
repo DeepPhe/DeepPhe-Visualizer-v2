@@ -43,8 +43,10 @@ export default function PatientDrawer({
     <Box
       sx={{
         position: "fixed",
-        left: "10%",
-        right: "10%",
+        // Full-bleed on narrow screens so the drawer isn't squeezed into the
+        // middle 80% of an already-small viewport; inset to 10% from md up.
+        left: { xs: 4, md: "10%" },
+        right: { xs: 4, md: "10%" },
         bottom: { xs: 8, md: 16 },
         top: isMaximized ? { xs: 72, md: 84 } : "auto",
         zIndex: (theme) => theme.zIndex.modal - 1,
@@ -70,7 +72,7 @@ export default function PatientDrawer({
           overflow: "hidden",
           border: "1px solid",
           borderColor: "divider",
-          borderRadius: 2,
+          borderRadius: { xs: 1, md: 2 },
           bgcolor: "background.paper",
           boxShadow: (theme) => theme.shadows[12],
           maxHeight: isMaximized
