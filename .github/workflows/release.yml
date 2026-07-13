@@ -3,8 +3,15 @@ name: Release
 # Builds the self-contained executables and publishes them to
 # https://github.com/DeepPhe/DeepPhe-Dist/releases.
 #
-# Required repository secret:
+# Required repository secrets:
 #   DEEPPHE_DIST_RELEASE_TOKEN - token with contents:write on DeepPhe/DeepPhe-Dist
+#   MACOS_CERTIFICATE_P12_BASE64 - base64 of the Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD   - password for that .p12
+#   APPLE_ID                     - Apple ID used for notarization
+#   APPLE_APP_SPECIFIC_PASSWORD  - app-specific password for the Apple ID
+#   APPLE_TEAM_ID                - Apple Developer Team ID
+#
+# Windows binaries are published unsigned; Authenticode signing is done locally.
 on:
   push:
     branches:
@@ -45,6 +52,54 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
+      - name: Import macOS Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for required_variable in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          do
+            if [ -z "${!required_variable}" ]; then
+              echo "::error title=Missing signing secret::Add the ${required_variable} repository secret."
+              exit 1
+            fi
+          done
+
+          certificate_path="$RUNNER_TEMP/deepphe-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/deepphe-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::${keychain_password}"
+
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | openssl base64 -d -A -out "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" |
+              sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' |
+              head -n 1
+          )"
+          if [ -z "$signing_identity" ]; then
+            echo "::error title=Developer ID identity not found::The PKCS#12 file does not contain a usable Developer ID Application identity."
+            exit 1
+          fi
+
+          echo "Using signing identity: ${signing_identity}"
+          {
+            echo "MACOS_SIGNING_IDENTITY=${signing_identity}"
+            echo "MACOS_SIGNING_CERTIFICATE_PATH=${certificate_path}"
+            echo "MACOS_SIGNING_KEYCHAIN_PATH=${keychain_path}"
+          } >> "$GITHUB_ENV"
+
       - name: Setup Node.js 24
         uses: actions/setup-node@v5
         with:
@@ -60,12 +115,67 @@ jobs:
       - name: Package executable (${{ matrix.target }})
         run: node scripts/package-pkg.mjs ${{ matrix.target }}
 
+      - name: Sign and notarize macOS executable
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          artifact_path="dist/${{ matrix.asset }}"
+          notarization_archive="$RUNNER_TEMP/${{ matrix.asset }}.zip"
+
+          codesign --force --options runtime --timestamp --entitlements .github/macos-entitlements.plist --keychain "$MACOS_SIGNING_KEYCHAIN_PATH" --sign "$MACOS_SIGNING_IDENTITY" "$artifact_path"
+          codesign --verify --strict --verbose=2 "$artifact_path"
+          codesign --display --verbose=4 "$artifact_path"
+
+          ditto -c -k --keepParent "$artifact_path" "$notarization_archive"
+          xcrun notarytool submit "$notarization_archive" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          rm -f "$notarization_archive"
+
+      - name: Generate SHA-256 checksum (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          artifact_path="dist/${{ matrix.asset }}"
+          artifact_directory="$(dirname "$artifact_path")"
+          artifact_name="$(basename "$artifact_path")"
+
+          if command -v sha256sum > /dev/null 2>&1; then
+            (cd "$artifact_directory" && sha256sum "$artifact_name" > "$artifact_name.sha256")
+          else
+            (cd "$artifact_directory" && shasum -a 256 "$artifact_name" > "$artifact_name.sha256")
+          fi
+
+      - name: Generate SHA-256 checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $artifactPath = "dist/${{ matrix.asset }}"
+          $artifactName = Split-Path -Leaf $artifactPath
+          $hash = (Get-FileHash -Algorithm SHA256 $artifactPath).Hash.ToLowerInvariant()
+          "$hash  $artifactName" | Set-Content -Encoding utf8NoBOM -NoNewline "$artifactPath.sha256"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            dist/${{ matrix.asset }}.sha256
           if-no-files-found: error
+
+      - name: Remove temporary macOS signing keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ -n "${MACOS_SIGNING_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN_PATH" || true
+          fi
+          if [ -n "${MACOS_SIGNING_CERTIFICATE_PATH:-}" ]; then
+            rm -f "$MACOS_SIGNING_CERTIFICATE_PATH"
+          fi
 
   publish:
     name: Publish DeepPhe-Dist release
@@ -92,6 +202,19 @@ jobs:
           path: dist-release
           merge-multiple: true
 
+      - name: Verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist-release
+          shopt -s nullglob
+          checksums=(*.sha256)
+          if [[ "${#checksums[@]}" -eq 0 ]]; then
+            echo "::error::No SHA-256 checksums were downloaded."
+            exit 1
+          fi
+          sha256sum --check "${checksums[@]}"
+
       - name: Write release notes
         shell: bash
         run: |
@@ -99,6 +222,9 @@ jobs:
           {
             echo "Built from ${GITHUB_REPOSITORY}@${GITHUB_SHA}."
             echo
+            echo "- macOS is Developer ID-signed with hardened runtime and notarized by Apple."
+            echo "- Windows is Authenticode-signed locally outside of this workflow."
+            echo "- Linux is distributed with a SHA-256 checksum."
             echo "- Source ref: ${GITHUB_REF_NAME}"
             echo "- Source workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- Distribution repository: ${DIST_REPOSITORY}"

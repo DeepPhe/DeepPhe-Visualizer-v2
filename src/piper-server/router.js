@@ -135,7 +135,15 @@ async function readPiperFile(filePath) {
 function createPiperRouter() {
   const router = express.Router();
 
-  router.use(express.json());
+  // Scope JSON body parsing to the piper routes. This router is mounted app-wide
+  // (app.use(createPiperRouter())), so an UNSCOPED body parser runs on every
+  // request -- including POSTs bound for the DeepPhe data-API reverse proxy. Once
+  // express.json() consumes such a body, http-proxy-middleware forwards the
+  // request with a Content-Length header but no body, and the upstream hangs
+  // forever waiting for it (this is what left the patient drawer empty: the
+  // POST /deepphe/filter/summary request never returned). Restricting the parser
+  // to PIPER_ROUTE_BASE leaves proxied request bodies intact.
+  router.use(config.PIPER_ROUTE_BASE, express.json());
 
   // GET {base}/piper - Get the current run's active piper file
   router.get(`${config.PIPER_ROUTE_BASE}/piper`, async (req, res) => {
