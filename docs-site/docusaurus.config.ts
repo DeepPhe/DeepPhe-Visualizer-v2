@@ -60,6 +60,10 @@ const config: Config = {
     },
     navbar: {
       title: 'DeepPhe Visualizer',
+      logo: {
+        alt: 'DeepPhe',
+        src: 'img/logo.svg',
+      },
       items: [
         {
           type: 'docSidebar',
