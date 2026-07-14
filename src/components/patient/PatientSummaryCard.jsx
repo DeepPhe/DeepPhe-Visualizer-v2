@@ -617,10 +617,9 @@ export default function PatientSummaryCard({
             </Box>
           </Box>
         </ListSubheader>
-        {menuRanking.map((entry, entryIndex) => {
+        {menuRanking.map((entry) => {
           const documentId = String(entry?.documentId || "").trim();
           const isActive = Boolean(selectedDocumentId) && documentId === selectedDocumentId;
-          const isHighest = entryIndex === 0;
           const confidenceLabel = formatConfidencePercent(entry?.confidence);
           const metaLabel =
             [entry?.type, entry?.formattedDate].filter(Boolean).join(" · ") ||
@@ -632,8 +631,8 @@ export default function PatientSummaryCard({
               selected={isActive}
               onClick={() => handleMenuSelect(documentId)}
               aria-label={`Open ${metaLabel}, confidence ${confidenceLabel}${
-                isHighest ? ", highest confidence" : ""
-              }${isActive ? ", currently open" : ""}`}
+                isActive ? ", currently open" : ""
+              }`}
               sx={{ py: 0.5 }}
             >
               <Box
@@ -658,20 +657,6 @@ export default function PatientSummaryCard({
                   >
                     {metaLabel}
                   </Typography>
-                  {isHighest ? (
-                    <Chip
-                      label="highest"
-                      size="small"
-                      sx={{
-                        height: 16,
-                        fontSize: "0.6rem",
-                        fontWeight: 700,
-                        bgcolor: alpha(theme.palette.success.main, 0.13),
-                        color: theme.palette.success.dark,
-                        "& .MuiChip-label": { px: 0.6 },
-                      }}
-                    />
-                  ) : null}
                 </Box>
                 <Typography
                   variant="caption"

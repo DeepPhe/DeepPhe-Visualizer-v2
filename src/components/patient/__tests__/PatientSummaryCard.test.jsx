@@ -60,6 +60,63 @@ describe("PatientSummaryCard", () => {
     unmount();
   });
 
+  it("does not show a highest chip in the source document picker", () => {
+    const sections = [
+      {
+        key: "diagnoses",
+        label: "Diagnoses",
+        items: [
+          {
+            name: "Multi-source Finding",
+            documentIds: ["d1", "d2"],
+            selection: {
+              bestConfidence: 1,
+              documentIds: ["d1", "d2"],
+              documentRanking: [
+                {
+                  documentId: "d1",
+                  type: "Clinical Note",
+                  formattedDate: "2011/03/01",
+                  confidence: 1,
+                },
+                {
+                  documentId: "d2",
+                  type: "Surgical Pathology Report",
+                  formattedDate: "2010/07/10",
+                  confidence: 1,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+
+    const { container, unmount } = renderComponent(
+      <PatientSummaryCard
+        sections={sections}
+        confidenceThreshold={50}
+        onSelectItem={jest.fn()}
+      />
+    );
+
+    const trigger = container.querySelector(
+      'button[aria-label*="choose from 2 source documents"]'
+    );
+    expect(trigger).not.toBeNull();
+
+    act(() => {
+      trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(document.body.textContent).toContain("Clinical Note");
+    expect(document.body.textContent).toContain("Surgical Pathology Report");
+    expect(document.body.textContent).not.toContain("highest");
+    expect(document.body.querySelector('[aria-label*="highest confidence"]')).toBeNull();
+
+    unmount();
+  });
+
   it("uses the summary body as the scroll container", () => {
     const sections = [
       {
