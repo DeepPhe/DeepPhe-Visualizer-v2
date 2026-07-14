@@ -37,9 +37,7 @@ Items are styled to convey clinical meaning:
 
 Each finding carries an **extraction confidence** — how sure the natural-language processing was about it. A **Confidence** slider in the card header hides findings below a chosen threshold so you can focus on the most certain results.
 
-{/* Add once the screenshot is captured & committed:
 ![The Patient Summary confidence slider, with a message noting how many findings are hidden below the threshold](../assets/screenshots/end-user/patient-summary-confidence-slider.png)
-*/}
 
 - Drag the slider between **50%** and **100%** (in 5% steps) to set the minimum confidence.
 - Findings below the threshold are hidden, and a live message reports how many — for example, *"3 findings hidden below 85% confidence."*

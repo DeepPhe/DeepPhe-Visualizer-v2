@@ -63,12 +63,20 @@ The task-oriented user guide is built with Docusaurus in an isolated
 `docs-site/` package. Node.js 20 or later is required for documentation builds.
 
 ```bash
-npm run docs:install     # Install the isolated documentation dependencies
-npm run docs:start       # Preview the guide locally
-npm run docs:build       # Generate the static guide in site/
-npm run docs:pdf         # Export the printable guide PDF
-npm run docs:generate    # Generate the feature guide: capture screenshots, build the site, export the PDF
+npm run docs:install        # Install the isolated documentation dependencies
+npm run docs:start          # Preview the guide locally (live reload)
+npm run docs:serve          # Serve the already-built static guide from site/
+npm run docs:build          # Generate the static guide in site/
+npm run docs:pdf            # Export the printable guide PDF
+npm run capture:screenshots # Capture feature screenshots (needs the running app, see note)
+npm run docs:generate       # Full feature guide: capture screenshots, build the site, export the PDF
 ```
+
+> **Note:** `capture:screenshots` (and therefore `docs:generate`) drives the
+> running application with Playwright, so start the Visualizer and its data API
+> at `http://localhost:3000` before running them. `docs:build`, `docs:start`,
+> and `docs:serve` do not need a running app — they reuse the committed
+> screenshots.
 
 ### Docker Deployment
 
