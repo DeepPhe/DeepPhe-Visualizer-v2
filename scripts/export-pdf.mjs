@@ -8,6 +8,29 @@ import { chromium } from "playwright";
 
 const SITE_DIR = path.resolve("site");
 const OUTPUT_PDF = path.resolve("output/reports/deepphe-visualizer-user-guide.pdf");
+const CONFIG_PATH = path.resolve("docs-site/docusaurus.config.ts");
+
+// Docusaurus prefixes asset URLs and page routes with `baseUrl`, but writes the
+// files to the site root *without* that prefix. Read the configured baseUrl so
+// the static server can strip it when resolving files, and so we load the guide
+// at the baseUrl-prefixed route the built HTML actually references.
+function readBaseUrl() {
+  try {
+    const source = fs.readFileSync(CONFIG_PATH, "utf8");
+    const match = source.match(/baseUrl:\s*['"]([^'"]+)['"]/);
+    if (match) {
+      let base = match[1];
+      if (!base.startsWith("/")) base = `/${base}`;
+      if (!base.endsWith("/")) base = `${base}/`;
+      return base;
+    }
+  } catch {
+    // Fall through to serving from the root.
+  }
+  return "/";
+}
+
+const BASE_URL = readBaseUrl();
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -22,16 +45,47 @@ const MIME_TYPES = {
   ".woff2": "font/woff2",
 };
 
+function stripBaseUrl(pathname) {
+  const baseNoTrailingSlash = BASE_URL.replace(/\/$/, "");
+  if (
+    baseNoTrailingSlash &&
+    (pathname === baseNoTrailingSlash || pathname.startsWith(`${baseNoTrailingSlash}/`))
+  ) {
+    const stripped = pathname.slice(baseNoTrailingSlash.length);
+    return stripped === "" ? "/" : stripped;
+  }
+  return pathname;
+}
+
+function withinSiteDir(candidate) {
+  const normalized = path.normalize(candidate);
+  return normalized === SITE_DIR || normalized.startsWith(`${SITE_DIR}${path.sep}`)
+    ? normalized
+    : null;
+}
+
+// Resolve a request path to a file on disk, tolerating both `baseUrl` prefixing
+// and `trailingSlash: false` (which emits `foo.html` rather than `foo/index.html`).
 function resolveSitePath(urlPath) {
   const pathname = decodeURIComponent(new URL(urlPath, "http://127.0.0.1").pathname);
-  const normalizedPath = pathname.endsWith("/") ? `${pathname}index.html` : pathname;
-  const candidate = path.normalize(path.join(SITE_DIR, normalizedPath));
+  const rel = stripBaseUrl(pathname);
 
-  if (!candidate.startsWith(SITE_DIR)) {
-    return null;
+  const candidates = rel.endsWith("/")
+    ? [path.join(SITE_DIR, rel, "index.html")]
+    : [
+        path.join(SITE_DIR, rel), // exact hit — assets (.css/.js/.png/…)
+        path.join(SITE_DIR, `${rel}.html`), // trailingSlash:false page
+        path.join(SITE_DIR, rel, "index.html"), // trailingSlash:true page / directory
+      ];
+
+  for (const candidate of candidates) {
+    const safe = withinSiteDir(candidate);
+    if (safe && fs.existsSync(safe) && fs.statSync(safe).isFile()) {
+      return safe;
+    }
   }
 
-  return candidate;
+  return null;
 }
 
 function contentTypeFor(filePath) {
@@ -42,22 +96,8 @@ function contentTypeFor(filePath) {
 async function createStaticServer() {
   const server = http.createServer(async (req, res) => {
     try {
-      const safePath = resolveSitePath(req.url || "/");
-      if (!safePath) {
-        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("Bad request");
-        return;
-      }
-
-      let targetPath = safePath;
-      if (!fs.existsSync(targetPath)) {
-        const withIndex = path.join(targetPath, "index.html");
-        if (fs.existsSync(withIndex)) {
-          targetPath = withIndex;
-        }
-      }
-
-      if (!fs.existsSync(targetPath)) {
+      const targetPath = resolveSitePath(req.url || "/");
+      if (!targetPath) {
         res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
         res.end("Not found");
         return;
@@ -79,10 +119,9 @@ async function createStaticServer() {
 }
 
 async function ensureSiteArtifacts() {
-  const printableGuideHtml = path.join(SITE_DIR, "printable-guide", "index.html");
-  if (!fs.existsSync(printableGuideHtml)) {
+  if (!resolveSitePath(`${BASE_URL}printable-guide`)) {
     throw new Error(
-      "Missing Docusaurus output for /printable-guide/. Run npm run docs:build before exporting PDF."
+      "Missing Docusaurus output for the printable guide. Run `npm run docs:build` before exporting the PDF."
     );
   }
 
@@ -110,7 +149,7 @@ async function run() {
   await ensureSiteArtifacts();
 
   const { server, port } = await createStaticServer();
-  const url = `http://127.0.0.1:${port}/printable-guide/`;
+  const url = `http://127.0.0.1:${port}${BASE_URL}printable-guide`;
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
