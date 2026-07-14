@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Minimum-confidence filter on the **Patient Summary** card: a header slider
+  (50–100%, in 5% steps) that hides findings below the chosen extraction
+  confidence, keeps findings that have no confidence score, and announces how
+  many findings are hidden via an `aria-live` region
+- Collapse/expand controls on the **Cancer & Tumor Summary**, **Documents**, and
+  **Document Viewer** cards (matching the Patient Summary card), plus a
+  collapsible concept column inside the Document Viewer
+- Clickable **Patient Summary** findings that open their source note in the
+  Document Viewer
+
+### Changed
+- Responsive layout improvements for smaller screens across the patient view
+- Faster filter counting and patient-detail loading
+
+### Fixed
+- Patient drawer failing to load due to a JavaScript error
+- Removed a mislabeled UI label
+
 ## [2.0.0] - 2026-06-29
 
 ### Added

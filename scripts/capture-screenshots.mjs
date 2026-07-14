@@ -46,6 +46,7 @@ const OPTIONAL_SCREENSHOTS = [
   "26-zero-result-guidance.png",
   "27-patient-row-context-menu.png",
   "34-patient-summary-source-picker.png",
+  "35-patient-summary-confidence-slider.png",
   "40-standalone-patient-lookup.png",
   "41-patient-fact-linked-timeline.png",
   "42-document-viewer-concept-list.png",
@@ -461,6 +462,41 @@ async function captureEmbeddedPatientViewSeries(page) {
         throw new Error("Patient Summary Card has no section data for the opened patient");
       }
       await captureLocatorOrFallback(page, summaryCard, "33-patient-summary-card.png", false);
+    },
+  });
+
+  // Patient Summary minimum-confidence slider. Lower the threshold from its
+  // 100% default so the header slider sits mid-track and the "N findings hidden
+  // below X% confidence" live message is visible in the shot.
+  await withCapture(page, {
+    file: "35-patient-summary-confidence-slider.png",
+    route: "/",
+    target: "Patient Summary confidence slider (findings-hidden state)",
+    optional: true,
+    run: async () => {
+      const summaryCard = page
+        .locator('.MuiCard-root:has([data-testid="patient-summary-card-scroll"])')
+        .first();
+      if (!(await waitForLocator(summaryCard, 6000))) {
+        throw new Error("Patient Summary Card not available for the confidence-slider capture");
+      }
+      const slider = summaryCard.getByRole("slider").first();
+      if (!(await waitForLocator(slider, 5000))) {
+        throw new Error("Confidence slider not found in the Patient Summary Card header");
+      }
+      // Step down from 100% to 75% (5% steps) via the keyboard, the same path a
+      // keyboard user takes; the MUI slider updates on ArrowDown.
+      await slider.focus().catch(() => {});
+      for (let step = 0; step < 5; step += 1) {
+        await page.keyboard.press("ArrowDown");
+      }
+      await sleep(500);
+      await captureLocatorOrFallback(
+        page,
+        summaryCard,
+        "35-patient-summary-confidence-slider.png",
+        false
+      );
     },
   });
 

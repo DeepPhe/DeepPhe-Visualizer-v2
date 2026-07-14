@@ -19,7 +19,7 @@ A note opens in the viewer when you:
 - select an item in the [Patient Summary](patient-summary.md); or
 - select a **linked** note related to a fact.
 
-In the embedded patient view, a **Close document** control returns focus to the rest of the view.
+In the embedded patient view, a **Close document** control returns focus to the rest of the view. Use the collapse/expand control in the card header to fold the whole viewer to a slim strip and back. Within the viewer, the **concept column** has its own collapse control, so you can widen the note text when you don't need the concept list.
 
 ## Where the document came from
 

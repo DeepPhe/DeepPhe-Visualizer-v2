@@ -33,6 +33,25 @@ Items are styled to convey clinical meaning:
 - **Uncertain** and **Conflicted** items carry a small labeled chip.
 - A **source** label notes where a value came from.
 
+## Filter by confidence
+
+Each finding carries an **extraction confidence** — how sure the natural-language processing was about it. A **Confidence** slider in the card header hides findings below a chosen threshold so you can focus on the most certain results.
+
+{/* Add once the screenshot is captured & committed:
+![The Patient Summary confidence slider, with a message noting how many findings are hidden below the threshold](../assets/screenshots/end-user/patient-summary-confidence-slider.png)
+*/}
+
+- Drag the slider between **50%** and **100%** (in 5% steps) to set the minimum confidence.
+- Findings below the threshold are hidden, and a live message reports how many — for example, *"3 findings hidden below 85% confidence."*
+- Findings with **no confidence score** are always kept, so nothing is silently dropped for lack of a score.
+- If nothing meets the threshold, the card says so and prompts you to lower it.
+
+:::note
+
+The threshold starts at its **maximum (100%)**, so until you lower the slider the card shows only findings extracted with full confidence — plus any finding that has no confidence score. Lower the slider to reveal more.
+
+:::
+
 ## Follow an item to its source note
 
 An item that resolves to one or more source notes is shown as an **interactive link**:

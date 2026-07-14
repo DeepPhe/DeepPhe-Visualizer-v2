@@ -39,6 +39,7 @@ const SCREENSHOT_MAP = [
   ["32-embedded-patient-drawer.png", "embedded-patient-view.png", true],
   ["33-patient-summary-card.png", "patient-summary-card.png", true],
   ["34-patient-summary-source-picker.png", "patient-summary-source-picker.png", false],
+  ["35-patient-summary-confidence-slider.png", "patient-summary-confidence-slider.png", false],
   ["40-standalone-patient-lookup.png", "standalone-patient-lookup.png", false],
   ["41-patient-fact-linked-timeline.png", "patient-fact-linked-timeline.png", false],
   ["42-document-viewer-concept-list.png", "document-viewer-concept-list.png", false],

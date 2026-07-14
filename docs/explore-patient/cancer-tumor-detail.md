@@ -19,6 +19,8 @@ A patient may have more than one cancer, and each cancer may have one or more tu
 
 Cancer-level facts describe the cancer overall; tumor-level facts describe a specific tumor.
 
+Use the collapse/expand control in the panel header to fold the panel to a slim strip and back, giving more room to the other cards.
+
 ## Select a fact
 
 ![A selected cancer fact showing its detail fields and related documents, with the linked note in the timeline](../assets/screenshots/end-user/patient-fact-linked-timeline.png)
