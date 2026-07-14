@@ -53,6 +53,13 @@ const OPTIONAL_SCREENSHOTS = [
   "43-document-viewer-group-filter.png",
   "44-document-viewer-confidence-filter.png",
   "45-collapsed-date-episode-controls.png",
+  "46-document-timeline.png",
+  "47-filter-details-dialog.png",
+  "48-display-controls.png",
+  "49-drawer-window-controls.png",
+  "50-csv-export-button.png",
+  "51-filter-hierarchical-values.png",
+  "52-filter-disabled-values.png",
 ];
 
 const SCREENSHOT_ORDER = [...REQUIRED_SCREENSHOTS, ...OPTIONAL_SCREENSHOTS];
@@ -323,6 +330,32 @@ async function capturePatientDetailsSeries(page) {
       await expandButton.click();
       await waitForLocator(page.getByText("Diagnoses", { exact: true }).first(), 5000);
       await captureLocatorOrFallback(page, detailsRegion, "24-patient-details-expanded-row.png", false);
+    },
+  });
+
+  // Right-click context menu on the expanded detail row (Open in new tab / Go to tab).
+  await withCapture(page, {
+    file: "27-patient-row-context-menu.png",
+    route: "/",
+    target: "Patient row right-click context menu",
+    optional: true,
+    run: async () => {
+      // Right-click the expanded detail row itself — its cell spans every column
+      // and carries the context-menu handler. Text nodes inside can be off-screen,
+      // so target the cell near its top-left, away from interactive children.
+      const detailCell = page.locator("td[colspan]").first();
+      if (!(await waitForLocator(detailCell, 5000))) {
+        throw new Error("Expanded detail row not available to right-click");
+      }
+      await detailCell.scrollIntoViewIfNeeded().catch(() => {});
+      await detailCell.click({ button: "right", position: { x: 40, y: 20 } });
+      const menu = page.locator('[role="menu"]:has-text("Open in new tab")').first();
+      if (!(await waitForLocator(menu, 5000))) {
+        throw new Error("Row context menu did not open");
+      }
+      await sleep(300);
+      await captureLocatorOrFallback(page, menu, "27-patient-row-context-menu.png", false);
+      await page.keyboard.press("Escape").catch(() => {});
     },
   });
 
@@ -637,6 +670,25 @@ async function captureStandaloneSeries(page) {
     return;
   }
 
+  // Patient Document Timeline chart (the normal date-positioned view).
+  await withCapture(page, {
+    file: "46-document-timeline.png",
+    route: "/patient",
+    target: "Patient Document Timeline chart",
+    optional: true,
+    run: async () => {
+      const timelineCard = page
+        .locator('.MuiCard-root:has(:text("Patient Document Timeline"))')
+        .first();
+      if (!(await waitForLocator(timelineCard, 6000))) {
+        throw new Error("Patient Document Timeline card not found");
+      }
+      await timelineCard.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, timelineCard, "46-document-timeline.png", false);
+    },
+  });
+
   // Document Viewer — Concept List (default tab).
   await withCapture(page, {
     file: "42-document-viewer-concept-list.png",
@@ -736,6 +788,221 @@ async function captureCollapsedDateTimeline(page) {
   });
 }
 
+// Toolbar display controls: font size, high contrast, reduced motion, and the
+// bars-behind-dots toggle sit in one row. Capture the row as a single figure.
+async function captureDisplayControls(page) {
+  await withCapture(page, {
+    file: "48-display-controls.png",
+    route: "/",
+    target: "Toolbar display controls (font size, contrast, motion, bars behind dots)",
+    optional: true,
+    run: async () => {
+      const fontGroup = page.locator('[role="group"][aria-label="Font size"]').first();
+      if (!(await waitForLocator(fontGroup, 6000))) {
+        throw new Error("Font size control group not found in the toolbar");
+      }
+      // The controls share one flex row — capture that row (the group's parent).
+      const controlsRow = fontGroup.locator("xpath=..");
+      await controlsRow.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, controlsRow, "48-display-controls.png", false);
+    },
+  });
+}
+
+// Bars-behind-dots effect. The toggle defaults OFF, so enable it, capture a card
+// that shows the proportional bar drawn behind the patient dots, then restore it.
+async function captureBarsBehindDots(page) {
+  await withCapture(page, {
+    file: "10-patient-dots-bars-behind.png",
+    route: "/",
+    target: "Filter card with bars drawn behind patient dots",
+    optional: true,
+    run: async () => {
+      // Ensure the toggle is on. It is often already on (a remembered setting), in
+      // which case only the "Hide…" button exists — that is fine, leave it on.
+      const turnOn = page.getByRole("button", { name: "Show bars behind patient dots" }).first();
+      if (await turnOn.count()) {
+        await turnOn.click();
+        await sleep(600);
+      }
+      // Capture a card that actually has patient dots so the bars-behind effect shows.
+      const card = page.locator(".filter-card:has(.horizontal-bar-filter-patient-dot)").first();
+      if (!(await waitForLocator(card, 6000))) {
+        throw new Error("No filter card with patient dots found");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "10-patient-dots-bars-behind.png", false);
+    },
+  });
+}
+
+// Filter details dialog: opened from a filter card's "Open <name> filter" button.
+// Shows the in-dialog search, sort, and value-selection controls.
+async function captureFilterDetailDialog(page) {
+  await withCapture(page, {
+    file: "47-filter-details-dialog.png",
+    route: "/",
+    target: "Filter details dialog (search / sort / select values)",
+    optional: true,
+    run: async () => {
+      const openButton = page.locator('button[aria-label="Open Age at Dx filter"]').first();
+      if (!(await waitForLocator(openButton, 6000))) {
+        throw new Error("Filter card 'Open Age at Dx filter' button not found");
+      }
+      await openButton.scrollIntoViewIfNeeded().catch(() => {});
+      await openButton.click();
+      const dialog = page.getByRole("dialog").first();
+      if (!(await waitForLocator(dialog, 6000))) {
+        throw new Error("Filter details dialog did not open");
+      }
+      // Wait for the in-dialog search field so the capture shows the full control set.
+      await waitForLocator(dialog.getByLabel("Search values"), 4000);
+      await sleep(400);
+      await captureLocatorOrFallback(page, dialog, "47-filter-details-dialog.png", false);
+      await page.keyboard.press("Escape").catch(() => {});
+      await sleep(200);
+    },
+  });
+}
+
+// Zero-result cohort guidance. Best effort: selecting one value across several
+// distinct cards drives most datasets to a non-overlapping (empty) cohort. We
+// stop as soon as the count readout reads zero and capture the guidance panel.
+// Data-dependent — if the cohort never empties, this reports a fallback and the
+// page keeps its prose. Run last so it does not disturb the populated-cohort shots.
+async function captureZeroResultGuidance(page) {
+  await withCapture(page, {
+    file: "26-zero-result-guidance.png",
+    route: "/",
+    target: "Zero-result cohort guidance",
+    optional: true,
+    run: async () => {
+      await gotoRoute(page, "/");
+      const cards = page.locator(".filter-card");
+      const cardCount = await cards.count();
+      const readout = page.locator('[data-testid="patient-count-readout"]').first();
+      let reachedZero = false;
+
+      for (let index = 0; index < cardCount && !reachedZero; index += 1) {
+        const card = cards.nth(index);
+        const bars = card.locator(".horizontal-bar-filter-row-overlay[role='button']");
+        if ((await bars.count()) === 0) continue;
+        await card.scrollIntoViewIfNeeded().catch(() => {});
+        await bars.first().focus().catch(() => {});
+        await page.keyboard.press("Enter");
+        await sleep(900);
+        const text = ((await readout.textContent().catch(() => "")) || "").trim();
+        if (/\b0\b/.test(text)) {
+          reachedZero = true;
+        }
+      }
+
+      if (!reachedZero) {
+        throw new Error("Could not drive the cohort to zero with the available data");
+      }
+      await sleep(300);
+      const panel = page.locator('[data-testid="identified-patients-panel"]').first();
+      await captureLocatorOrFallback(page, panel, "26-zero-result-guidance.png", false);
+    },
+  });
+}
+
+// Hierarchical (expandable) filter values. Data-dependent: needs a card whose
+// values roll up into a tree. Expand the first expandable parent, then capture.
+async function captureHierarchicalValues(page) {
+  await withCapture(page, {
+    file: "51-filter-hierarchical-values.png",
+    route: "/",
+    target: "Filter card with hierarchical (expandable) values",
+    optional: true,
+    run: async () => {
+      await gotoRoute(page, "/");
+      const card = page
+        .locator('.filter-card:has(.horizontal-bar-filter-row-expand-hitbox[role="button"])')
+        .first();
+      if (!(await waitForLocator(card, 6000))) {
+        throw new Error("No hierarchical (expandable) filter values in this dataset");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      // Expand the first parent so its child values are visible in the capture.
+      await card
+        .locator('.horizontal-bar-filter-row-expand-hitbox[role="button"]')
+        .first()
+        .click()
+        .catch(() => {});
+      await sleep(600);
+      await captureLocatorOrFallback(page, card, "51-filter-hierarchical-values.png", false);
+    },
+  });
+}
+
+// Disabled (dimmed) filter values. Depends on an active selection that leaves
+// some non-overlapping values unselectable — run just after a selection.
+async function captureDisabledValues(page) {
+  await withCapture(page, {
+    file: "52-filter-disabled-values.png",
+    route: "/",
+    target: "Filter card with disabled (dimmed) values",
+    optional: true,
+    run: async () => {
+      const card = page
+        .locator(".filter-card:has(.horizontal-bar-filter-row.is-disabled)")
+        .first();
+      if (!(await waitForLocator(card, 6000))) {
+        throw new Error("No disabled filter values in the current selection state");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "52-filter-disabled-values.png", false);
+    },
+  });
+}
+
+// Selected Patients drawer window controls (minimize / maximize). Requires the
+// drawer to be open (an active cohort).
+async function captureDrawerWindowControls(page) {
+  await withCapture(page, {
+    file: "49-drawer-window-controls.png",
+    route: "/",
+    target: "Selected Patients drawer window controls (minimize / maximize)",
+    optional: true,
+    run: async () => {
+      const controls = page.locator('[aria-label="Drawer window controls"]').first();
+      if (!(await waitForLocator(controls, 6000))) {
+        throw new Error("Drawer window controls not found (drawer not open?)");
+      }
+      await controls.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(200);
+      await captureLocatorOrFallback(page, controls, "49-drawer-window-controls.png", false);
+    },
+  });
+}
+
+// CSV export control in the Selected Patients drawer toolbar.
+async function captureCsvExportButton(page) {
+  await withCapture(page, {
+    file: "50-csv-export-button.png",
+    route: "/",
+    target: "CSV export control in the Selected Patients drawer",
+    optional: true,
+    run: async () => {
+      const exportButton = page
+        .getByRole("button", { name: "Export filtered cohort rows to CSV" })
+        .first();
+      if (!(await waitForLocator(exportButton, 6000))) {
+        throw new Error("CSV export button not found");
+      }
+      await exportButton.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(200);
+      // Capture the toolbar cluster around the export control, not the bare icon.
+      const toolbarCluster = exportButton.locator("xpath=..");
+      await captureLocatorOrFallback(page, toolbarCluster, "50-csv-export-button.png", false);
+    },
+  });
+}
+
 async function run() {
   await ensureOutput();
 
@@ -802,8 +1069,14 @@ async function run() {
 
     // Cohort filtering: one representative filter card.
     await captureFilterCard(page, "09-filter-age-at-dx.png", "Age at Dx");
-    // A low-count filter card with patient dots (bars behind dots is on by default).
-    await captureFilterCard(page, "10-patient-dots-bars-behind.png", "Age at Dx");
+    // Bars-behind-dots display toggle: enable it, capture the effect, restore.
+    await captureBarsBehindDots(page);
+    // Toolbar display controls (font size, high contrast, reduced motion, bars behind dots).
+    await captureDisplayControls(page);
+    // The filter details dialog opened from a filter card.
+    await captureFilterDetailDialog(page);
+    // Hierarchical (expandable) filter values, if the dataset has any.
+    await captureHierarchicalValues(page);
 
     // Reference & Explore-a-Patient captures.
     await captureThemeBuilder(page);
@@ -847,8 +1120,19 @@ async function run() {
       });
     }
 
+    // Disabled/dimmed values appear once a selection is active (from above).
+    await captureDisabledValues(page);
+
     await capturePatientDetailsSeries(page);
+
+    // Drawer window controls and CSV export live in the open Selected Patients drawer.
+    await captureDrawerWindowControls(page);
+    await captureCsvExportButton(page);
+
     await captureEmbeddedPatientViewSeries(page);
+
+    // Zero-result guidance runs last — it deliberately empties the cohort.
+    await captureZeroResultGuidance(page);
 
     // Post-run validation: every targeted screenshot must exist on disk.
     for (const file of SCREENSHOT_ORDER) {

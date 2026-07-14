@@ -70,6 +70,8 @@ Select **Show in Document Viewer** in the expanded panel to open that patient as
 
 You can also **right-click a patient's expanded detail** for a short menu:
 
+![The right-click menu on an expanded patient row, with Open in new tab](../assets/screenshots/end-user/patient-row-context-menu.png)
+
 - **Open in new tab** opens the patient as a tab. If that patient is already open, this **focuses the existing tab** rather than creating a duplicate.
 - **Go to tab** appears when the patient already has a tab, and switches to it.
 

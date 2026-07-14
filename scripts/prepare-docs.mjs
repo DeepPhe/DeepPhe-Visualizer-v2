@@ -46,6 +46,13 @@ const SCREENSHOT_MAP = [
   ["43-document-viewer-group-filter.png", "document-viewer-group-filter.png", false],
   ["44-document-viewer-confidence-filter.png", "document-viewer-confidence-filter.png", false],
   ["45-collapsed-date-episode-controls.png", "collapsed-date-episode-controls.png", false],
+  ["46-document-timeline.png", "document-timeline.png", false],
+  ["47-filter-details-dialog.png", "filter-details-dialog.png", false],
+  ["48-display-controls.png", "display-controls.png", false],
+  ["49-drawer-window-controls.png", "drawer-window-controls.png", false],
+  ["50-csv-export-button.png", "csv-export-button.png", false],
+  ["51-filter-hierarchical-values.png", "filter-hierarchical-values.png", false],
+  ["52-filter-disabled-values.png", "filter-disabled-values.png", false],
 ];
 
 function findSource(captureName, semanticName) {

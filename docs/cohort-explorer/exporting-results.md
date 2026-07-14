@@ -7,6 +7,8 @@ sidebar_label: Export results
 
 Use the download button in the [Selected Patients table](patients-table.md) to create `cohort-patients.csv`.
 
+![The CSV export button in the Selected Patients drawer toolbar](../assets/screenshots/end-user/csv-export-button.png)
+
 ## What is exported
 
 The CSV contains, from the **currently loaded page** only:

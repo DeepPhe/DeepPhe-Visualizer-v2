@@ -7,6 +7,8 @@ sidebar_label: Patient Document Timeline
 
 The **Patient Document Timeline** plots a patient's notes over time so you can pick the one you want to read.
 
+![The Patient Document Timeline, with report-type rows and date-positioned document points](../assets/screenshots/end-user/document-timeline.png)
+
 ## Read the timeline
 
 - **Report types** are arranged as **rows** (for example, pathology, clinical notes).
@@ -24,6 +26,10 @@ The **Patient Document Timeline** plots a patient's notes over time so you can p
 ## When dates collapse
 
 Sometimes a dataset does not carry usable, distinct timestamps — for example, when every note resolves to a single date. When that happens, the ordinary date-positioned timeline is replaced by **episode dropdowns**:
+
+{/* Uncomment once a collapsed-date patient is captured (set COLLAPSED_DATE_PATIENT_ID) & committed:
+![The timeline's episode-dropdown fallback, shown when document dates collapse](../assets/screenshots/end-user/collapsed-date-episode-controls.png)
+*/}
 
 - Each episode has a dropdown labeled with the episode and its document count.
 - **Show all documents** keeps every document in that episode visible.

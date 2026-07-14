@@ -7,6 +7,8 @@ sidebar_label: Filter Details dialog
 
 Select a card's **Details** header to open its **Filter Details** dialog. Use it when a card has many values or truncated labels.
 
+![The Filter Details dialog, showing the value search, sort control, and selectable values](../assets/screenshots/end-user/filter-details-dialog.png)
+
 ## Search values
 
 Type in **Search values** to limit the list to labels containing your text. If nothing matches, the dialog shows **No matching values**.

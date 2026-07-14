@@ -11,7 +11,7 @@ This page describes how the end-user guide's screenshots are produced.
 
 | Requirement | Check |
 | --- | --- |
-| Node.js 18 or later (Playwright requirement) | `node --version` |
+| Node.js 20 or later (required by `docs:build`; Playwright alone needs only 18) | `node --version` |
 | Visualizer reachable (see `APP_URL`) | `curl -s "$APP_URL"` |
 | Data API on port 3333 | `curl -s http://localhost:3333/health` |
 | Playwright Chromium | `npx playwright install chromium` |
@@ -39,7 +39,7 @@ The capture script forces the **Standard** theme so images are consistent, disab
 `scripts/capture-screenshots.mjs` splits its targets into two sets:
 
 - **Required** captures back pages that always show an image; the run fails if any required capture cannot be produced cleanly.
-- **Optional** captures back newer interaction states that depend on data (for example, the collapsed-date timeline) or that are illustrative extras. A missed optional capture is reported but does not fail the run.
+- **Optional** captures back newer interaction states that depend on data (for example, the collapsed-date timeline, the zero-result cohort guidance, or hierarchical/disabled filter values) or that are illustrative extras. A missed optional capture is reported but does not fail the run — the page falls back to prose, so its image reference must stay commented until a real capture is committed.
 
 `scripts/prepare-docs.mjs` maps the numbered source captures to stable, task-oriented names under `docs/assets/screenshots/end-user/`. For an optional capture that was not produced, it keeps any existing tracked image and never leaves a broken reference. If neither a fresh capture nor a tracked image exists, the page falls back to prose only.
 

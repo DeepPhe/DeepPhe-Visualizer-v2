@@ -23,6 +23,8 @@ The drawer opens on the **Selected Patients** table. Opening an individual patie
 
 ## Window controls
 
+![The drawer's minimize and maximize window controls](../assets/screenshots/end-user/drawer-window-controls.png)
+
 - **Minimize** collapses the drawer to its summary line.
 - **Restore** reopens a minimized drawer.
 - **Maximize** expands the drawer to fill most of the window; **Restore** returns it to normal size.

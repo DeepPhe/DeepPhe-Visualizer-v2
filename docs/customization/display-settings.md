@@ -7,6 +7,8 @@ sidebar_label: Display settings
 
 The toolbar's display controls change how the Cohort Explorer looks. **None of them change your filters or the cohort.**
 
+![The toolbar display controls: font size, high contrast, reduced motion, and bars behind dots](../assets/screenshots/end-user/display-controls.png)
+
 ![The toolbar's Theme menu open, showing Standard, Obsidian, Vapor, and Theme Builder](../assets/screenshots/end-user/display-settings.png)
 
 ## Font size
@@ -24,6 +26,8 @@ Select **Reduced motion** to minimize animation and transitions. The application
 ## Bars behind dots
 
 Select **Bars behind dots** to draw a faint proportional bar behind [patient dots](../cohort-explorer/patient-dots.md), giving scale while keeping the dots dominant.
+
+![A filter card with faint proportional bars drawn behind the patient dots](../assets/screenshots/end-user/patient-dots-bars-behind.png)
 
 ## Layout
 

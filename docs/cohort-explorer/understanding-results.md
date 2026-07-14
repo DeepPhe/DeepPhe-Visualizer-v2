@@ -46,6 +46,10 @@ Each filter matches patients **independently**; your cohort is the **intersectio
 
 If your criteria produce zero patients, the drawer explains *why*, in one of two ways:
 
+{/* Uncomment once `zero-result-guidance.png` is captured & committed:
+![The identified-patients panel explaining why a cohort is empty](../assets/screenshots/end-user/zero-result-guidance.png)
+*/}
+
 - **One filter matched nobody.** If a single filter matches 0 patients on its own, the Visualizer names that filter — for example, *"Grade matched 0 patients before intersection. Check spelling and selected values."* Review that filter's selected values.
 - **The filters don't overlap.** If every filter matches patients on its own but their intersection is empty, the Visualizer explains that the filters have no overlap and suggests broadening one — *"Each filter matches patients independently, but their overlap is 0. Try broadening one filter."*
 

@@ -30,12 +30,16 @@ The cohort must satisfy the race selection **and** the stage selection.
 
 As you add criteria, some values in other cards can no longer contribute any matching patient. Those values are **dimmed and cannot be selected**, because choosing one would reduce the cohort to zero. This prevents accidental empty results.
 
+![A filter card with dimmed, unselectable values whose in-cohort count is zero](../assets/screenshots/end-user/filter-disabled-values.png)
+
 - A value is disabled when its included (in-cohort) count is **0** under the current criteria.
 - A value you have **already selected** is never disabled, so you can always clear it — even if its in-cohort count has since dropped to zero.
 
 ## Hierarchical values
 
 Some clinical cards group detailed values under a parent.
+
+![A filter card with a parent value expanded to show its indented child values](../assets/screenshots/end-user/filter-hierarchical-values.png)
 
 - Use the **expand control** beside a parent to reveal its children. Expanding a group does **not** select it — you can browse children without changing the cohort.
 - Selecting a **parent** includes the underlying values it represents; the Visualizer translates the parent into those specific values when it runs the query.
