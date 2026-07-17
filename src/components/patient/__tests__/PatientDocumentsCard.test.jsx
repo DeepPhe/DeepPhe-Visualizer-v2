@@ -2,8 +2,14 @@
 import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import PatientDocumentsCard, { resolveResponsiveTickCount } from "../PatientDocumentsCard";
+import { ThemeProvider, getContrastRatio } from "@mui/material/styles";
+import PatientDocumentsCard, {
+  getTimelineSvgColors,
+  resolveResponsiveTickCount,
+} from "../PatientDocumentsCard";
+import { govukTheme, obsidianTheme } from "../../../themes";
 import { transformDocumentTimeline } from "../../../utils/patientView/transformDocumentTimeline";
+import { WCAG_AA_TEXT_CONTRAST, WCAG_UI_CONTRAST } from "../../../utils/colorContrast";
 
 function renderComponent(element) {
   const container = document.createElement("div");
@@ -99,6 +105,46 @@ describe("PatientDocumentsCard", () => {
     // Height is content-sized: plotTop(10) + rows(2) * rowHeight(40) + footer(38).
     const viewBox = svg.getAttribute("viewBox").split(" ").map(Number);
     expect(viewBox[3]).toBe(128);
+
+    unmount();
+  });
+
+  it("uses WCAG-readable SVG colors in dark and bright themes", () => {
+    [
+      { theme: obsidianTheme, background: "#1A2332" },
+      { theme: govukTheme, background: "#FFFFFF" },
+    ].forEach(({ theme, background }) => {
+      const colors = getTimelineSvgColors(theme);
+
+      expect(getContrastRatio(colors.textColor, background)).toBeGreaterThanOrEqual(
+        WCAG_AA_TEXT_CONTRAST
+      );
+      expect(getContrastRatio(colors.axisColor, background)).toBeGreaterThanOrEqual(
+        WCAG_UI_CONTRAST
+      );
+      expect(getContrastRatio(colors.relatedStrokeColor, background)).toBeGreaterThanOrEqual(
+        WCAG_UI_CONTRAST
+      );
+      expect(getContrastRatio(colors.docCountBadgeText, colors.docCountBadgeBackground)).toBeGreaterThanOrEqual(
+        WCAG_AA_TEXT_CONTRAST
+      );
+    });
+  });
+
+  it("renders Obsidian timeline labels with theme contrast colors", () => {
+    const { container, unmount } = renderComponent(
+      <ThemeProvider theme={obsidianTheme}>
+        <PatientDocumentsCard timelineData={buildTimelineData()} />
+      </ThemeProvider>
+    );
+
+    const rowLabel = container.querySelector(".patient-timeline-row-label");
+    const tickLabel = container.querySelector(".patient-timeline-tick-label");
+    const axisTitle = container.querySelector(".patient-timeline-axis-title");
+
+    expect(rowLabel.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
+    expect(tickLabel.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
+    expect(axisTitle.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
 
     unmount();
   });

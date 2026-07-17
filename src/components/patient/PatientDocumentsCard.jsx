@@ -22,6 +22,7 @@ import {
   buildTimelineChartModel,
   resolveTicks,
 } from "../../utils/patientView/timelineChartLayout";
+import { getReadableTextColor } from "../../utils/colorContrast";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const MIN_ZOOM = 1;
@@ -49,8 +50,6 @@ function clampPanRatio(panRatio, zoom) {
   return Math.min(maxPan, Math.max(0, panRatio));
 }
 
-const RELATED_STROKE = "#1976d2";
-const AXIS_STROKE = "#707070";
 const EPISODE_SELECT_ALL = "__all__";
 const EPISODE_SELECT_HIDDEN = "__hidden__";
 
@@ -67,6 +66,31 @@ export function resolveResponsiveTickCount(plotWidth, maxTickCount = 7) {
     numericMaxTickCount,
     Math.max(2, Math.floor(numericPlotWidth / MIN_TICK_SPACING) + 1)
   );
+}
+
+export function getTimelineSvgColors(theme) {
+  const textColor = theme?.palette?.text?.secondary || "#505A5F";
+  const axisColor = theme?.palette?.text?.disabled || textColor;
+  const selectedMarkerColor = theme?.palette?.text?.primary || textColor;
+  const relatedStrokeColor = theme?.palette?.primary?.main || textColor;
+  const pointStrokeColor =
+    theme?.palette?.mode === "dark"
+      ? theme?.palette?.background?.default || "#0B1220"
+      : alpha(theme?.palette?.common?.black || "#000000", 0.55);
+  const docCountBadgeBackground = theme?.palette?.info?.main || relatedStrokeColor;
+  const docCountBadgeText = getReadableTextColor(docCountBadgeBackground, {
+    candidates: [theme?.palette?.info?.contrastText],
+  });
+
+  return {
+    axisColor,
+    docCountBadgeBackground,
+    docCountBadgeText,
+    pointStrokeColor,
+    relatedStrokeColor,
+    selectedMarkerColor,
+    textColor,
+  };
 }
 
 // Derives a content-sized viewBox from the measured width and report-type count.
@@ -197,10 +221,11 @@ export default function PatientDocumentsCard({
   sectionLabel = "Patient Document Timeline",
 }) {
   const theme = useTheme();
+  const timelineColors = getTimelineSvgColors(theme);
   // High-contrast foreground for the "currently viewed" marker so its ring stays
   // visible on every theme (near-black on light themes, near-white on dark ones).
   // A hardcoded near-black ring is ~1.2:1 on the dark theme's navy panel.
-  const selectedMarkerColor = theme.palette.text.primary;
+  const selectedMarkerColor = timelineColors.selectedMarkerColor;
   const [hiddenEpisodes, setHiddenEpisodes] = useState(() => new Set());
   const [episodeSelections, setEpisodeSelections] = useState({});
   // Horizontal (time-axis) zoom + pan. zoom === 1 shows the full date domain;
@@ -615,8 +640,8 @@ export default function PatientDocumentsCard({
                   py: 0.25,
                   borderRadius: 999,
                   fontWeight: 600,
-                  bgcolor: "info.main",
-                  color: "#fff",
+                  bgcolor: timelineColors.docCountBadgeBackground,
+                  color: timelineColors.docCountBadgeText,
                 }}
               >
                 {chartModel.totalReports} doc{chartModel.totalReports !== 1 ? "s" : ""}
@@ -740,17 +765,18 @@ export default function PatientDocumentsCard({
                           y1={row.y}
                           x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
                           y2={row.y}
-                          stroke={alpha(AXIS_STROKE, 0.6)}
+                          stroke={timelineColors.axisColor}
                           strokeWidth={1}
                         />
                         {typeScale.labelMode === "top" ? (
                           // Narrow layout: label rides above its lane so the plot can
                           // use the full width instead of a wide left gutter.
                           <text
+                            className="patient-timeline-row-label"
                             x={chartModel.dimensions.plotLeft}
                             y={row.y - chartModel.dimensions.rowHeight * 0.28}
                             textAnchor="start"
-                            fill="#2f2f2f"
+                            fill={timelineColors.textColor}
                             fontSize={typeScale.rowLabelFont}
                             fontWeight="600"
                           >
@@ -758,10 +784,11 @@ export default function PatientDocumentsCard({
                           </text>
                         ) : (
                           <text
+                            className="patient-timeline-row-label"
                             x={chartModel.dimensions.plotLeft - 10}
                             y={row.y + 4}
                             textAnchor="end"
-                            fill="#2f2f2f"
+                            fill={timelineColors.textColor}
                             fontSize={typeScale.rowLabelFont}
                             fontWeight="500"
                           >
@@ -776,7 +803,7 @@ export default function PatientDocumentsCard({
                       y1={chartModel.dimensions.baselineY + 8}
                       x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
                       y2={chartModel.dimensions.baselineY + 8}
-                      stroke={alpha(AXIS_STROKE, 0.75)}
+                      stroke={timelineColors.axisColor}
                       strokeWidth={1.2}
                     />
 
@@ -793,7 +820,7 @@ export default function PatientDocumentsCard({
                             y1={chartModel.dimensions.baselineY + 8}
                             x2={tick.x}
                             y2={chartModel.dimensions.baselineY + 14}
-                            stroke={alpha(AXIS_STROKE, 0.8)}
+                            stroke={timelineColors.axisColor}
                             strokeWidth={1}
                           />
                           <text
@@ -801,7 +828,7 @@ export default function PatientDocumentsCard({
                             x={tickLabelX}
                             y={chartModel.dimensions.baselineY + 28}
                             textAnchor={tickTextAnchor}
-                            fill="#3e3e3e"
+                            fill={timelineColors.textColor}
                             fontSize={typeScale.tickFont}
                           >
                             {tick.label}
@@ -812,10 +839,11 @@ export default function PatientDocumentsCard({
 
                     {typeScale.labelMode === "left" ? (
                       <text
+                        className="patient-timeline-axis-title"
                         x={chartModel.dimensions.plotLeft - 38}
                         y={chartModel.dimensions.baselineY + 30}
                         textAnchor="end"
-                        fill="#2f2f2f"
+                        fill={timelineColors.textColor}
                         fontSize={typeScale.axisTitleFont}
                         fontWeight="600"
                       >
@@ -837,7 +865,7 @@ export default function PatientDocumentsCard({
                                 cy={point.y}
                                 r={typeScale.relatedRingRadius}
                                 fill="none"
-                                stroke={RELATED_STROKE}
+                                stroke={timelineColors.relatedStrokeColor}
                                 strokeWidth={1.4}
                                 strokeDasharray="2 2"
                                 pointerEvents="none"
@@ -874,8 +902,8 @@ export default function PatientDocumentsCard({
                                 isSelected
                                   ? selectedMarkerColor
                                   : isRelated
-                                  ? RELATED_STROKE
-                                  : alpha("#111", 0.55)
+                                  ? timelineColors.relatedStrokeColor
+                                  : timelineColors.pointStrokeColor
                               }
                               strokeWidth={isSelected ? 2 : isRelated ? 1.4 : 1}
                               tabIndex={0}
