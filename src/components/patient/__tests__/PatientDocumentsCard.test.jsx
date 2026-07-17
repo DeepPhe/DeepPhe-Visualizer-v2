@@ -7,7 +7,7 @@ import PatientDocumentsCard, {
   getTimelineSvgColors,
   resolveResponsiveTickCount,
 } from "../PatientDocumentsCard";
-import { govukTheme, obsidianTheme } from "../../../themes";
+import { govukTheme, obsidianTheme, vaporTheme } from "../../../themes";
 import { transformDocumentTimeline } from "../../../utils/patientView/transformDocumentTimeline";
 import { WCAG_AA_TEXT_CONTRAST, WCAG_UI_CONTRAST } from "../../../utils/colorContrast";
 
@@ -109,9 +109,10 @@ describe("PatientDocumentsCard", () => {
     unmount();
   });
 
-  it("uses WCAG-readable SVG colors in dark and bright themes", () => {
+  it("uses WCAG-readable SVG colors in all configured themes", () => {
     [
       { theme: obsidianTheme, background: "#1A2332" },
+      { theme: vaporTheme, background: "#161425" },
       { theme: govukTheme, background: "#FFFFFF" },
     ].forEach(({ theme, background }) => {
       const colors = getTimelineSvgColors(theme);
@@ -131,22 +132,27 @@ describe("PatientDocumentsCard", () => {
     });
   });
 
-  it("renders Obsidian timeline labels with theme contrast colors", () => {
-    const { container, unmount } = renderComponent(
-      <ThemeProvider theme={obsidianTheme}>
-        <PatientDocumentsCard timelineData={buildTimelineData()} />
-      </ThemeProvider>
-    );
+  it("renders dark-theme timeline labels with theme contrast colors", () => {
+    [
+      { theme: obsidianTheme, expectedFill: obsidianTheme.palette.text.secondary },
+      { theme: vaporTheme, expectedFill: vaporTheme.palette.text.secondary },
+    ].forEach(({ theme, expectedFill }) => {
+      const { container, unmount } = renderComponent(
+        <ThemeProvider theme={theme}>
+          <PatientDocumentsCard timelineData={buildTimelineData()} />
+        </ThemeProvider>
+      );
 
-    const rowLabel = container.querySelector(".patient-timeline-row-label");
-    const tickLabel = container.querySelector(".patient-timeline-tick-label");
-    const axisTitle = container.querySelector(".patient-timeline-axis-title");
+      const rowLabel = container.querySelector(".patient-timeline-row-label");
+      const tickLabel = container.querySelector(".patient-timeline-tick-label");
+      const axisTitle = container.querySelector(".patient-timeline-axis-title");
 
-    expect(rowLabel.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
-    expect(tickLabel.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
-    expect(axisTitle.getAttribute("fill")).toBe(obsidianTheme.palette.text.secondary);
+      expect(rowLabel.getAttribute("fill")).toBe(expectedFill);
+      expect(tickLabel.getAttribute("fill")).toBe(expectedFill);
+      expect(axisTitle.getAttribute("fill")).toBe(expectedFill);
 
-    unmount();
+      unmount();
+    });
   });
 
   it("selects a document when its timeline point is clicked", () => {
