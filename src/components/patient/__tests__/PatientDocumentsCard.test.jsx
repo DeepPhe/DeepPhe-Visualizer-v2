@@ -7,7 +7,7 @@ import PatientDocumentsCard, {
   getTimelineSvgColors,
   resolveResponsiveTickCount,
 } from "../PatientDocumentsCard";
-import { govukTheme, obsidianTheme, vaporTheme } from "../../../themes";
+import { THEME_OPTIONS, getThemeByKey } from "../../../themes";
 import { transformDocumentTimeline } from "../../../utils/patientView/transformDocumentTimeline";
 import { WCAG_AA_TEXT_CONTRAST, WCAG_UI_CONTRAST } from "../../../utils/colorContrast";
 
@@ -84,6 +84,12 @@ function buildCollapsedTimelineData() {
   });
 }
 
+const TIMELINE_THEME_BACKGROUNDS = {
+  obsidian: "#1A2332",
+  vapor: "#161425",
+  govuk: "#FFFFFF",
+};
+
 describe("PatientDocumentsCard", () => {
   it("reduces date tick density as the available plot width narrows", () => {
     expect(resolveResponsiveTickCount(1064, 7)).toBe(7);
@@ -109,12 +115,16 @@ describe("PatientDocumentsCard", () => {
     unmount();
   });
 
+  it("defines timeline contrast backgrounds for every configured theme", () => {
+    expect(Object.keys(TIMELINE_THEME_BACKGROUNDS).sort()).toEqual(
+      THEME_OPTIONS.map(({ key }) => key).sort()
+    );
+  });
+
   it("uses WCAG-readable SVG colors in all configured themes", () => {
-    [
-      { theme: obsidianTheme, background: "#1A2332" },
-      { theme: vaporTheme, background: "#161425" },
-      { theme: govukTheme, background: "#FFFFFF" },
-    ].forEach(({ theme, background }) => {
+    THEME_OPTIONS.forEach(({ key }) => {
+      const theme = getThemeByKey(key);
+      const background = TIMELINE_THEME_BACKGROUNDS[key];
       const colors = getTimelineSvgColors(theme);
 
       expect(getContrastRatio(colors.textColor, background)).toBeGreaterThanOrEqual(
@@ -132,11 +142,9 @@ describe("PatientDocumentsCard", () => {
     });
   });
 
-  it("renders dark-theme timeline labels with theme contrast colors", () => {
-    [
-      { theme: obsidianTheme, expectedFill: obsidianTheme.palette.text.secondary },
-      { theme: vaporTheme, expectedFill: vaporTheme.palette.text.secondary },
-    ].forEach(({ theme, expectedFill }) => {
+  it("renders timeline labels with each theme's contrast colors", () => {
+    THEME_OPTIONS.forEach(({ key }) => {
+      const theme = getThemeByKey(key);
       const { container, unmount } = renderComponent(
         <ThemeProvider theme={theme}>
           <PatientDocumentsCard timelineData={buildTimelineData()} />
@@ -147,9 +155,9 @@ describe("PatientDocumentsCard", () => {
       const tickLabel = container.querySelector(".patient-timeline-tick-label");
       const axisTitle = container.querySelector(".patient-timeline-axis-title");
 
-      expect(rowLabel.getAttribute("fill")).toBe(expectedFill);
-      expect(tickLabel.getAttribute("fill")).toBe(expectedFill);
-      expect(axisTitle.getAttribute("fill")).toBe(expectedFill);
+      expect(rowLabel.getAttribute("fill")).toBe(theme.palette.text.secondary);
+      expect(tickLabel.getAttribute("fill")).toBe(theme.palette.text.secondary);
+      expect(axisTitle.getAttribute("fill")).toBe(theme.palette.text.secondary);
 
       unmount();
     });

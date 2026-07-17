@@ -17,6 +17,12 @@ const EFFECTIVE_THEME_BACKGROUNDS = {
 };
 
 describe("WCAG color contrast", () => {
+  it("defines contrast backgrounds for every configured theme", () => {
+    expect(Object.keys(EFFECTIVE_THEME_BACKGROUNDS).sort()).toEqual(
+      THEME_OPTIONS.map(({ key }) => key).sort()
+    );
+  });
+
   it("keeps core bright and dark theme text colors at AA contrast", () => {
     THEME_OPTIONS.forEach(({ key }) => {
       const theme = getThemeByKey(key);
