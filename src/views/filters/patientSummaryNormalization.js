@@ -238,21 +238,64 @@ function normalizeSummaryRecordForGrid(summary) {
   };
 }
 
+const DOCUMENT_COUNT_KEYS = [
+  "doc_count",
+  "docCount",
+  "document_count",
+  "documentCount",
+  "documents_count",
+  "documentsCount",
+  "total_documents",
+  "totalDocuments",
+  "note_count",
+  "noteCount",
+  "notes_count",
+  "notesCount",
+  "total_notes",
+  "totalNotes",
+];
+
+const DOCUMENT_PAYLOAD_COUNT_KEYS = [
+  ...DOCUMENT_COUNT_KEYS,
+  "count",
+  "total",
+  "total_count",
+  "totalCount",
+];
+
+function parseDocumentCountValue(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const normalizedValue = typeof value === "string" ? value.replace(/,/g, "").trim() : value;
+  if (normalizedValue === "") {
+    return null;
+  }
+
+  const numericValue = Number(normalizedValue);
+
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return null;
+  }
+
+  return Math.trunc(numericValue);
+}
+
+function collectDocumentCountCandidates(source, keys = DOCUMENT_COUNT_KEYS) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    return [];
+  }
+
+  return keys.map((key) => parseDocumentCountValue(source?.[key])).filter((value) => value !== null);
+}
+
 function resolveSummaryDocumentCount(...sources) {
-  const countCandidates = sources.flatMap((source) => [
-    source?.doc_count,
-    source?.docCount,
-    source?.document_count,
-    source?.documentCount,
-    source?.note_count,
-    source?.noteCount,
-  ]);
-  const positiveCount = countCandidates
-    .map((value) => Number(value))
-    .find((value) => Number.isFinite(value) && value > 0);
+  const countCandidates = sources.flatMap((source) => collectDocumentCountCandidates(source));
+  const positiveCount = countCandidates.find((value) => value > 0);
 
   if (positiveCount !== undefined) {
-    return Math.trunc(positiveCount);
+    return positiveCount;
   }
 
   const documentArrays = sources.flatMap((source) => [
@@ -268,7 +311,11 @@ function resolveSummaryDocumentCount(...sources) {
     (documents) => Array.isArray(documents) && documents.length > 0
   );
 
-  return populatedDocuments?.length || 0;
+  if (populatedDocuments) {
+    return populatedDocuments.length;
+  }
+
+  return countCandidates.find((value) => value === 0) ?? 0;
 }
 
 export function transformSummaryToGridRow(summary) {
@@ -732,20 +779,34 @@ export function resolveDocumentCountFromPayload(payload) {
     return payload.length;
   }
 
-  if (Array.isArray(payload?.documents)) {
-    return payload.documents.length;
+  if (!payload || typeof payload !== "object") {
+    return 0;
   }
 
-  if (Array.isArray(payload?.data)) {
-    return payload.data.length;
+  const nestedData = payload?.data && typeof payload.data === "object" ? payload.data : null;
+  const countCandidates = [payload, nestedData, payload?.meta, payload?.metadata, payload?.pagination].flatMap(
+    (source) => collectDocumentCountCandidates(source, DOCUMENT_PAYLOAD_COUNT_KEYS)
+  );
+  const countFromMetadata =
+    countCandidates.find((value) => value > 0) ?? countCandidates.find((value) => value === 0) ?? 0;
+
+  if (countFromMetadata > 0) {
+    return countFromMetadata;
   }
 
-  const numericCount = Number(payload?.count);
-  if (Number.isFinite(numericCount) && numericCount >= 0) {
-    return numericCount;
+  const documentArrays = [
+    payload?.documents,
+    nestedData?.documents,
+    payload?.data,
+    payload?.results,
+    payload?.rows,
+  ];
+  const documentArray = documentArrays.find((documents) => Array.isArray(documents));
+  if (documentArray) {
+    return documentArray.length;
   }
 
-  return 0;
+  return countFromMetadata;
 }
 
 export function getZeroResultHint(filters, itemCounts) {

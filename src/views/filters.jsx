@@ -147,6 +147,43 @@ const DOCUMENT_COUNT_EXCLUDE_PROPERTIES = [
   "sections",
 ];
 
+function hasPositiveDocumentCount(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0;
+}
+
+async function hydrateMissingPatientDocumentCounts(rows = []) {
+  const rowsNeedingCounts = rows.filter(
+    (row) => row?.patientId && !hasPositiveDocumentCount(row?.docCount)
+  );
+
+  if (rowsNeedingCounts.length === 0) {
+    return rows;
+  }
+
+  const countEntries = await Promise.all(
+    rowsNeedingCounts.map(async (row) => {
+      const documentsPayload = await fetchPatientDocuments(row.patientId, {
+        excludeProperties: DOCUMENT_COUNT_EXCLUDE_PROPERTIES,
+      }).catch(() => null);
+      const resolvedCount = resolveDocumentCountFromPayload(documentsPayload);
+      return [row.patientId, resolvedCount];
+    })
+  );
+  const countsByPatientId = new Map(
+    countEntries.filter(([, documentCount]) => hasPositiveDocumentCount(documentCount))
+  );
+
+  if (countsByPatientId.size === 0) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    const resolvedCount = countsByPatientId.get(row.patientId);
+    return hasPositiveDocumentCount(resolvedCount) ? { ...row, docCount: resolvedCount } : row;
+  });
+}
+
 function toRowCountCacheKey(rowRequestFilters = [], includePatientIds = false) {
   return `${includePatientIds ? "withPatientIds" : "withoutPatientIds"}|${JSON.stringify(rowRequestFilters)}`;
 }
@@ -2074,7 +2111,7 @@ function FiltersView() {
           : Array.isArray(summaryPayload?.summaries)
           ? summaryPayload.summaries
           : [];
-        const pageRows = summaryRowsRaw
+        const transformedPageRows = summaryRowsRaw
           .map(transformSummaryToGridRow)
           .filter((row) => row.patientId)
           .sort((leftRow, rightRow) =>
@@ -2083,6 +2120,7 @@ function FiltersView() {
               sensitivity: "base",
             })
           );
+        const pageRows = await hydrateMissingPatientDocumentCounts(transformedPageRows);
 
         if (!isActive) {
           return;

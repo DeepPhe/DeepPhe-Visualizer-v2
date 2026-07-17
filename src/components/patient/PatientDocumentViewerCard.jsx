@@ -27,13 +27,14 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import {
   buildConfidenceHistogram,
   buildMentionHighlightModel,
 } from "../../utils/patientView/documentMentions";
+import { getReadableTextColor } from "../../utils/colorContrast";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const DEFAULT_GROUP_COLOR = "#e0e0e0";
@@ -751,7 +752,7 @@ function SelectionSummary({ context }) {
               lineHeight: 1.4,
               color:
                 segment.variant === "muted"
-                  ? "text.disabled"
+                  ? "text.secondary"
                   : segment.variant === "accent"
                   ? "primary.main"
                   : segment.variant === "strong"
@@ -1334,6 +1335,16 @@ export default function PatientDocumentViewerCard({
                         );
                         const conceptColor =
                           familyColor ?? highlightModel.groupColorByName[conceptRow.group] ?? DEFAULT_GROUP_COLOR;
+                        const chipBackgroundColor = isDimmed ? theme.palette.background.paper : conceptColor;
+                        const chipTextColor = isDimmed
+                          ? theme.palette.text.secondary
+                          : getReadableTextColor(conceptColor);
+                        const chipBorderColor = isDimmed
+                          ? theme.palette.divider
+                          : alpha(chipTextColor, 0.7);
+                        const selectedChipBorderColor = isDimmed
+                          ? theme.palette.primary.main
+                          : chipTextColor;
                         const conceptDetails = conceptDetailsById.get(conceptRow.conceptId) || {
                           concept: {},
                           mentionRecords: [],
@@ -1400,22 +1411,28 @@ export default function PatientDocumentViewerCard({
                               }
                               onClick={() => handleConceptToggle(conceptRow.conceptId)}
                               sx={{
-                                backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                                border: isSelected ? "1.5px solid #333" : "1px solid rgba(0,0,0,0.2)",
+                                backgroundColor: chipBackgroundColor,
+                                border: isSelected
+                                  ? `2px solid ${selectedChipBorderColor}`
+                                  : `1px solid ${chipBorderColor}`,
+                                color: chipTextColor,
                                 fontWeight: isSelected ? 700 : 500,
-                                opacity: isDimmed ? 0.55 : 1,
-                                transition: "border-color 0.12s ease, border-width 0.12s ease",
+                                opacity: 1,
+                                transition:
+                                  "background-color 0.12s ease, border-color 0.12s ease, border-width 0.12s ease, color 0.12s ease",
                                 "&.MuiChip-clickable:hover": {
-                                  backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                                  opacity: isDimmed ? 0.55 : 1,
-                                  border: isSelected ? "2px solid #333" : "2px solid rgba(0,0,0,0.45)",
+                                  backgroundColor: chipBackgroundColor,
+                                  color: chipTextColor,
+                                  border: `2px solid ${selectedChipBorderColor}`,
                                 },
                                 "&.MuiChip-clickable:focus-visible": {
-                                  backgroundColor: isDimmed ? DEFAULT_GROUP_COLOR : conceptColor,
-                                  opacity: isDimmed ? 0.55 : 1,
-                                  border: "2px solid #333",
+                                  backgroundColor: chipBackgroundColor,
+                                  color: chipTextColor,
+                                  border: `2px solid ${selectedChipBorderColor}`,
+                                  outline: `2px solid ${theme.custom?.focusRing || theme.palette.primary.main}`,
+                                  outlineOffset: 1,
                                 },
-                                "& .MuiChip-label": { px: 0.9 },
+                                "& .MuiChip-label": { px: 0.9, color: "inherit" },
                               }}
                             />
                           </Tooltip>
@@ -1621,6 +1638,7 @@ export default function PatientDocumentViewerCard({
 
                   const mention = segment.mention;
                   const color = highlightModel.groupColorByName[mention.group] || "#E5E7EB";
+                  const mentionTextColor = getReadableTextColor(color);
                   const isConceptSelected = selectedConceptIdSet.has(mention.conceptId);
 
                   return (
@@ -1643,13 +1661,23 @@ export default function PatientDocumentViewerCard({
                           px: 0.25,
                           py: 0,
                           borderRadius: 0.5,
-                          border: isConceptSelected ? "1.5px solid #333" : "1px solid transparent",
+                          border: isConceptSelected
+                            ? `1.5px solid ${mentionTextColor}`
+                            : `1px solid ${alpha(mentionTextColor, 0.55)}`,
                           backgroundColor: color,
                           cursor: "pointer",
                           font: "inherit",
-                          color: "inherit",
+                          color: mentionTextColor,
+                          fontWeight: 600,
                           position: "relative",
                           display: "inline-block",
+                          "&:focus-visible": {
+                            outline: `2px solid ${theme.custom?.focusRing || theme.palette.primary.main}`,
+                            outlineOffset: 1,
+                          },
+                          "&:hover": {
+                            borderColor: mentionTextColor,
+                          },
                         }}
                         aria-label={`Mention ${segment.text}. Concept ${mention.conceptLabel}`}
                       >

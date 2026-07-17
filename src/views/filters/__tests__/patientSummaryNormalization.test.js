@@ -1,4 +1,7 @@
-import { transformSummaryToGridRow } from "../patientSummaryNormalization";
+import {
+  resolveDocumentCountFromPayload,
+  transformSummaryToGridRow,
+} from "../patientSummaryNormalization";
 
 describe("transformSummaryToGridRow", () => {
   it("preserves the document count from the filter summary", () => {
@@ -17,5 +20,15 @@ describe("transformSummaryToGridRow", () => {
     });
 
     expect(row.docCount).toBe(3);
+  });
+});
+
+describe("resolveDocumentCountFromPayload", () => {
+  it("reads nested document count metadata", () => {
+    expect(resolveDocumentCountFromPayload({ data: { document_count: "1,234" } })).toBe(1234);
+  });
+
+  it("falls back to nested document arrays", () => {
+    expect(resolveDocumentCountFromPayload({ data: { documents: [{ id: "a" }, { id: "b" }] } })).toBe(2);
   });
 });

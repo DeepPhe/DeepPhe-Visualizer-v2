@@ -884,11 +884,20 @@ function HorizontalBarFilter({
                   : `M ${iconCenterX - iconHalfWidth} ${rowCenterY - iconHalfHeight} L ${iconCenterX - iconHalfWidth} ${rowCenterY + iconHalfHeight} L ${iconCenterX + iconHalfWidth} ${rowCenterY} Z`;
 
                 const rowFillColor = isSelected ? barActiveColor : barFillColor;
-                const rowFillOpacity = hasSelections ? (isSelected ? 1 : 0.35) : 0.9;
-                const labelFill = isSelected ? selectedCountColor : categoryLabelColor;
+                const baseRowFillOpacity = hasSelections ? (isSelected ? 1 : 0.35) : 0.9;
+                const rowFillOpacity = isDisabled ? 0.22 : baseRowFillOpacity;
+                const disabledTextFill = theme.palette.text.disabled || theme.palette.text.secondary;
+                const labelFill = isDisabled
+                  ? disabledTextFill
+                  : isSelected
+                    ? selectedCountColor
+                    : categoryLabelColor;
                 const labelWeight = isSelected ? selectedLabelWeight : 400;
-                const countFill = isSelected ? selectedCountColor : theme.palette.text.secondary;
-                const disabledOpacity = isDisabled ? 0.35 : 1;
+                const countFill = isDisabled
+                  ? disabledTextFill
+                  : isSelected
+                    ? selectedCountColor
+                    : theme.palette.text.secondary;
                 const isHovered =
                   hoveredRowIndex === index && !isDisabled && !isSelected;
                 const isFocused =
@@ -912,7 +921,6 @@ function HorizontalBarFilter({
                       isDisabled ? "is-disabled" : ""
                     )}
                     key={`${row.label}-${index}`}
-                    opacity={disabledOpacity}
                     style={{ pointerEvents: isDisabled ? "none" : undefined }}
                     aria-disabled={isDisabled ? "true" : undefined}
                   >
@@ -1150,7 +1158,7 @@ function HorizontalBarFilter({
                                 cy={rowCenterY}
                                 r={dotRadius}
                                 fill={rowFillColor}
-                                fillOpacity={patientDotOpacity}
+                                fillOpacity={isDisabled ? 0.24 : patientDotOpacity}
                                 stroke={rowFillColor}
                                 strokeOpacity={patientDotStrokeOpacity}
                                 strokeWidth={Math.max(1, dotRadius * 0.45)}

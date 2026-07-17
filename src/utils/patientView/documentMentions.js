@@ -1,8 +1,8 @@
 import { toDisplayName } from "../displayNames";
 
-const DEFAULT_GROUP_COLOR = "#e0e0e0";
+export const DEFAULT_GROUP_COLOR = "#e0e0e0";
 
-const GROUP_COLOR_BY_NAME = {
+export const GROUP_COLOR_BY_NAME = {
   // Anatomy
   "Body Part": "#99E6E6",
   "Lymph Node": "#bfefff",

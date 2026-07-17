@@ -20,12 +20,14 @@ const obsidianTheme = createTheme({
     },
     text: {
       primary: "#E2E8F0",
-      secondary: "#94A3B8",
+      secondary: "#A8B5C5",
+      disabled: "#8190A5",
     },
     primary: {
-      main: "#3B82F6",
-      light: "#60A5FA",
+      main: "#60A5FA",
+      light: "#93C5FD",
       dark: "#2563EB",
+      contrastText: "#0B1220",
     },
     divider: "#1E3A5F",
   },
@@ -38,7 +40,7 @@ const obsidianTheme = createTheme({
     MuiButton: {
       styleOverrides: {
         outlinedPrimary: {
-          color: "#60A5FA",          // primary.light — ~5.7:1 on #1A2332
+          color: "#60A5FA",
           borderColor: "#2563EB",
           "&:hover": {
             color: "#93C5FD",        // even lighter on hover
@@ -80,11 +82,11 @@ const obsidianTheme = createTheme({
     MuiIconButton: {
       styleOverrides: {
         root: {
-          color: "#475569",
+          color: "#8190A5",
           borderRadius: 0,
           transition: "background-color 0.2s ease, color 0.2s ease",
           "&:hover": {
-            color: "#94A3B8",
+            color: "#CBD5E1",
             backgroundColor: "rgba(148, 163, 184, 0.08)",
             borderRadius: 0,
           },
@@ -98,7 +100,7 @@ const obsidianTheme = createTheme({
     MuiToggleButton: {
       styleOverrides: {
         root: {
-          color: "#94A3B8",
+          color: "#A8B5C5",
           borderColor: "#1E3A5F",
           fontSize: "0.65rem",
           padding: "2px 8px",
@@ -128,16 +130,16 @@ const obsidianTheme = createTheme({
     focusRing: "#60A5FA",
     focusRingOffset: "2px",
 
-    chipActiveBg: "#3B82F6",
-    chipActiveText: "#FFFFFF",
+    chipActiveBg: "#60A5FA",
+    chipActiveText: "#0B1220",
     chipActiveGlow: "none",
     chipInactiveBg: "transparent",
-    chipInactiveText: "#94A3B8",
+    chipInactiveText: "#A8B5C5",
     chipInactiveBorder: "1px solid #1E3A5F",
     chipRadius: "4px",
 
-    iconDefault: "#475569",
-    iconHover: "#94A3B8",
+    iconDefault: "#8190A5",
+    iconHover: "#CBD5E1",
     iconHoverBg: "rgba(148, 163, 184, 0.08)",
     iconHoverRadius: "0px",
 
@@ -151,12 +153,12 @@ const obsidianTheme = createTheme({
     headerLetterSpacing: "0.1em",
     headerFontSize: "0.7rem",
     headerFontWeight: 500,
-    headerColor: "#94A3B8",
+    headerColor: "#A8B5C5",
     categoryLabelColor: "#CBD5E1",
     patientCountWeight: 600,
     patientCountColor: "#E2E8F0",
     patientCountSize: "2rem",
-    statsColor: "#475569",
+    statsColor: "#8190A5",
   },
 });
 
@@ -173,11 +175,13 @@ const vaporTheme = createTheme({
     text: {
       primary: "#F1F5F9",
       secondary: "#94A3B8",
+      disabled: "#94A3B8",
     },
     primary: {
-      main: "#0D9488",
-      light: "#14B8A6",
-      dark: "#0F766E",
+      main: "#14B8A6",
+      light: "#2DD4BF",
+      dark: "#0D9488",
+      contrastText: "#0B1220",
     },
     divider: "rgba(255, 255, 255, 0.07)",
   },
@@ -219,7 +223,7 @@ const vaporTheme = createTheme({
     MuiCheckbox: {
       styleOverrides: {
         root: {
-          color: "#64748B",
+          color: "#94A3B8",
           "&.Mui-checked": { color: "#14B8A6" },
         },
       },
@@ -227,10 +231,10 @@ const vaporTheme = createTheme({
     MuiIconButton: {
       styleOverrides: {
         root: {
-          color: "#64748B",
+          color: "#94A3B8",
           transition: "background-color 0.2s ease, color 0.2s ease",
           "&:hover": {
-            color: "#94A3B8",
+            color: "#F1F5F9",
             backgroundColor: "rgba(255, 255, 255, 0.06)",
             borderRadius: "50%",
           },
@@ -275,15 +279,15 @@ const vaporTheme = createTheme({
     focusRingOffset: "2px",
 
     chipActiveBg: "#0D9488",
-    chipActiveText: "#FFFFFF",
+    chipActiveText: "#0B1220",
     chipActiveGlow: "0 0 8px rgba(45, 212, 191, 0.25)",
     chipInactiveBg: "rgba(255, 255, 255, 0.06)",
-    chipInactiveText: "#94A3B8",
+    chipInactiveText: "#A8B5C5",
     chipInactiveBorder: "1px solid rgba(255, 255, 255, 0.1)",
     chipRadius: "20px",
 
-    iconDefault: "#64748B",
-    iconHover: "#94A3B8",
+    iconDefault: "#94A3B8",
+    iconHover: "#F1F5F9",
     iconHoverBg: "rgba(255, 255, 255, 0.06)",
     iconHoverRadius: "50%",
 
@@ -303,7 +307,7 @@ const vaporTheme = createTheme({
     patientCountWeight: 600,
     patientCountColor: "#2DD4BF",
     patientCountSize: "2.25rem",
-    statsColor: "#64748B",
+    statsColor: "#94A3B8",
   },
 });
 
@@ -319,20 +323,25 @@ const govukTheme = createTheme({
     text: {
       primary: "#0B0C0C",
       secondary: "#505A5F",
+      disabled: "#505A5F",
     },
     primary: {
       main: "#1D70B8",
       light: "#D2E2F1",
       dark: "#0B0C0C",
+      contrastText: "#FFFFFF",
     },
     secondary: {
       main: "#00703C",
+      contrastText: "#FFFFFF",
     },
     success: {
       main: "#00703C",
+      contrastText: "#FFFFFF",
     },
     info: {
       main: "#1D70B8",
+      contrastText: "#FFFFFF",
     },
     divider: "#B1B4B6",
   },

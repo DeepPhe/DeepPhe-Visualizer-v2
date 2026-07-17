@@ -1664,6 +1664,80 @@ describe("FiltersView", () => {
     }
   });
 
+  it("hydrates missing document counts in the selected patients drawer", async () => {
+    const patientIds = ["PATIENT-001", "PATIENT-002"];
+    fetchDeepPheFilterCount.mockImplementation(({ includePatientIds }) =>
+      Promise.resolve({
+        count: patientIds.length,
+        patient_ids: includePatientIds ? patientIds : [],
+        timing: {
+          queryMs: 4.4,
+          bitmapMs: 0.8,
+          resolveMs: 0.2,
+          totalMs: 5.4,
+          itemCounts: [patientIds.length],
+        },
+      })
+    );
+    fetchDeepPheFilterSummary.mockImplementation(async (requestedPatientIds = []) =>
+      requestedPatientIds.map((patientId, index) => ({
+        patient_id: patientId,
+        demographics: {
+          age_at_dx: String(50 + index),
+          gender: "Female",
+          race: "White",
+          ethnicity: "Not Hispanic or Latino",
+          cancer_type: "Breast",
+        },
+        diagnoses: [{ name: "Breast carcinoma", source: "cancer" }],
+        staging: [{ name: "Stage I" }],
+        grading: [{ name: "Grade 2" }],
+        biomarkers: [],
+        procedures: [],
+        treatments: [],
+        findings: [],
+      }))
+    );
+    fetchPatientDocuments.mockImplementation(async (patientId) => {
+      const documentCount = patientId === "PATIENT-001" ? 3 : 2;
+      return {
+        documents: Array.from({ length: documentCount }, (_, index) => ({
+          id: `${patientId}-doc-${index + 1}`,
+        })),
+      };
+    });
+
+    const { container, unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findOpenFilterButton("Gender")).not.toBeUndefined();
+      });
+
+      await selectFilterValue("Gender", "Female");
+
+      await waitFor(() => {
+        expect(fetchPatientDocuments).toHaveBeenCalledWith(
+          "PATIENT-001",
+          expect.objectContaining({
+            excludeProperties: expect.arrayContaining(["text", "mentions"]),
+          })
+        );
+      });
+
+      await waitFor(() => {
+        const drawer = findPatientGridDrawer(container);
+        const documentCountCells = Array.from(
+          drawer?.querySelectorAll('tbody td[data-column-id="docCount"]') || []
+        ).map((cell) => String(cell.textContent || "").trim());
+
+        expect(documentCountCells).toEqual(["3", "2"]);
+      });
+    } finally {
+      unmount();
+    }
+  });
+
   it("uses 40-row pagination when the selected patients drawer is maximized", async () => {
     const patientIds = Array.from({ length: 55 }, (_, index) =>
       `PATIENT-${String(index + 1).padStart(3, "0")}`
