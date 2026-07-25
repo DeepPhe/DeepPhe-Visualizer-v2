@@ -21,6 +21,36 @@ const DOC_PATIENT_ID = process.env.DOC_PATIENT_ID || "fake_patient3";
 // timeline's episode-dropdown fallback. Optional; skipped if it does not resolve.
 const COLLAPSED_DATE_PATIENT_ID = process.env.COLLAPSED_DATE_PATIENT_ID || "fake_patient7";
 
+// The two patients the guided exercise walks through. The first has a record
+// whose structure and source notes agree; the second carries contradictory
+// extractions (a TNM value that disagrees with its stage, and a note that both
+// asserts and negates metastatic disease). Both are dataset-specific — override
+// them, or accept that the exercise captures fall back to prose.
+// See docs/getting-started/guided-exercise.md.
+const EXERCISE_CORROBORATED_PATIENT_ID =
+  process.env.EXERCISE_CORROBORATED_PATIENT_ID || "fake_patient125";
+const EXERCISE_CONFLICTED_PATIENT_ID =
+  process.env.EXERCISE_CONFLICTED_PATIENT_ID || "fake_patient460";
+// The staging value the exercise filters on, and a second card that visibly
+// repaints with in-cohort counts once that filter is active.
+const EXERCISE_STAGE_VALUE = process.env.EXERCISE_STAGE_VALUE || "Stage IV";
+
+// The targeted-therapy exercise (docs/getting-started/exercise-targeted-therapy.md)
+// builds a HER2-drug cohort through the Treatments search dialog, then reads the
+// biomarker repaint. Data-specific — override for a different dataset.
+const THERAPY_DRUG = process.env.THERAPY_DRUG || "Trastuzumab";
+
+// The treatment-outcome exercise (docs/getting-started/exercise-compare-outcomes.md)
+// contrasts two response values from the Clinical Course of Disease card.
+const OUTCOME_RESPONDER_VALUE =
+  process.env.OUTCOME_RESPONDER_VALUE || "Pathologic Complete Response";
+const OUTCOME_PROGRESSOR_VALUE =
+  process.env.OUTCOME_PROGRESSOR_VALUE || "Progressive Disease";
+const OUTCOME_COURSE_CARD = process.env.OUTCOME_COURSE_CARD || "Clinical Course of Disease";
+// The age band that, combined with the staging value, narrows the cohort far
+// enough for the conflicted patient to appear as a clickable patient dot.
+const EXERCISE_AGE_BAND = process.env.EXERCISE_AGE_BAND || "30-39";
+
 // Feature-documentation capture set. `REQUIRED_SCREENSHOTS` back pages that
 // always show the image and must capture cleanly. `OPTIONAL_SCREENSHOTS` back
 // newer interaction captures that can be data- or environment-dependent; a
@@ -60,9 +90,37 @@ const OPTIONAL_SCREENSHOTS = [
   "50-csv-export-button.png",
   "51-filter-hierarchical-values.png",
   "52-filter-disabled-values.png",
+  "60-exercise-stage-filter-selected.png",
+  "61-exercise-cross-filter-counts.png",
+  "62-exercise-cancer-tumor-detail.png",
+  "63-exercise-relapse-timeline.png",
+  "64-exercise-source-pathology.png",
+  "65-exercise-conflicted-summary.png",
+  "66-exercise-negated-concepts.png",
+  "70-therapy-treatment-search.png",
+  "71-therapy-gene-repaint.png",
+  "72-therapy-her2-gap.png",
+  "73-therapy-cohort-table.png",
+  "80-outcome-responders-stage.png",
+  "81-outcome-responders-behavior.png",
+  "82-outcome-progressors-stage.png",
+  "83-outcome-progressors-behavior.png",
 ];
 
 const SCREENSHOT_ORDER = [...REQUIRED_SCREENSHOTS, ...OPTIONAL_SCREENSHOTS];
+
+// Subset filter. `CAPTURE_ONLY` takes a comma-separated list of file-name
+// fragments (for example "exercise" or "42-document-viewer"); when set, only
+// matching captures are written. Re-taking one data-dependent series is then
+// possible without re-shooting — and potentially degrading — the whole set.
+const CAPTURE_ONLY = (process.env.CAPTURE_ONLY || "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
+function isRequested(file) {
+  return CAPTURE_ONLY.length === 0 || CAPTURE_ONLY.some((fragment) => file.includes(fragment));
+}
 
 const summary = {
   generatedAt: new Date().toISOString(),
@@ -132,6 +190,10 @@ async function captureLocatorOrFallback(page, locator, name, fallbackFullPage = 
 }
 
 async function withCapture(page, config) {
+  if (!isRequested(config.file)) {
+    return;
+  }
+
   console.log(`Capturing ${config.file} (${config.route})`);
   const entry = {
     file: config.file,
@@ -768,6 +830,580 @@ async function captureStandaloneSeries(page) {
   });
 }
 
+// Select one value on a named filter card. Bar overlays are SVG rects whose
+// React handler only fires on keyboard activation, so focus and press Enter
+// rather than clicking — the same approach as activateFilterSelection.
+async function selectFilterValue(page, filterName, value) {
+  const card = filterCardLocator(page, filterName);
+  if (!(await waitForLocator(card, 10000))) {
+    throw new Error(`${filterName} filter card not found`);
+  }
+
+  await card.scrollIntoViewIfNeeded().catch(() => {});
+  await sleep(250);
+
+  const bar = card
+    .locator(`.horizontal-bar-filter-row-overlay[role='button'][aria-label^="${value}:"]`)
+    .first();
+  if ((await bar.count()) === 0) {
+    throw new Error(`Value "${value}" not found on the ${filterName} card`);
+  }
+
+  await bar.focus().catch(() => {});
+  await page.keyboard.press("Enter");
+  await sleep(1200);
+
+  const label = (await bar.getAttribute("aria-label")) || "";
+  if (!/\bSelected\b/i.test(label)) {
+    throw new Error(`Value "${value}" did not enter the selected state`);
+  }
+
+  return card;
+}
+
+// Scroll a target so its top sits near the top of the viewport. Filter cards
+// captured while the Selected Patients drawer is open would otherwise be
+// overlapped by it — the drawer is fixed to the bottom of the window, and an
+// element screenshot renders whatever covers the element's box.
+async function scrollElementClearOfDrawer(page, locator, topMargin = 120) {
+  await locator
+    .evaluate((element, margin) => {
+      const { top } = element.getBoundingClientRect();
+      window.scrollBy({ top: top - margin, left: 0, behavior: "instant" });
+    }, topMargin)
+    .catch(() => {});
+  await sleep(400);
+}
+
+// Open the most recent document of a given type from the patient timeline.
+// Points are rendered in date order, so the last match is the latest one.
+async function selectLatestTimelineDocument(page, typeLabel) {
+  const points = page.locator(`circle[aria-label*="Type ${typeLabel}."]`);
+  const count = await points.count();
+  if (count === 0) {
+    throw new Error(`No "${typeLabel}" points on the document timeline`);
+  }
+
+  const target = points.nth(count - 1);
+  await target.scrollIntoViewIfNeeded().catch(() => {});
+  await target.click({ force: true });
+
+  const loaded = await waitForLocator(
+    page.getByText(`Selected:`, { exact: false }).first(),
+    8000
+  );
+  if (!loaded) {
+    throw new Error(`Selecting a "${typeLabel}" point did not load a document`);
+  }
+  await sleep(900);
+}
+
+// The guided exercise (docs/getting-started/guided-exercise.md) teaches cohort
+// cross-filtering and then contrasts two patient records. These captures are
+// data-dependent by nature — they depend on a specific staging value and two
+// specific patients — so every one of them is optional.
+async function captureGuidedExerciseSeries(page) {
+  // Step 2: the Stage card with the exercise's staging value selected, and a
+  // second card showing the in-cohort/total counts that selection produces.
+  // The selection happens once, outside withCapture, because both captures
+  // depend on it — withCapture handles its own failures and never rethrows.
+  await gotoRoute(page, "/");
+
+  let stageSelectionError = "";
+  let stageCard = null;
+  try {
+    stageCard = await selectFilterValue(page, "Stage", EXERCISE_STAGE_VALUE);
+  } catch (error) {
+    stageSelectionError = error instanceof Error ? error.message : String(error);
+  }
+
+  await withCapture(page, {
+    file: "60-exercise-stage-filter-selected.png",
+    route: "/",
+    target: `Stage card with ${EXERCISE_STAGE_VALUE} selected`,
+    optional: true,
+    run: async () => {
+      if (!stageCard) {
+        throw new Error(stageSelectionError);
+      }
+      await scrollElementClearOfDrawer(page, stageCard);
+      await captureLocatorOrFallback(page, stageCard, "60-exercise-stage-filter-selected.png", false);
+    },
+  });
+
+  await withCapture(page, {
+    file: "61-exercise-cross-filter-counts.png",
+    route: "/",
+    target: "Metastatic Behavior card showing in-cohort counts",
+    optional: true,
+    run: async () => {
+      if (!stageCard) {
+        throw new Error(`"${EXERCISE_STAGE_VALUE}" could not be selected: ${stageSelectionError}`);
+      }
+      const card = filterCardLocator(page, "Metastatic Behavior");
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Metastatic Behavior card not found");
+      }
+      await scrollElementClearOfDrawer(page, card);
+      await captureLocatorOrFallback(page, card, "61-exercise-cross-filter-counts.png", false);
+    },
+  });
+
+  // Steps 3a–3c: the record whose structure and source notes agree.
+  const corroboratedFiles = [
+    "62-exercise-cancer-tumor-detail.png",
+    "63-exercise-relapse-timeline.png",
+    "64-exercise-source-pathology.png",
+  ];
+
+  try {
+    await loadStandalonePatient(page, EXERCISE_CORROBORATED_PATIENT_ID);
+  } catch (error) {
+    for (const file of corroboratedFiles) {
+      await withCapture(page, {
+        file,
+        route: "/patient",
+        target: "Guided exercise patient (unavailable)",
+        optional: true,
+        run: async () => {
+          throw new Error(`Patient ${EXERCISE_CORROBORATED_PATIENT_ID} did not load: ${error.message}`);
+        },
+      });
+    }
+    return captureGuidedExerciseConflicted(page);
+  }
+
+  await withCapture(page, {
+    file: "62-exercise-cancer-tumor-detail.png",
+    route: "/patient",
+    target: "Cancer and Tumor Detail with a metastatic second cancer",
+    optional: true,
+    run: async () => {
+      const card = page.locator('.MuiCard-root:has(:text("Cancer and Tumor Detail"))').first();
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Cancer and Tumor Detail card not found");
+      }
+      await captureLocatorOrFallback(page, card, "62-exercise-cancer-tumor-detail.png", false);
+    },
+  });
+
+  await withCapture(page, {
+    file: "63-exercise-relapse-timeline.png",
+    route: "/patient",
+    target: "Document timeline showing a gap followed by a relapse cluster",
+    optional: true,
+    run: async () => {
+      const card = page.locator('.MuiCard-root:has(:text("Patient Document Timeline"))').first();
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Patient Document Timeline card not found");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "63-exercise-relapse-timeline.png", false);
+    },
+  });
+
+  await withCapture(page, {
+    file: "64-exercise-source-pathology.png",
+    route: "/patient",
+    target: "Document Viewer on the most recent pathology report",
+    optional: true,
+    run: async () => {
+      await selectLatestTimelineDocument(page, "Surgical Pathology Report");
+      const card = documentViewerCard(page);
+      if ((await card.count()) === 0) {
+        throw new Error("Document Viewer card not found");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "64-exercise-source-pathology.png", false);
+    },
+  });
+
+  return captureGuidedExerciseConflicted(page);
+}
+
+// Steps 4b–4d: the record that disagrees with itself.
+//
+// The Patient Summary card exists only in the embedded (drawer) patient view,
+// not on the standalone /patient route, so this capture reaches the patient the
+// way the exercise does: narrow the cohort until the patient renders as a dot,
+// then click the dot to open their tab in the drawer.
+async function captureGuidedExerciseConflicted(page) {
+  await withCapture(page, {
+    file: "65-exercise-conflicted-summary.png",
+    route: "/",
+    target: "Patient Summary with conflicted and negated findings",
+    optional: true,
+    run: async () => {
+      await gotoRoute(page, "/");
+      await selectFilterValue(page, "Stage", EXERCISE_STAGE_VALUE);
+      await selectFilterValue(page, "Age at Dx", EXERCISE_AGE_BAND);
+
+      // Only this patient's dot will do. Dots are drawn per filter value from
+      // that value's own patient list, so the page is full of dots belonging to
+      // other patients — taking "any" dot would silently capture the wrong
+      // record. Wait for the cohort to settle rather than reading the count
+      // immediately: dots appear only once patient IDs have loaded.
+      const dot = page
+        .locator(`[role="button"][aria-label^="Patient ${EXERCISE_CONFLICTED_PATIENT_ID}."]`)
+        .first();
+      if (!(await waitForLocator(dot, 15000))) {
+        throw new Error(
+          `No patient dot for ${EXERCISE_CONFLICTED_PATIENT_ID} under ` +
+            `${EXERCISE_STAGE_VALUE} + ${EXERCISE_AGE_BAND}`
+        );
+      }
+
+      // Activate with the keyboard, not a click. Dots are small, densely packed
+      // SVG circles and the drawer overlays the lower page, so a forced click
+      // can land on a neighbouring dot and open the wrong patient.
+      await dot.scrollIntoViewIfNeeded().catch(() => {});
+      await dot.focus();
+      await page.keyboard.press("Enter");
+
+      const drawer = page.locator("[data-testid='patient-grid-drawer']").first();
+      if (!(await waitForLocator(drawer, 10000))) {
+        throw new Error("Patient drawer did not open after activating the patient dot");
+      }
+
+      // Confirm the drawer really opened the intended patient before capturing.
+      const patientTab = drawer
+        .getByRole("tab", { name: new RegExp(EXERCISE_CONFLICTED_PATIENT_ID) })
+        .first();
+      if (!(await waitForLocator(patientTab, 10000))) {
+        throw new Error(
+          `Drawer did not open a tab for ${EXERCISE_CONFLICTED_PATIENT_ID}`
+        );
+      }
+      await drawer
+        .locator("[role='progressbar']")
+        .first()
+        .waitFor({ state: "hidden", timeout: 15000 })
+        .catch(() => {});
+      await sleep(700);
+
+      // The scroll region — and the confidence slider with its hidden-findings
+      // count — render only while the section is expanded.
+      const expandToggle = page
+        .locator('button[aria-label="Expand Patient Summary section"]')
+        .first();
+      if ((await expandToggle.count()) > 0) {
+        await expandToggle.click();
+        await sleep(600);
+      }
+
+      // Same locator as 33-patient-summary-card: the title is a CardHeader span,
+      // and the scroll region only exists when structured sections are present.
+      const card = page
+        .locator('.MuiCard-root:has([data-testid="patient-summary-card-scroll"])')
+        .first();
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Patient Summary card not found or has no summary sections");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "65-exercise-conflicted-summary.png", false);
+    },
+  });
+
+  // The Document Viewer does render standalone, so the concept-list capture
+  // uses the deterministic /patient route.
+  await withCapture(page, {
+    file: "66-exercise-negated-concepts.png",
+    route: "/patient",
+    target: "Concept List showing affirmed and negated mentions in one note",
+    optional: true,
+    run: async () => {
+      await loadStandalonePatient(page, EXERCISE_CONFLICTED_PATIENT_ID);
+      await selectLatestTimelineDocument(page, "Radiology Report");
+      const card = documentViewerCard(page);
+      if ((await card.count()) === 0) {
+        throw new Error("Document Viewer card not found");
+      }
+      await card.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, card, "66-exercise-negated-concepts.png", false);
+    },
+  });
+}
+
+// Open a filter card's Details dialog and type a search term. Returns the dialog
+// locator (matching rows visible) without selecting anything, so the caller can
+// both capture the search state and then select a value.
+async function openFilterDialogAndSearch(page, filterName, searchTerm) {
+  const openButton = page.locator(`button[aria-label="Open ${filterName} filter"]`).first();
+  if (!(await waitForLocator(openButton, 8000))) {
+    throw new Error(`"Open ${filterName} filter" button not found`);
+  }
+  await openButton.scrollIntoViewIfNeeded().catch(() => {});
+  await openButton.click();
+
+  const dialog = page.getByRole("dialog").first();
+  if (!(await waitForLocator(dialog, 6000))) {
+    throw new Error(`${filterName} details dialog did not open`);
+  }
+  // The input's accessible name comes from its inputProps aria-label
+  // ("Search filter values"), which overrides the visible "Search values"
+  // TextField label — so match the input directly.
+  const search = dialog
+    .locator('input[aria-label="Search filter values"], input[placeholder="Type to filter labels"]')
+    .first();
+  if (!(await waitForLocator(search, 6000))) {
+    throw new Error("Search field not found in the details dialog");
+  }
+  await search.fill(searchTerm);
+  await sleep(600);
+  return dialog;
+}
+
+// Open a filter card's Details dialog without searching. Used when the whole
+// value list is wanted — e.g. the Stage dialog, which lists every stage in a
+// scrollable list and clearly dims unavailable values, where the compact card
+// clips its fourth row once values render as (taller) patient-dot rows.
+async function openFilterDialog(page, filterName) {
+  const openButton = page.locator(`button[aria-label="Open ${filterName} filter"]`).first();
+  if (!(await waitForLocator(openButton, 8000))) {
+    throw new Error(`"Open ${filterName} filter" button not found`);
+  }
+  await openButton.scrollIntoViewIfNeeded().catch(() => {});
+  await openButton.click();
+  const dialog = page.getByRole("dialog").first();
+  if (!(await waitForLocator(dialog, 6000))) {
+    throw new Error(`${filterName} details dialog did not open`);
+  }
+  await sleep(500);
+  return dialog;
+}
+
+// Close an open details dialog so it does not overlay later captures.
+async function closeDialog(page, dialog) {
+  const closeButton = dialog.getByRole("button", { name: /close/i }).first();
+  if ((await closeButton.count()) > 0) {
+    await closeButton.click();
+  } else {
+    await page.keyboard.press("Escape").catch(() => {});
+  }
+  await sleep(400);
+}
+
+// The targeted-therapy exercise: build a HER2-drug cohort through the Treatments
+// search dialog (the facet is far too long to scroll), then read the biomarker
+// repaint as a data-quality check, and finish in the patient table. Every capture
+// is data-dependent and therefore optional.
+async function captureTargetedTherapySeries(page) {
+  await gotoRoute(page, "/");
+
+  // Open the Treatments dialog and search for the drug. The selection is applied
+  // here (outside withCapture, which never rethrows) so later cards can repaint.
+  let therapyError = "";
+  let therapySelected = false;
+  let dialog = null;
+  try {
+    dialog = await openFilterDialogAndSearch(page, "Treatments", THERAPY_DRUG);
+  } catch (error) {
+    therapyError = error instanceof Error ? error.message : String(error);
+  }
+
+  await withCapture(page, {
+    file: "70-therapy-treatment-search.png",
+    route: "/",
+    target: `Treatments details dialog searched for ${THERAPY_DRUG}`,
+    optional: true,
+    run: async () => {
+      if (!dialog) {
+        throw new Error(therapyError);
+      }
+      await captureLocatorOrFallback(page, dialog, "70-therapy-treatment-search.png", false);
+    },
+  });
+
+  if (dialog) {
+    try {
+      // Select the exact-drug row (not a combination regimen containing the name).
+      const row = dialog
+        .locator(`[role="button"][aria-label^="${THERAPY_DRUG}:"]`)
+        .first();
+      if (!(await waitForLocator(row, 5000))) {
+        throw new Error(`No "${THERAPY_DRUG}" row in the dialog`);
+      }
+      await row.click();
+      await sleep(600);
+      await closeDialog(page, dialog);
+      await sleep(400);
+      therapySelected = true;
+    } catch (error) {
+      therapyError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  // The gene enrichment: with the drug cohort active, the Genes details dialog
+  // reports how many of them carry the HER2/ERBB2 gene, as in-cohort / total.
+  // The dialog is used rather than the compact card because the card renders
+  // only its first few (alphabetical) rows, which can bury the ERBB2 row.
+  await withCapture(page, {
+    file: "71-therapy-gene-repaint.png",
+    route: "/",
+    target: "Genes details dialog showing ERBB2 in-cohort count",
+    optional: true,
+    run: async () => {
+      if (!therapySelected) {
+        throw new Error(`"${THERAPY_DRUG}" could not be selected: ${therapyError}`);
+      }
+      const genesDialog = await openFilterDialogAndSearch(page, "Genes", "ERBB");
+      const erbbRow = genesDialog.locator('[aria-label^="ERBB 2 Gene:"]').first();
+      if (!(await waitForLocator(erbbRow, 5000))) {
+        throw new Error("ERBB2 row not found in the Genes dialog");
+      }
+      await captureLocatorOrFallback(page, genesDialog, "71-therapy-gene-repaint.png", false);
+      // Close so the dialog does not overlay the following card captures.
+      await closeDialog(page, genesDialog);
+    },
+  });
+
+  // The gap: a recorded HER2 status finding exists for far fewer patients.
+  await withCapture(page, {
+    file: "72-therapy-her2-gap.png",
+    route: "/",
+    target: "HER2/Neu Status card showing partial coverage",
+    optional: true,
+    run: async () => {
+      if (!therapySelected) {
+        throw new Error(`"${THERAPY_DRUG}" could not be selected: ${therapyError}`);
+      }
+      const card = filterCardLocator(page, "HER2/Neu Status");
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("HER2/Neu Status card not found");
+      }
+      await scrollElementClearOfDrawer(page, card);
+      await captureLocatorOrFallback(page, card, "72-therapy-her2-gap.png", false);
+    },
+  });
+
+  // The patient table: columns (incl. Biomarkers / Treatments), the column
+  // chooser, and CSV export, sorted by document count.
+  await withCapture(page, {
+    file: "73-therapy-cohort-table.png",
+    route: "/",
+    target: "Selected Patients table with CSV export, sorted by document count",
+    optional: true,
+    run: async () => {
+      if (!therapySelected) {
+        throw new Error(`"${THERAPY_DRUG}" could not be selected: ${therapyError}`);
+      }
+      const region = page.locator("[data-testid='patient-grid-embedded']").first();
+      if (!(await waitForLocator(region, 12000))) {
+        throw new Error("Selected Patients table not visible");
+      }
+      // Sort by document count so the richest records lead (two clicks =
+      // descending). Best effort — the capture is worthwhile even unsorted.
+      const header = region.locator('th:has-text("Document Count"), [role="columnheader"]:has-text("Document Count")').first();
+      if ((await header.count()) > 0) {
+        await header.click().catch(() => {});
+        await sleep(300);
+        await header.click().catch(() => {});
+        await sleep(500);
+      }
+      await region.scrollIntoViewIfNeeded().catch(() => {});
+      await sleep(300);
+      await captureLocatorOrFallback(page, region, "73-therapy-cohort-table.png", false);
+    },
+  });
+}
+
+// The treatment-outcome exercise: contrast two response groups. The headline is
+// the Stage card, where a whole stage value goes disabled for each group in a
+// different place. All captures are data-dependent and optional.
+async function captureOutcomeComparisonSeries(page) {
+  // Responders.
+  await gotoRoute(page, "/");
+  let responderError = "";
+  let responderSelected = false;
+  try {
+    await selectFilterValue(page, OUTCOME_COURSE_CARD, OUTCOME_RESPONDER_VALUE);
+    responderSelected = true;
+  } catch (error) {
+    responderError = error instanceof Error ? error.message : String(error);
+  }
+
+  await withCapture(page, {
+    file: "80-outcome-responders-stage.png",
+    route: "/",
+    target: `Stage dialog for ${OUTCOME_RESPONDER_VALUE} (Stage IV disabled)`,
+    optional: true,
+    run: async () => {
+      if (!responderSelected) {
+        throw new Error(responderError);
+      }
+      const dialog = await openFilterDialog(page, "Stage");
+      await captureLocatorOrFallback(page, dialog, "80-outcome-responders-stage.png", false);
+      await closeDialog(page, dialog);
+    },
+  });
+
+  await withCapture(page, {
+    file: "81-outcome-responders-behavior.png",
+    route: "/",
+    target: `Metastatic Behavior card for ${OUTCOME_RESPONDER_VALUE}`,
+    optional: true,
+    run: async () => {
+      if (!responderSelected) {
+        throw new Error(responderError);
+      }
+      const card = filterCardLocator(page, "Metastatic Behavior");
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Metastatic Behavior card not found");
+      }
+      await scrollElementClearOfDrawer(page, card);
+      await captureLocatorOrFallback(page, card, "81-outcome-responders-behavior.png", false);
+    },
+  });
+
+  // Progressors.
+  await gotoRoute(page, "/");
+  let progressorError = "";
+  let progressorSelected = false;
+  try {
+    await selectFilterValue(page, OUTCOME_COURSE_CARD, OUTCOME_PROGRESSOR_VALUE);
+    progressorSelected = true;
+  } catch (error) {
+    progressorError = error instanceof Error ? error.message : String(error);
+  }
+
+  await withCapture(page, {
+    file: "82-outcome-progressors-stage.png",
+    route: "/",
+    target: `Stage dialog for ${OUTCOME_PROGRESSOR_VALUE} (Stage IV present)`,
+    optional: true,
+    run: async () => {
+      if (!progressorSelected) {
+        throw new Error(progressorError);
+      }
+      const dialog = await openFilterDialog(page, "Stage");
+      await captureLocatorOrFallback(page, dialog, "82-outcome-progressors-stage.png", false);
+      await closeDialog(page, dialog);
+    },
+  });
+
+  await withCapture(page, {
+    file: "83-outcome-progressors-behavior.png",
+    route: "/",
+    target: `Metastatic Behavior card for ${OUTCOME_PROGRESSOR_VALUE}`,
+    optional: true,
+    run: async () => {
+      if (!progressorSelected) {
+        throw new Error(progressorError);
+      }
+      const card = filterCardLocator(page, "Metastatic Behavior");
+      if (!(await waitForLocator(card, 8000))) {
+        throw new Error("Metastatic Behavior card not found");
+      }
+      await scrollElementClearOfDrawer(page, card);
+      await captureLocatorOrFallback(page, card, "83-outcome-progressors-behavior.png", false);
+    },
+  });
+}
+
 async function captureCollapsedDateTimeline(page) {
   await withCapture(page, {
     file: "45-collapsed-date-episode-controls.png",
@@ -1131,11 +1767,27 @@ async function run() {
 
     await captureEmbeddedPatientViewSeries(page);
 
+    // Guided-exercise series: cohort cross-filtering, then two contrasting
+    // patient records. Runs before the zero-result capture because it needs a
+    // non-empty cohort.
+    await captureGuidedExerciseSeries(page);
+
+    // Additional guided exercises: a targeted-therapy cohort, and a
+    // treatment-outcome comparison. Both need a populated cohort, so they also
+    // run before the zero-result capture.
+    await captureTargetedTherapySeries(page);
+    await captureOutcomeComparisonSeries(page);
+
     // Zero-result guidance runs last — it deliberately empties the cohort.
+    await gotoRoute(page, "/");
     await captureZeroResultGuidance(page);
 
     // Post-run validation: every targeted screenshot must exist on disk.
     for (const file of SCREENSHOT_ORDER) {
+      if (!isRequested(file)) {
+        continue;
+      }
+
       const exists = await fs
         .access(filePath(file))
         .then(() => true)
@@ -1154,7 +1806,8 @@ async function run() {
 
     await fs.writeFile(SUMMARY_PATH, JSON.stringify(summary, null, 2));
 
-    const total = SCREENSHOT_ORDER.length;
+    const targeted = SCREENSHOT_ORDER.filter(isRequested);
+    const requiredTargeted = REQUIRED_SCREENSHOTS.filter(isRequested);
     const requiredFailures = failures.filter(
       (entry) => !entry.optional && !OPTIONAL_SCREENSHOTS.includes(entry.file)
     );
@@ -1162,7 +1815,8 @@ async function run() {
       (entry) => entry.optional || OPTIONAL_SCREENSHOTS.includes(entry.file)
     );
     console.log(
-      `Capture complete. Targeted: ${total} (${REQUIRED_SCREENSHOTS.length} required). ` +
+      `Capture complete. Targeted: ${targeted.length} (${requiredTargeted.length} required)` +
+        `${CAPTURE_ONLY.length > 0 ? ` — filtered by CAPTURE_ONLY=${CAPTURE_ONLY.join(",")}` : ""}. ` +
         `Required issues: ${requiredFailures.length}. Optional issues: ${optionalFailures.length}.`
     );
     console.log(`Summary written to ${SUMMARY_PATH}`);

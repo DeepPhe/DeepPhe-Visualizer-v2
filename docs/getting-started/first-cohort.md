@@ -44,3 +44,7 @@ Expand the Selected Patients drawer to inspect the current page. You can search 
 Use the CSV download button in the patient table. The export contains the currently loaded, filtered, and sorted rows and the columns that are visible.
 
 For details, see [Export results](../cohort-explorer/exporting-results.md).
+
+## Next step
+
+Now that you can build a cohort, work through the [guided exercise](guided-exercise.md). It follows a single question end to end — from 500 patients down to two individual records — and explains what each finding along the way is telling you.
