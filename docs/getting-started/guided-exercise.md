@@ -1,6 +1,6 @@
 ---
 title: "Guided exercise: find the patients who need review"
-sidebar_label: Guided exercise
+sidebar_label: "Exercise: find who needs review"
 description: A worked end-to-end exercise that narrows a cohort, opens two contrasting patients, and explains what each finding tells you.
 ---
 
