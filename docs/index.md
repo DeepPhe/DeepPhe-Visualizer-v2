@@ -17,11 +17,11 @@ Most work happens in the **Cohort Explorer**, the screen that opens when you sta
 
 New to the Visualizer? Begin with [Cohort Explorer overview](getting-started/overview.md) and [Build your first cohort](getting-started/first-cohort.md).
 
-Once the basics make sense, work through the guided exercises — each walks a real question through the whole workflow and explains why every finding matters:
+After you understand the Cohort Explorer, patient results, and patient views, use the guided workflows to practice real review and research questions:
 
-- [Find the patients who need review](getting-started/guided-exercise.md) — narrow a cohort down to two contrasting patient records
-- [Build a targeted-therapy cohort](getting-started/exercise-targeted-therapy.md) — assemble a HER2-drug group, check its biomarkers, and export it
-- [Compare treatment outcomes](getting-started/exercise-compare-outcomes.md) — hold complete responders against progressors
+- [Validate Stage IV Metastatic Evidence](guided-workflows/validate-stage-iv-metastatic-evidence.md) — narrow a Stage IV metastatic cohort to contrasting patient records and trace the evidence
+- [Build a HER2-Targeted Therapy Cohort](guided-workflows/build-her2-targeted-therapy-cohort.md) — assemble a HER2-drug group, check its biomarkers, and export it
+- [Compare Responders and Progressors](guided-workflows/compare-responders-and-progressors.md) — hold complete responders against progressors
 
 ## What you can do
 

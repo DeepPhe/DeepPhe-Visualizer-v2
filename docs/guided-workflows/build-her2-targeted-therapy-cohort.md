@@ -1,12 +1,12 @@
 ---
-title: "Guided exercise: build a targeted-therapy cohort"
-sidebar_label: "Exercise: targeted therapy"
+title: "Build a HER2-Targeted Therapy Cohort"
+sidebar_label: "Build a HER2-Targeted Therapy Cohort"
 description: A worked exercise that assembles a HER2-drug cohort through the search dialog, checks its biomarkers, and exports it — while showing why a missing value is not a negative result.
 ---
 
-# Guided exercise: build a targeted-therapy cohort
+# Build a HER2-Targeted Therapy Cohort
 
-The [first guided exercise](guided-exercise.md) followed a question down to individual patients. This one stays at the cohort level and answers a different kind of question — the kind a researcher asks when assembling a study group:
+The [Stage IV evidence workflow](validate-stage-iv-metastatic-evidence.md) followed a question down to individual patients. This one stays at the cohort level and answers a different kind of question — the kind a researcher asks when assembling a study group:
 
 > **Pull everyone who received Herceptin — and check whether the record proves they should have.**
 
@@ -111,7 +111,7 @@ The workflow transfers to any treatment that implies a biomarker or target:
 
 ## Next steps
 
-- [Guided exercise: compare treatment outcomes](exercise-compare-outcomes.md) — the companion cohort-comparison exercise
+- [Compare Responders and Progressors](compare-responders-and-progressors.md) — the companion cohort-comparison workflow
 - [Select and combine filters](../cohort-explorer/selecting-filters.md) — AND/OR logic and disabled values
 - [Filter Details dialog](../cohort-explorer/filter-details.md) — searching and sorting a facet's values
 - [Export results](../cohort-explorer/exporting-results.md) — what the CSV contains and how it respects your view

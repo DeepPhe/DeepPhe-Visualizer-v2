@@ -47,4 +47,4 @@ For details, see [Export results](../cohort-explorer/exporting-results.md).
 
 ## Next step
 
-Now that you can build a cohort, work through the [guided exercise](guided-exercise.md). It follows a single question end to end — from 500 patients down to two individual records — and explains what each finding along the way is telling you.
+Now that you can build a cohort, learn how to read the rest of the Cohort Explorer in [Screen overview and toolbar](../cohort-explorer/screen-overview.md). After the cohort, patient-result, and patient-view pages make sense, use the [Guided Workflows](../guided-workflows/validate-stage-iv-metastatic-evidence.md) section to practice end-to-end clinical questions.

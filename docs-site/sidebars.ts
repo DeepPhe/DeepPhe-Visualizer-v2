@@ -10,9 +10,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'getting-started/overview',
         'getting-started/first-cohort',
-        'getting-started/guided-exercise',
-        'getting-started/exercise-targeted-therapy',
-        'getting-started/exercise-compare-outcomes',
       ],
     },
     {
@@ -48,6 +45,16 @@ const sidebars: SidebarsConfig = {
         'explore-patient/document-timeline',
         'explore-patient/patient-summary',
         'explore-patient/document-viewer',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Guided Workflows',
+      collapsed: false,
+      items: [
+        'guided-workflows/validate-stage-iv-metastatic-evidence',
+        'guided-workflows/build-her2-targeted-therapy-cohort',
+        'guided-workflows/compare-responders-and-progressors',
       ],
     },
     {

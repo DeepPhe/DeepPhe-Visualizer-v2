@@ -1,14 +1,14 @@
 ---
-title: "Guided exercise: find the patients who need review"
-sidebar_label: "Exercise: find who needs review"
-description: A worked end-to-end exercise that narrows a cohort, opens two contrasting patients, and explains what each finding tells you.
+title: "Validate Stage IV Metastatic Evidence"
+sidebar_label: "Validate Stage IV Metastatic Evidence"
+description: A worked end-to-end exercise that narrows to Stage IV metastatic disease, opens two contrasting patients, and traces corroborated and conflicting findings to their source notes.
 ---
 
-# Guided exercise: find the patients who need review
+# Validate Stage IV Metastatic Evidence
 
-[Build your first cohort](first-cohort.md) covers the mechanics of selecting filters. This exercise puts those mechanics to work on a real question:
+[Build your first cohort](../getting-started/first-cohort.md) covers the mechanics of selecting filters. This exercise puts those mechanics to work on a real question:
 
-> **Of these patients, which ones does a human still need to look at?**
+> **Which Stage IV metastatic records are corroborated, and which ones still need human review?**
 
 You will narrow a cohort, open two patients whose records tell opposite stories, and — at each step — read what the display is actually telling you. Allow about 15 minutes at your own pace.
 
@@ -204,10 +204,10 @@ The exercise compresses to roughly five minutes if you keep moving:
 
 If you fall behind, cut Step 4c — the concept list in Step 4d carries the argument on its own. Keep **Reset filters** in reach as a recovery step.
 
-## More exercises
+## More guided workflows
 
-- [Build a targeted-therapy cohort](exercise-targeted-therapy.md) — assemble a HER2-drug cohort through the search dialog, check its biomarkers, and export it
-- [Compare treatment outcomes](exercise-compare-outcomes.md) — hold complete responders against progressors and read the difference off the cards
+- [Build a HER2-Targeted Therapy Cohort](build-her2-targeted-therapy-cohort.md) — assemble a HER2-drug cohort through the search dialog, check its biomarkers, and export it
+- [Compare Responders and Progressors](compare-responders-and-progressors.md) — hold complete responders against progressors and read the difference off the cards
 
 ## Next steps
 

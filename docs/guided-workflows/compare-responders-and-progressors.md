@@ -1,12 +1,12 @@
 ---
-title: "Guided exercise: compare treatment outcomes"
-sidebar_label: "Exercise: compare outcomes"
+title: "Compare Responders and Progressors"
+sidebar_label: "Compare Responders and Progressors"
 description: A worked cohort-comparison exercise that contrasts complete responders with progressors and reads the difference off the filter cards — including a whole stage value going dark.
 ---
 
-# Guided exercise: compare treatment outcomes
+# Compare Responders and Progressors
 
-Comparing subgroups is a core reason researchers reach for a tool like this. The [targeted-therapy exercise](exercise-targeted-therapy.md) built one cohort; this one builds two and holds them up against each other:
+Comparing subgroups is a core reason researchers reach for a tool like this. The [HER2-targeted therapy workflow](build-her2-targeted-therapy-cohort.md) built one cohort; this one builds two and holds them up against each other:
 
 > **Some tumors responded completely to treatment. Others kept growing. What separates the two groups?**
 
@@ -120,7 +120,7 @@ The single strongest beat is opening the two Stage dialogs back to back — the 
 
 ## Next steps
 
-- [Guided exercise: build a targeted-therapy cohort](exercise-targeted-therapy.md) — the companion cohort-building exercise
+- [Build a HER2-Targeted Therapy Cohort](build-her2-targeted-therapy-cohort.md) — the companion cohort-building workflow
 - [Select and combine filters](../cohort-explorer/selecting-filters.md) — how and why values become disabled
 - [Understand cohort results](../cohort-explorer/understanding-results.md) — counts, mentions vs. patients, and empty results
 - [Filter Details dialog](../cohort-explorer/filter-details.md) — the full value list behind each card

@@ -35,9 +35,9 @@ Useful environment variables:
 
 The capture script forces the **Standard** theme so images are consistent, disables animations, and waits for content to load before each shot.
 
-### Guided-exercise captures
+### Guided-workflow captures
 
-The [guided exercise](../getting-started/guided-exercise.md) needs specific records: one patient whose structure and source notes agree, and one carrying contradictory extractions. Those captures are all optional, and each has an override:
+The [Stage IV metastatic evidence workflow](../guided-workflows/validate-stage-iv-metastatic-evidence.md) needs specific records: one patient whose structure and source notes agree, and one carrying contradictory extractions. Those captures are all optional, and each has an override:
 
 - `EXERCISE_CORROBORATED_PATIENT_ID` — the patient with a metastatic second cancer confirmed by a later pathology report (default `fake_patient125`).
 - `EXERCISE_CONFLICTED_PATIENT_ID` — the patient whose TNM value disagrees with their stage, and whose radiology report both asserts and negates metastatic disease (default `fake_patient460`).
