@@ -31,8 +31,28 @@ Useful environment variables:
 - `VIZ2_SCREENSHOT_DIR` — where source captures are written (default `../Viz2_screenshots`).
 - `DOC_PATIENT_ID` — the synthetic patient used for the standalone-patient and Document Viewer captures (default `fake_patient3`).
 - `COLLAPSED_DATE_PATIENT_ID` — a synthetic patient whose notes collapse to one date, used for the timeline's episode-dropdown fallback capture (optional).
+- `CAPTURE_ONLY` — a comma-separated list of file-name fragments. When set, only matching captures are written, so one data-dependent series can be re-taken without re-shooting the whole set. See [Re-take a single series](#re-take-a-single-series).
 
 The capture script forces the **Standard** theme so images are consistent, disables animations, and waits for content to load before each shot.
+
+### Guided-exercise captures
+
+The [guided exercise](../getting-started/guided-exercise.md) needs specific records: one patient whose structure and source notes agree, and one carrying contradictory extractions. Those captures are all optional, and each has an override:
+
+- `EXERCISE_CORROBORATED_PATIENT_ID` — the patient with a metastatic second cancer confirmed by a later pathology report (default `fake_patient125`).
+- `EXERCISE_CONFLICTED_PATIENT_ID` — the patient whose TNM value disagrees with their stage, and whose radiology report both asserts and negates metastatic disease (default `fake_patient460`).
+- `EXERCISE_STAGE_VALUE` — the Stage card value the exercise filters on (default `Stage IV`).
+- `EXERCISE_AGE_BAND` — the Age at Dx band that, combined with the stage value, narrows the cohort far enough for the conflicted patient to render as a clickable [patient dot](../cohort-explorer/patient-dots.md) (default `30-39`).
+
+If you change any of these, re-read the exercise page: it quotes cohort counts and findings that come from these specific records.
+
+### Re-take a single series
+
+```bash
+CAPTURE_ONLY=exercise npm run capture:screenshots
+```
+
+Captures whose file name contains the fragment are written; every other tracked image is left untouched. Useful when one series is flaky or data-dependent and a full re-run would churn — or degrade — images that are already good.
 
 ## Required vs. optional captures
 

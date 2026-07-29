@@ -6,6 +6,7 @@ import AccessibilityStatement from "./views/AccessibilityStatement";
 import FilterSetsConfigView from "./views/FilterSetsConfigView";
 import PatientView from "./views/patient";
 import PerfPanel from "./components/PerfPanel";
+import FeedbackWidget from "./components/FeedbackWidget";
 
 const SHOW_PERF_TRACKER = false;
 
@@ -49,6 +50,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {SHOW_PERF_TRACKER ? <PerfPanel /> : null}
+      <FeedbackWidget />
     </BrowserRouter>
   );
 }

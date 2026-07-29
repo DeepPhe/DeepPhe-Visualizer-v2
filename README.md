@@ -59,6 +59,8 @@ npm run eject            # Eject from react-scripts (one-way operation)
 
 ### User documentation
 
+The published user guide is at <https://deepphe.github.io/DeepPhe-Visualizer-v2/>.
+
 The task-oriented user guide is built with Docusaurus in an isolated
 `docs-site/` package. Node.js 20 or later is required for documentation builds.
 

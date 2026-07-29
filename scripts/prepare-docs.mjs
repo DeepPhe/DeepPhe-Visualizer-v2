@@ -53,6 +53,21 @@ const SCREENSHOT_MAP = [
   ["50-csv-export-button.png", "csv-export-button.png", false],
   ["51-filter-hierarchical-values.png", "filter-hierarchical-values.png", false],
   ["52-filter-disabled-values.png", "filter-disabled-values.png", false],
+  ["60-exercise-stage-filter-selected.png", "exercise-stage-filter-selected.png", false],
+  ["61-exercise-cross-filter-counts.png", "exercise-cross-filter-counts.png", false],
+  ["62-exercise-cancer-tumor-detail.png", "exercise-cancer-tumor-detail.png", false],
+  ["63-exercise-relapse-timeline.png", "exercise-relapse-timeline.png", false],
+  ["64-exercise-source-pathology.png", "exercise-source-pathology.png", false],
+  ["65-exercise-conflicted-summary.png", "exercise-conflicted-summary.png", false],
+  ["66-exercise-negated-concepts.png", "exercise-negated-concepts.png", false],
+  ["70-therapy-treatment-search.png", "therapy-treatment-search.png", false],
+  ["71-therapy-gene-repaint.png", "therapy-gene-repaint.png", false],
+  ["72-therapy-her2-gap.png", "therapy-her2-gap.png", false],
+  ["73-therapy-cohort-table.png", "therapy-cohort-table.png", false],
+  ["80-outcome-responders-stage.png", "outcome-responders-stage.png", false],
+  ["81-outcome-responders-behavior.png", "outcome-responders-behavior.png", false],
+  ["82-outcome-progressors-stage.png", "outcome-progressors-stage.png", false],
+  ["83-outcome-progressors-behavior.png", "outcome-progressors-behavior.png", false],
 ];
 
 function findSource(captureName, semanticName) {

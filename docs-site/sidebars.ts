@@ -7,7 +7,13 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Getting Started',
       collapsed: false,
-      items: ['getting-started/overview', 'getting-started/first-cohort'],
+      items: [
+        'getting-started/overview',
+        'getting-started/first-cohort',
+        'getting-started/guided-exercise',
+        'getting-started/exercise-targeted-therapy',
+        'getting-started/exercise-compare-outcomes',
+      ],
     },
     {
       type: 'category',
