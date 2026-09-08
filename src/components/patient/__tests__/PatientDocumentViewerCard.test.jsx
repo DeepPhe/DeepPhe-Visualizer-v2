@@ -292,4 +292,63 @@ describe("PatientDocumentViewerCard", () => {
 
     unmount();
   });
+
+  it("shows no concept selection without a fact selection", () => {
+    const { container, unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+      />
+    );
+
+    try {
+      const hasClear = [...container.querySelectorAll("button")].some(
+        (button) => button.textContent.trim() === "Clear"
+      );
+      expect(hasClear).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("reports a fact-driven concept selection up when the parent owns it", () => {
+    const handleChange = jest.fn();
+    const { unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+        selectedConceptIds={[]}
+        onSelectedConceptIdsChange={handleChange}
+        factSelection={{ factId: "fact-1", conceptIds: ["c-neoplasm"] }}
+      />
+    );
+
+    try {
+      // Selecting a fact elsewhere must still drive the highlight here. Bailing
+      // out when the selection is controlled silently broke fact highlighting.
+      expect(handleChange).toHaveBeenCalledWith(["c-neoplasm"]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("still applies a fact selection when it owns the selection itself", () => {
+    const { container, unmount } = renderComponent(
+      <PatientDocumentViewerCard
+        document={buildDocumentPayload()}
+        concepts={buildConceptPayload()}
+        factSelection={{ factId: "fact-1", conceptIds: ["c-neoplasm"] }}
+      />
+    );
+
+    try {
+      // The clear-selection control only renders while concepts are selected.
+      const hasClear = [...container.querySelectorAll("button")].some(
+        (button) => button.textContent.trim() === "Clear"
+      );
+      expect(hasClear).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
 });

@@ -356,6 +356,8 @@ export default function EventRelationTimelineCard({
   const zoomBehaviorRef = useRef(null);
   const brushBehaviorRef = useRef(null);
   const isSyncingRef = useRef(false);
+  const zoomTransformRef = useRef(zoomIdentity);
+  const lastZoomWidthRef = useRef(null);
 
   const [rawTimelineText, setRawTimelineText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -537,6 +539,7 @@ export default function EventRelationTimelineCard({
         if (isSyncingRef.current) {
           return;
         }
+        zoomTransformRef.current = event.transform;
         setZoomTransform(event.transform);
 
         const brushNode = brushGroupRef.current;
@@ -555,13 +558,23 @@ export default function EventRelationTimelineCard({
 
     zoomBehaviorRef.current = behavior;
 
+    // Only a width change invalidates the transform -- it is in pixel space.
+    // Collapsing a lane changes the height and rebuilds this behaviour, and
+    // resetting here would throw away the reader's current date range.
+    const widthChanged = lastZoomWidthRef.current !== dimensions.svgWidth;
+    lastZoomWidthRef.current = dimensions.svgWidth;
+    const nextTransform = widthChanged ? zoomIdentity : zoomTransformRef.current;
+
     isSyncingRef.current = true;
     try {
-      select(node).call(behavior).call(behavior.transform, zoomIdentity);
+      select(node).call(behavior).call(behavior.transform, nextTransform);
     } finally {
       isSyncingRef.current = false;
     }
-    setZoomTransform(zoomIdentity);
+    zoomTransformRef.current = nextTransform;
+    if (widthChanged) {
+      setZoomTransform(zoomIdentity);
+    }
 
     return () => {
       select(node).on(".zoom", null);
@@ -594,6 +607,7 @@ export default function EventRelationTimelineCard({
           .scale(dimensions.svgWidth / (selection[1] - selection[0]))
           .translate(-selection[0], 0);
 
+        zoomTransformRef.current = nextTransform;
         setZoomTransform(nextTransform);
 
         if (zoomRectRef.current && zoomBehaviorRef.current) {
@@ -769,7 +783,7 @@ export default function EventRelationTimelineCard({
                       aria-hidden="true"
                       focusable="false"
                       width="100%"
-                      viewBox={`0 0 ${dimensions.containerWidth} ${LEGEND.height}`}
+                      viewBox={`0 0 ${dimensions.viewBoxWidth} ${LEGEND.height}`}
                       sx={{ display: "block", height: LEGEND.height, overflow: "visible" }}
                     >
                       <text x={10} y={MARGINS.top + LEGEND.anchorY} dy=".5ex" fontSize={14}>
@@ -794,7 +808,7 @@ export default function EventRelationTimelineCard({
                       <line
                         x1={10}
                         y1={LEGEND.height}
-                        x2={dimensions.containerWidth}
+                        x2={dimensions.viewBoxWidth}
                         y2={LEGEND.height}
                         stroke="#dbdbdb"
                         strokeWidth={1}
@@ -841,7 +855,7 @@ export default function EventRelationTimelineCard({
                     <Box
                       component="svg"
                       width="100%"
-                      viewBox={`0 20 ${dimensions.containerWidth} ${dimensions.svgTotalHeight}`}
+                      viewBox={`0 20 ${dimensions.viewBoxWidth} ${dimensions.svgTotalHeight}`}
                       preserveAspectRatio="xMidYMid meet"
                       role="group"
                       aria-label="Event relation timeline chart"

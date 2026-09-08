@@ -925,15 +925,16 @@ export default function PatientDocumentViewerCard({
   }, [document?.id, enabledGroupByName, sortedGroupNames]);
 
   useEffect(() => {
-    if (isConceptSelectionControlled) {
-      return;
-    }
+    // Selecting a fact elsewhere (Cancer and Tumor Detail, Patient Summary)
+    // drives the concept highlight here. When the parent owns the selection,
+    // push it up so the fact and the event timeline share one selection --
+    // returning early here would silently drop fact highlighting.
     const factConceptIds = toConceptIds(factSelection?.conceptIds);
     if (factConceptIds.length > 0) {
       setSelectedConceptIds(factConceptIds);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [factSelection?.factId, factSelection?.conceptIds, isConceptSelectionControlled]);
+  }, [factSelection?.factId, factSelection?.conceptIds]);
 
   const selectedConceptIdSet = useMemo(() => new Set(toConceptIds(selectedConceptIds)), [selectedConceptIds]);
 

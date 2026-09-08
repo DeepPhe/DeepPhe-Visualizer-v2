@@ -9,7 +9,12 @@ import {
   getEventRelationGlyph,
   packSpansIntoLanes,
 } from "../eventRelationTimelineLayout";
-import { LANE, TIMELINE_PADDING_DAYS } from "../../../constants/eventRelationTimeline";
+import {
+  LANE,
+  MARGINS,
+  PLOT_RIGHT_GUTTER,
+  TIMELINE_PADDING_DAYS,
+} from "../../../constants/eventRelationTimeline";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -101,6 +106,24 @@ describe("event relation timeline layout", () => {
     expect(layout.groups[0].yOffset).toBe(0);
     expect(layout.groups[1].yOffset).toBe(2 * LANE.height + LANE.GROUP_TOP_PADDING);
     expect(layout.dimensions.svgWidth).toBe(1040 - 200 - 25);
+  });
+
+  it("keeps the viewBox wide enough for the plot's minimum width", () => {
+    const spans = [span("a", "Finding", "2010-01-01", "2010-06-01")];
+    const narrow = computeEventRelationTimelineLayout({ containerWidth: 375, spans });
+
+    // The plot floor kicks in, so the drawn area is wider than the container.
+    expect(narrow.dimensions.svgWidth).toBe(240);
+    // The viewBox must cover the drawn content, or the right-hand end of the
+    // chart is clipped away on narrow screens.
+    expect(narrow.dimensions.viewBoxWidth).toBe(
+      MARGINS.left + narrow.dimensions.svgWidth + PLOT_RIGHT_GUTTER
+    );
+    expect(narrow.dimensions.viewBoxWidth).toBeGreaterThan(375);
+
+    // On a wide container the viewBox still matches the container exactly.
+    const wide = computeEventRelationTimelineLayout({ containerWidth: 1900, spans });
+    expect(wide.dimensions.viewBoxWidth).toBe(1900);
   });
 
   it("gives each relation pair the alpha's end caps", () => {

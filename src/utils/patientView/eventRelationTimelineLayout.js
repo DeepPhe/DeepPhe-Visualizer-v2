@@ -176,6 +176,10 @@ export function computeEventRelationTimelineLayout({
     mainX,
     dimensions: {
       containerWidth: measuredWidth,
+      // The plot has a minimum width, so on a narrow container the drawn area
+      // is wider than the container. The viewBox must describe the content, not
+      // the container, or the right-hand end of the chart is clipped away.
+      viewBoxWidth: MARGINS.left + svgWidth + PLOT_RIGHT_GUTTER,
       svgWidth,
       svgTotalHeight,
       totalContentHeight,

@@ -18,14 +18,21 @@ export async function fetchStaticEventRelationTimeline(patientId) {
 
   if (!fakePatientEventTimelineTextPromise) {
     const url = resolveStaticAssetUrl(EVENT_RELATION_TIMELINE_ASSET_PATH);
-    fakePatientEventTimelineTextPromise = fetch(url).then(async (response) => {
-      if (!response?.ok) {
-        throw new Error(
-          `Unable to load event relation timeline data (${response?.status || "network error"}).`
-        );
-      }
-      return response.text();
-    });
+    fakePatientEventTimelineTextPromise = fetch(url)
+      .then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(
+            `Unable to load event relation timeline data (${response?.status || "network error"}).`
+          );
+        }
+        return response.text();
+      })
+      .catch((error) => {
+        // Drop the cache so a later attempt can retry; a cached rejection would
+        // keep the panel broken for the rest of the session.
+        fakePatientEventTimelineTextPromise = null;
+        throw error;
+      });
   }
 
   return fakePatientEventTimelineTextPromise;
