@@ -148,4 +148,34 @@ describe("CancerTumorSummaryCard", () => {
 
     unmount();
   });
+
+  it("lays cancer records out in a multi-column grid, with fact details spanning it", () => {
+    const twoCancers = [cancers[0], { ...cancers[0], cancerId: "cancer-2", title: "cancer-2" }];
+    const { container, unmount } = renderComponent(
+      <CancerTumorSummaryCard
+        cancers={twoCancers}
+        factSelection={{ factId: "c-grade", categoryName: "Grade", prettyName: "Grade 3" }}
+      />
+    );
+
+    try {
+      const grid = container.querySelector("[data-testid='cancer-summary-grid']");
+      expect(grid).not.toBeNull();
+      // Records flow across the panel instead of stacking full-width.
+      expect(getComputedStyle(grid).display).toBe("grid");
+      expect(getComputedStyle(grid).gridTemplateColumns).toContain("auto-fit");
+      expect(
+        container.querySelectorAll("[data-testid='cancer-summary-record']")
+      ).toHaveLength(2);
+
+      // The selected-fact panel is a sibling of the records, so it must span
+      // every column rather than sit in one.
+      const detailsPanel = [...grid.children].find((child) =>
+        child.textContent.includes("Details")
+      );
+      expect(getComputedStyle(detailsPanel).gridColumn).toBe("1/-1");
+    } finally {
+      unmount();
+    }
+  });
 });

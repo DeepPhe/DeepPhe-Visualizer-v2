@@ -4,21 +4,30 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import PatientView from "../patient";
-import { loadPatientProfile, loadRandomPatientId } from "../../controllers/patient";
+import {
+  loadPatientFilterSummary,
+  loadPatientProfile,
+  loadRandomPatientId,
+} from "../../controllers/patient";
+import { resetStaticEventRelationTimelineCacheForTests } from "../../clients/eventRelationTimeline";
 
 jest.mock("../../controllers/patient", () => ({
+  loadPatientFilterSummary: jest.fn(),
   loadPatientProfile: jest.fn(),
   loadRandomPatientId: jest.fn(),
 }));
 
-function renderComponent(element) {
+function renderComponent(element, { initialEntries = ["/patient"] } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
   act(() => {
     root.render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter
+        initialEntries={initialEntries}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         {element}
       </MemoryRouter>
     );
@@ -97,12 +106,38 @@ async function clickRandomButton(container) {
   });
 }
 
+const TEST_EVENT_RELATION_TSV = [
+  "PatientID\tConceptID\tRelation1\tDate1\tRelation2\tDate2",
+  "fake_patient1\tfake_patient1_30072025201756_C_22\tOn\t2010-01-31\tOn\t2010-01-31",
+].join("\n");
+
+const originalFetch = global.fetch;
+
+function mockEventRelationTimelineFetch() {
+  global.fetch = jest.fn(async () => ({
+    ok: true,
+    status: 200,
+    text: async () => TEST_EVENT_RELATION_TSV,
+  }));
+}
+
 describe("PatientView", () => {
+  beforeEach(() => {
+    loadPatientFilterSummary.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
+    resetStaticEventRelationTimelineCacheForTests();
+    if (originalFetch) {
+      global.fetch = originalFetch;
+    } else {
+      delete global.fetch;
+    }
   });
 
   test("loads and renders patient details", async () => {
+    mockEventRelationTimelineFetch();
     loadPatientProfile.mockResolvedValueOnce({
       patientId: "fake_patient1",
       patientName: "fake_patient1",
@@ -123,7 +158,14 @@ describe("PatientView", () => {
           mentions: [],
         },
       ],
-      concepts: [],
+      concepts: [
+        {
+          id: "fake_patient1_30072025201756_C_22",
+          name: "Carboplatin",
+          dpheGroup: "Chemo/immuno/hormone Therapy Regimen",
+          mentionIds: [],
+        },
+      ],
       cancers: [],
     });
 
@@ -142,12 +184,70 @@ describe("PatientView", () => {
 
       expect(rendered.container.textContent).toContain("Patient Details");
       expect(rendered.container.textContent).toContain("Patient Document Timeline");
+      expect(rendered.container.textContent).toContain("Event Timeline");
+      expect(rendered.container.textContent).toContain("Patient Summary");
       // The viewer heading shows the auto-selected document's name, so assert
       // on the viewer's aria-live announcement instead of a static title.
       expect(rendered.container.textContent).toContain("Document viewer opened: Doc 1");
+      expect(rendered.container.querySelector('[data-testid="patient-document-panel"]')).toBeNull();
+      expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
       expect(
         rendered.container.querySelector('svg[aria-label="Patient document timeline chart"]')
       ).not.toBeNull();
+
+      const rowIds = Array.from(
+        rendered.container.querySelectorAll(
+          '[data-testid="patient-cancer-panel"], [data-testid="patient-timeline-panel"], [data-testid="patient-event-relation-panel"], [data-testid="patient-summary-panel"]'
+        )
+      ).map((node) => node.getAttribute("data-testid"));
+      expect(rowIds).toEqual([
+        "patient-cancer-panel",
+        "patient-timeline-panel",
+        "patient-event-relation-panel",
+        "patient-summary-panel",
+      ]);
+    } finally {
+      rendered.unmount();
+    }
+  });
+
+  test("loads a patient directly from the patientId URL query parameter", async () => {
+    mockEventRelationTimelineFetch();
+    loadPatientProfile.mockResolvedValueOnce({
+      patientId: "fake_patient1",
+      patientName: "fake_patient1",
+      demographics: {},
+      documents: [
+        {
+          id: "doc-1",
+          name: "Doc 1",
+          date: "202001011000",
+          episode: "Diagnostic",
+          type: "Clinical note",
+          text: "This is clinical note text.",
+          mentions: [],
+        },
+      ],
+      concepts: [],
+      cancers: [],
+    });
+
+    const rendered = renderComponent(<PatientView />, {
+      initialEntries: ["/patient?patientId=fake_patient1"],
+    });
+
+    try {
+      await waitFor(() => {
+        expect(loadPatientProfile).toHaveBeenCalledWith("fake_patient1");
+      });
+
+      await waitFor(() => {
+        expect(rendered.container.textContent).toContain("Loaded patient: fake_patient1");
+      });
+
+      const input = rendered.container.querySelector('input[name="patient-id"]');
+      expect(input?.value).toBe("fake_patient1");
+      expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
     } finally {
       rendered.unmount();
     }

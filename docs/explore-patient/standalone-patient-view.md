@@ -28,6 +28,7 @@ The standalone view shows:
 - **Patient demographics** — an overview panel.
 - **[Cancer and Tumor Detail](cancer-tumor-detail.md)** — selectable cancer- and tumor-level facts.
 - **[Patient Document Timeline](document-timeline.md)** — the patient's notes over time.
+- **[Event Timeline](event-timeline.md)** — extracted concepts plotted against the dates they relate to.
 - **[Document Viewer](document-viewer.md)** — the selected note, with concept highlights and filters.
 
 :::note Standalone versus embedded

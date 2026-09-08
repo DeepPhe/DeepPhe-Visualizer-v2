@@ -799,6 +799,8 @@ export default function PatientDocumentViewerCard({
   onToggleExpanded = undefined,
   collapsiblePanelId = undefined,
   sectionLabel = "Document Viewer",
+  selectedConceptIds: controlledSelectedConceptIds = undefined,
+  onSelectedConceptIdsChange = undefined,
 }) {
   const theme = useTheme();
   // The concept/filter column is a secondary control surface. On narrow screens
@@ -835,20 +837,43 @@ export default function PatientDocumentViewerCard({
     [hasControlledConfidenceThreshold, onConfidenceThresholdChange]
   );
   const [enabledGroupByName, setEnabledGroupByName] = useState({});
-  const [selectedConceptIds, setSelectedConceptIds] = useState([]);
+  // Concept selection is shared with the event relation timeline when the
+  // parent lifts it; otherwise this card owns it.
+  const [internalSelectedConceptIds, setInternalSelectedConceptIds] = useState([]);
+  const isConceptSelectionControlled = Array.isArray(controlledSelectedConceptIds);
+  const selectedConceptIds = isConceptSelectionControlled
+    ? controlledSelectedConceptIds
+    : internalSelectedConceptIds;
+
+  const setSelectedConceptIds = useCallback(
+    (updater) => {
+      if (!isConceptSelectionControlled) {
+        setInternalSelectedConceptIds((previousConceptIds) => {
+          const next =
+            typeof updater === "function" ? updater(previousConceptIds) : updater;
+          onSelectedConceptIdsChange?.(next);
+          return next;
+        });
+        return;
+      }
+
+      const next =
+        typeof updater === "function" ? updater(controlledSelectedConceptIds) : updater;
+      onSelectedConceptIdsChange?.(next);
+    },
+    [controlledSelectedConceptIds, isConceptSelectionControlled, onSelectedConceptIdsChange]
+  );
   const [confidenceMode, setConfidenceMode] = useState("byMention");
   const [conceptGrouping, setConceptGrouping] = useState("byLabel");
   const [helpAnchorEl, setHelpAnchorEl] = useState(null);
   const headingRef = useRef(null);
   const documentScrollRef = useRef(null);
 
-  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (embedded && headingRef.current) {
       headingRef.current.focus();
     }
-  }, []);
-  /* eslint-enable react-hooks/exhaustive-deps */
+  }, [document?.id, embedded]);
 
   const enabledGroups = useMemo(
     () =>
@@ -900,11 +925,15 @@ export default function PatientDocumentViewerCard({
   }, [document?.id, enabledGroupByName, sortedGroupNames]);
 
   useEffect(() => {
+    if (isConceptSelectionControlled) {
+      return;
+    }
     const factConceptIds = toConceptIds(factSelection?.conceptIds);
     if (factConceptIds.length > 0) {
       setSelectedConceptIds(factConceptIds);
     }
-  }, [factSelection?.factId, factSelection?.conceptIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factSelection?.factId, factSelection?.conceptIds, isConceptSelectionControlled]);
 
   const selectedConceptIdSet = useMemo(() => new Set(toConceptIds(selectedConceptIds)), [selectedConceptIds]);
 
@@ -1766,4 +1795,6 @@ PatientDocumentViewerCard.propTypes = {
   onToggleExpanded: PropTypes.func,
   collapsiblePanelId: PropTypes.string,
   sectionLabel: PropTypes.string,
+  selectedConceptIds: PropTypes.arrayOf(PropTypes.string),
+  onSelectedConceptIdsChange: PropTypes.func,
 };

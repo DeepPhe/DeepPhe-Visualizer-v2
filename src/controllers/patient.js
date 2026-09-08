@@ -15,6 +15,8 @@ import {
   normalizePatientPayload,
   resolveDocumentsFromPayload,
 } from "../utils/patientView/normalizePatientPayload";
+import { fetchPatientDemographics } from "../clients/patientDemographics";
+import { enrichPatientDemographics } from "./patientDemographics";
 
 function resolveCancersPayload(payload) {
   if (Array.isArray(payload)) {
@@ -323,11 +325,15 @@ export async function loadPatientProfile(
     throw new Error("patientId is required");
   }
 
-  const [patientPayload, cancersPayload, conceptsPayload] = await Promise.all([
-    fetchPatient(normalizedPatientId),
-    fetchPatientCancers(normalizedPatientId).catch(() => null),
-    fetchPatientConcepts(normalizedPatientId).catch(() => null),
-  ]);
+  const [patientPayload, cancersPayload, conceptsPayload, demographicsRecords] =
+    await Promise.all([
+      fetchPatient(normalizedPatientId),
+      fetchPatientCancers(normalizedPatientId).catch(() => null),
+      fetchPatientConcepts(normalizedPatientId).catch(() => null),
+      // Fills gender / race / birth date, which the API leaves empty for the
+      // bundled fake patients. Never throws; resolves to [] on failure.
+      fetchPatientDemographics(),
+    ]);
   let documentsPayload;
 
   try {
@@ -346,7 +352,7 @@ export async function loadPatientProfile(
     });
 
     if (hasDocumentText(mergedFallbackProfile.documents)) {
-      return mergedFallbackProfile;
+      return enrichPatientDemographics(mergedFallbackProfile, demographicsRecords);
     }
 
     throw error;
@@ -358,10 +364,13 @@ export async function loadPatientProfile(
     fallbackPatientId: normalizedPatientId,
   });
 
-  return mergeProfileWithCancerAndConceptData(normalizedProfile, {
-    cancersPayload,
-    conceptsPayload,
-  });
+  return enrichPatientDemographics(
+    mergeProfileWithCancerAndConceptData(normalizedProfile, {
+      cancersPayload,
+      conceptsPayload,
+    }),
+    demographicsRecords
+  );
 }
 
 export async function loadPatientFilterSummary(patientIds) {
