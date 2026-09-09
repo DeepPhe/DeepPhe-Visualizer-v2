@@ -16,6 +16,10 @@
     "@mui/x-charts": "^7.10.0",
     "@mui/x-data-grid": "^7.6.2",
     "@tanstack/react-table": "^8.21.3",
+    "d3-axis": "^3.0.0",
+    "d3-brush": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
     "express": "^5.2.1",
     "html-react-parser": "^5.2.11",
     "http-proxy-middleware": "^2.0.9",
@@ -29,6 +33,7 @@
     "start": "craco start",
     "build": "craco build",
     "test": "craco test",
+    "mock-api": "node mock-api/server.js",
     "eject": "react-scripts eject",
     "lint": "eslint src/",
     "lint:patient-ids": "node scripts/check-no-patient-ids.mjs",
@@ -86,5 +91,11 @@
   },
   "overrides": {
     "svgo": "3.0.2"
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "^.+\\.module\\.(css|sass|scss)$",
+      "[/\\\\]node_modules[/\\\\](?!d3-|internmap|delaunator|robust-predicates).+\\.(js|mjs|jsx|ts|tsx)$"
+    ]
   }
 }

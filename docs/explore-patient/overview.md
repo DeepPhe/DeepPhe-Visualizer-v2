@@ -18,7 +18,7 @@ The patient opens as a tab in the drawer.
 
 ![The embedded patient view with Cancer and Tumor Detail, Patient Summary, and the document timeline](../assets/screenshots/end-user/embedded-patient-view.png)
 
-**Standalone Patient View (from Home).** A separate page where you look a patient up by ID. It shows demographics, cancer and tumor detail, the document timeline, and the Document Viewer, but **not** the structured Patient Summary. See [Standalone Patient View](standalone-patient-view.md).
+**Standalone Patient View (from Home).** A separate page where you look a patient up by ID. It shows demographics, cancer and tumor detail, the document timeline, the Event Timeline, and the Document Viewer, but **not** the structured Patient Summary. See [Standalone Patient View](standalone-patient-view.md).
 
 ## What the embedded view contains
 
@@ -27,6 +27,7 @@ Depending on the available data, the embedded view can include:
 - **Patient overview** — demographics such as first and last encounter, gender, age at diagnosis, and race.
 - **[Cancer and Tumor Detail](cancer-tumor-detail.md)** — structured cancer- and tumor-level facts you can select.
 - **[Patient Document Timeline](document-timeline.md)** — the patient's notes plotted over time.
+- **[Event Timeline](event-timeline.md)** — extracted concepts plotted against the dates they relate to.
 - **[Patient Summary](patient-summary.md)** — diagnoses, staging, biomarkers, treatments, and more, grouped into a structured card.
 - **[Document Viewer](document-viewer.md)** — the text of the selected note, with concept highlights and filters.
 

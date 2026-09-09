@@ -43,6 +43,7 @@ const sidebars: SidebarsConfig = {
         'explore-patient/standalone-patient-view',
         'explore-patient/cancer-tumor-detail',
         'explore-patient/document-timeline',
+        'explore-patient/event-timeline',
         'explore-patient/patient-summary',
         'explore-patient/document-viewer',
       ],

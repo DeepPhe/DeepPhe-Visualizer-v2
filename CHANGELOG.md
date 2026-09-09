@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Event Timeline** panel on the patient view: temporal relations packed into
+  overlap-free lanes by Finding, Disease, Stage/Grade, and Treatment, with
+  relation-specific end caps (On / Overlaps / After / Before), scroll-to-zoom
+  and a draggable overview band, a per-lane density strip when a lane is
+  collapsed, and a Patient Age axis derived from the patient's date of birth
+- Selecting a mark in the Event Timeline highlights its concepts in the
+  Document Viewer, and clearing the concept there clears the mark
+- Patient demographics (gender, race, birth date) are filled from a bundled
+  demographics asset when the API does not supply them
 - Minimum-confidence filter on the **Patient Summary** card: a header slider
   (50–100%, in 5% steps) that hides findings below the chosen extraction
   confidence, keeps findings that have no confidence score, and announces how
@@ -19,10 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Document Viewer
 
 ### Changed
+- **Patient Details** and **Cancer and Tumor Detail** now flow across the full
+  panel width instead of stacking in a single column, reclaiming roughly 300px
+  of vertical space above the fold on a wide screen
 - Responsive layout improvements for smaller screens across the patient view
 - Faster filter counting and patient-detail loading
 
 ### Fixed
+- Screen-reader-only text was sized `width: 1` in MUI's `sx`, which resolves to
+  `100%` rather than `1px` and pushed a horizontal scrollbar onto the patient
+  view at wide viewports
 - Patient drawer failing to load due to a JavaScript error
 - Removed a mislabeled UI label
 

@@ -36,8 +36,10 @@ const MIN_BAR_REGION_SCALE = 0.2;
 
 const visuallyHiddenStyles = {
   position: "absolute",
-  width: 1,
-  height: 1,
+  // "1px", not 1: MUI's sx treats a bare 1 on width/height as 100%, which makes
+  // the hidden text full-width and pushes a horizontal scrollbar onto the page.
+  width: "1px",
+  height: "1px",
   padding: 0,
   margin: -1,
   overflow: "hidden",

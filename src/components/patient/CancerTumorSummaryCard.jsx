@@ -353,7 +353,17 @@ export default function CancerTumorSummaryCard({
             No cancer summary data available for this patient.
           </Typography>
         ) : (
-          <Stack spacing={0.75}>
+          /* Cancer records sit side by side and reflow to fewer columns as the
+             panel narrows; stacked full-width rows left most of the row empty. */
+          <Box
+            data-testid="cancer-summary-grid"
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 440px), 1fr))",
+              gap: 0.75,
+              alignItems: "start",
+            }}
+          >
             {normalizedCancers.map((cancer, cancerIndex) => {
               const cancerId = String(cancer?.cancerId || cancer?.title || "").trim();
               const cancerFactGroups = getCancerFactGroups(cancer);
@@ -508,6 +518,7 @@ export default function CancerTumorSummaryCard({
             {factSelection ? (
               <Box
                 sx={{
+                  gridColumn: "1 / -1",
                   border: 1,
                   borderColor: "divider",
                   borderRadius: 1,
@@ -545,7 +556,7 @@ export default function CancerTumorSummaryCard({
                 </Stack>
               </Box>
             ) : null}
-          </Stack>
+          </Box>
         )}
       </CardContent>
         </>

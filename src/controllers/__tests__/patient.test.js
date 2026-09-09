@@ -15,6 +15,12 @@ import {
   fetchPatientDocuments,
 } from "../../clients/deepphe-data-api";
 
+// loadPatientProfile also pulls the bundled demographics asset; stub it so unit
+// tests do no real I/O.
+jest.mock("../../clients/patientDemographics", () => ({
+  fetchPatientDemographics: jest.fn(async () => []),
+}));
+
 jest.mock("../../clients/deepphe-data-api", () => ({
   fetchAttributesSummary: jest.fn(),
   fetchCancersSummary: jest.fn(),

@@ -1,0 +1,91 @@
+[
+  {
+    "PatientID": "fake_patient1",
+    "PatientName": "Fake Patient1",
+    "Race": "white",
+    "Gender": "female",
+    "DateOfBirth": "04-01-1960",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 50,
+    "AgeOfFirstEncounter": "04-01-2010",
+    "AgeOfLastEncounter": "03-01-2011"
+  },
+  {
+    "PatientID": "fake_patient2",
+    "PatientName": "Fake Patient2",
+    "Race": "black",
+    "Gender": "female",
+    "DateOfBirth": "06-21-1958",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 52,
+    "AgeOfFirstEncounter": "06-21-2010",
+    "AgeOfLastEncounter": "08-19-2010"
+  },
+  {
+    "PatientID": "fake_patient3",
+    "PatientName": "Fake Patient3",
+    "Race": "asian",
+    "Gender": "female",
+    "DateOfBirth": "11-12-1966",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 35,
+    "AgeOfFirstEncounter": "11-12-2001",
+    "AgeOfLastEncounter": "06-24-2010"
+  },
+  {
+    "PatientID": "fake_patient4",
+    "PatientName": "Fake Patient4",
+    "Race": "white",
+    "Gender": "female",
+    "DateOfBirth": "01-15-1949",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 62,
+    "AgeOfFirstEncounter": "01-15-2011",
+    "AgeOfLastEncounter": "07-27-2011"
+
+  },
+  {
+    "PatientID": "fake_patient5",
+    "PatientName": "Fake Patient5",
+    "Race": "white",
+    "Gender": "female",
+    "DateOfBirth": "08-01-1972",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 37,
+    "AgeOfFirstEncounter": "08-01-2009",
+    "AgeOfLastEncounter": "02-15-2010"
+  },
+  {
+    "PatientID": "fake_patient6",
+    "PatientName": "Fake Patient6",
+    "Race": "black",
+    "Gender": "female",
+    "DateOfBirth": "05-01-1941",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 69,
+    "AgeOfFirstEncounter": "05-01-2010",
+    "AgeOfLastEncounter": "04-15-2011"
+  },
+  {
+    "PatientID": "fake_patient7",
+    "PatientName": "Fake Patient7",
+    "Race": "white",
+    "Gender": "female",
+    "DateOfBirth": "03-01-1938",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 72,
+    "AgeOfFirstEncounter": "03-01-2010",
+    "AgeOfLastEncounter": "10-26-2010"
+  },
+  {
+    "PatientID": "patientX",
+    "PatientName": "patientX",
+    "Race": "white",
+    "Gender": "female",
+    "DateOfBirth": "unknown",
+    "CancerType": "BreastCancer",
+    "AgeAtDiagnosis": 50,
+    "AgeOfFirstEncounter": "unknown",
+    "AgeOfLastEncounter": "unknown"
+  }
+]

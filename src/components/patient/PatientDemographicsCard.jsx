@@ -5,17 +5,28 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Stack,
   Typography,
 } from "@mui/material";
 
-function DemographicItem({ label, value = "" }) {
+function DemographicItem({ label, value = "", capitalize = false }) {
   return (
     <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 0.2 }}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ letterSpacing: 0.2, display: "block" }}
+      >
         {label}
       </Typography>
-      <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.25 }}>
+      <Typography
+        variant="body2"
+        sx={{
+          fontWeight: 600,
+          lineHeight: 1.25,
+          overflowWrap: "anywhere",
+          ...(capitalize ? { textTransform: "capitalize" } : {}),
+        }}
+      >
         {value || "Unknown"}
       </Typography>
     </Box>
@@ -25,6 +36,7 @@ function DemographicItem({ label, value = "" }) {
 DemographicItem.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.string,
+  capitalize: PropTypes.bool,
 };
 
 function getRaceEthnicity(demographics = {}) {
@@ -54,14 +66,30 @@ export default function PatientDemographicsCard({ patientData = null }) {
         }}
       />
       <CardContent sx={{ px: 1.5, py: 0.5, "&:last-child": { pb: 1.5 } }}>
-        <Stack spacing={1.1}>
+        {/* Fields flow across the full panel width and reflow to fewer columns
+            as it narrows, rather than stacking in one column and leaving the
+            rest of the row empty. */}
+        <Box
+          data-testid="patient-demographics-grid"
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
+            columnGap: 2,
+            rowGap: 1.1,
+            alignItems: "start",
+          }}
+        >
           <DemographicItem label="Patient ID" value={patientData?.patientId} />
-          <DemographicItem label="Gender" value={demographics?.gender} />
-          <DemographicItem label="Race/Ethnicity" value={getRaceEthnicity(demographics)} />
+          <DemographicItem label="Gender" value={demographics?.gender} capitalize />
+          <DemographicItem
+            label="Race/Ethnicity"
+            value={getRaceEthnicity(demographics)}
+            capitalize
+          />
           <DemographicItem label="Birth Date" value={demographics?.birthDate} />
           <DemographicItem label="First Encounter" value={demographics?.firstEncounterDate} />
           <DemographicItem label="Last Encounter" value={demographics?.lastEncounterDate} />
-        </Stack>
+        </Box>
       </CardContent>
     </Card>
   );
