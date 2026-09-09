@@ -33,6 +33,7 @@
     "start": "craco start",
     "build": "craco build",
     "test": "craco test",
+    "mock-api": "node mock-api/server.js",
     "eject": "react-scripts eject",
     "lint": "eslint src/",
     "lint:patient-ids": "node scripts/check-no-patient-ids.mjs",
