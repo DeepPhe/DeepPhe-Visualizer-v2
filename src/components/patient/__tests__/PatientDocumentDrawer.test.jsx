@@ -152,4 +152,56 @@ describe("PatientDocumentDrawer", () => {
       unmount();
     }
   });
+
+  it("opens inside the given container instead of over the page", () => {
+    const container = global.document.createElement("div");
+    global.document.body.appendChild(container);
+
+    const { unmount } = renderComponent(
+      <PatientDocumentDrawer
+        open
+        document={buildDocumentPayload()}
+        concepts={[]}
+        container={container}
+      />
+    );
+
+    try {
+      const paper = container.querySelector("[data-testid='patient-document-drawer']");
+      // Portalled into the panel, not document.body.
+      expect(paper).not.toBeNull();
+
+      const modalRoot = paper.closest(".MuiModal-root");
+      // inset:0 makes the root fill the panel so the paper's right:0 resolves
+      // against it; overflow:hidden clips the slide-in transform, which would
+      // otherwise widen the panel's scroll area and shift it sideways.
+      expect(modalRoot.style.position).toBe("absolute");
+      expect(modalRoot.style.inset).toBe("0");
+      expect(modalRoot.style.overflow).toBe("hidden");
+      expect(paper.style.position).toBe("absolute");
+
+      const backdrop = container.querySelector(
+        "[data-testid='patient-document-drawer-backdrop']"
+      );
+      expect(backdrop.style.position).toBe("absolute");
+    } finally {
+      unmount();
+      container.remove();
+    }
+  });
+
+  it("still opens as a page-level drawer with no container", () => {
+    const { unmount } = renderComponent(
+      <PatientDocumentDrawer open document={buildDocumentPayload()} concepts={[]} />
+    );
+
+    try {
+      const paper = global.document.querySelector("[data-testid='patient-document-drawer']");
+      const modalRoot = paper.closest(".MuiModal-root");
+      expect(modalRoot.style.position).toBe("");
+      expect(Number(getComputedStyle(modalRoot).zIndex)).toBeGreaterThan(1299);
+    } finally {
+      unmount();
+    }
+  });
 });

@@ -225,6 +225,15 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
   const [factSelection, setFactSelection] = useState(null);
+  // When embedded in the cohort view's Selected Patients drawer, the document
+  // viewer opens inside that panel rather than over the page. Discovered from
+  // the DOM so the panel needs no knowledge of this view.
+  const [documentDrawerContainer, setDocumentDrawerContainer] = useState(null);
+  const setRootNode = useCallback((node) => {
+    setDocumentDrawerContainer(
+      node ? node.closest('[data-testid="patient-grid-drawer"]') : null
+    );
+  }, []);
   // Shared between the event relation timeline and the document viewer, the way
   // the alpha shares `clickedTerms` across the patient layout.
   const [timelineConceptIds, setTimelineConceptIds] = useState([]);
@@ -659,6 +668,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
 
   return (
     <Box
+      ref={setRootNode}
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -1000,6 +1010,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
         onConfidenceThresholdChange={handleConfidenceThresholdChange}
         selectedConceptIds={timelineConceptIds}
         onSelectedConceptIdsChange={setTimelineConceptIds}
+        container={documentDrawerContainer}
       />
     </Box>
   );

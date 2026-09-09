@@ -14,6 +14,7 @@ export default function PatientDocumentDrawer({
   onConfidenceThresholdChange = undefined,
   selectedConceptIds = undefined,
   onSelectedConceptIdsChange = undefined,
+  container = null,
 }) {
   const isOpen = Boolean(open && document);
   const drawerLabel = document?.name
@@ -36,22 +37,38 @@ export default function PatientDocumentDrawer({
     }
   }, []);
 
+  // Inside the cohort view the viewer belongs to the Selected Patients drawer,
+  // so it is portalled into that panel and positioned within it. As a page-level
+  // drawer it opened *behind* the panel anyway: a temporary Drawer sits at
+  // theme.zIndex.drawer (1200) and the panel sits at modal - 1 (1299).
+  const isContained = Boolean(container);
+
   return (
     <Drawer
       anchor="right"
       open={isOpen}
       onClose={handleClose}
       transitionDuration={180}
-      // A temporary Drawer sits at theme.zIndex.drawer (1200), but the Selected
-      // Patients drawer sits at modal - 1 (1299), so inside the cohort view the
-      // viewer opened *behind* it. Modal level clears that without outranking
-      // real dialogs, which share this level and win on DOM order.
-      sx={{ zIndex: (theme) => theme.zIndex.modal }}
+      container={container || undefined}
+      sx={
+        isContained
+          ? { position: "absolute" }
+          : // Modal level clears the panel without outranking real dialogs,
+            // which share this level and win on DOM order.
+            { zIndex: (theme) => theme.zIndex.modal }
+      }
       ModalProps={{
         onKeyDown: handleDrawerKeyDown,
+        // inset:0 makes the root fill the panel so the paper's right:0 resolves
+        // against it; overflow:hidden clips the slide-in transform, which starts
+        // off to the right and would otherwise widen the panel's scroll area.
+        ...(isContained
+          ? { style: { position: "absolute", inset: 0, overflow: "hidden" } }
+          : {}),
         slotProps: {
           backdrop: {
             "data-testid": "patient-document-drawer-backdrop",
+            ...(isContained ? { style: { position: "absolute" } } : {}),
           },
         },
       }}
@@ -60,9 +77,12 @@ export default function PatientDocumentDrawer({
         role: "dialog",
         "aria-modal": "true",
         "aria-label": drawerLabel,
+        ...(isContained ? { style: { position: "absolute" } } : {}),
         sx: {
-          width: { xs: "100vw", sm: "min(92vw, 760px)", lg: "min(72vw, 1040px)" },
-          maxWidth: "100vw",
+          width: isContained
+            ? { xs: "100%", sm: "min(92%, 760px)", lg: "min(72%, 1040px)" }
+            : { xs: "100vw", sm: "min(92vw, 760px)", lg: "min(72vw, 1040px)" },
+          maxWidth: "100%",
           bgcolor: "background.paper",
           overflow: "hidden",
           boxShadow: (theme) => theme.shadows[14],
@@ -108,4 +128,6 @@ PatientDocumentDrawer.propTypes = {
   onConfidenceThresholdChange: PropTypes.func,
   selectedConceptIds: PropTypes.arrayOf(PropTypes.string),
   onSelectedConceptIdsChange: PropTypes.func,
+  /** When set, the viewer is portalled into this node and positioned inside it. */
+  container: PropTypes.any,
 };
