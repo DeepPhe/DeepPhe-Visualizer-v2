@@ -42,6 +42,11 @@ export default function PatientDocumentDrawer({
       open={isOpen}
       onClose={handleClose}
       transitionDuration={180}
+      // A temporary Drawer sits at theme.zIndex.drawer (1200), but the Selected
+      // Patients drawer sits at modal - 1 (1299), so inside the cohort view the
+      // viewer opened *behind* it. Modal level clears that without outranking
+      // real dialogs, which share this level and win on DOM order.
+      sx={{ zIndex: (theme) => theme.zIndex.modal }}
       ModalProps={{
         onKeyDown: handleDrawerKeyDown,
         slotProps: {

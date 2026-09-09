@@ -132,4 +132,24 @@ describe("PatientDocumentDrawer", () => {
     expect(onAncestorKeyDown).not.toHaveBeenCalled();
     unmount();
   });
+
+  it("stacks above the Selected Patients drawer", () => {
+    const { unmount } = renderComponent(
+      <PatientDocumentDrawer open document={buildDocumentPayload()} concepts={[]} />
+    );
+
+    try {
+      const paper = global.document.querySelector("[data-testid='patient-document-drawer']");
+      const modalRoot = paper.closest(".MuiModal-root");
+      const zIndex = Number(getComputedStyle(modalRoot).zIndex);
+
+      // A temporary MUI Drawer defaults to zIndex.drawer (1200), which is below
+      // the cohort view's Selected Patients drawer at zIndex.modal - 1 (1299),
+      // so the viewer used to open behind it.
+      expect(zIndex).toBeGreaterThan(1299);
+      expect(zIndex).toBeGreaterThan(1200);
+    } finally {
+      unmount();
+    }
+  });
 });
