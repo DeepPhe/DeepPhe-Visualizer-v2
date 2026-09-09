@@ -1,5 +1,6 @@
 /**
- * Local mock of the DeepPhe data API, serving the DeepPhe-Viz-v2-alpha fixtures.
+ * Local mock of the DeepPhe data API, serving the vendored fixtures in
+ * mock-api/fixtures (copied verbatim from DeepPhe-Viz-v2-alpha).
  *
  * Why this exists: the real dphe-data-api ships a different ingest of the same
  * fake patients, so its concept ids (fake_patient1_30062026210318_C_*) do not
@@ -17,9 +18,9 @@ const path = require("path");
 
 const PORT = Number(process.env.PORT || 3333);
 const BASE = "/v1/deepphe-api/deepphe";
-const FIXTURE_DIR =
-  process.env.FIXTURE_DIR ||
-  "/Volumes/Samsung-Ext/dev/deep/DeepPhe-Viz-v2-alpha/public/docs";
+// Fixtures are vendored under mock-api/fixtures so this runs from a clean
+// clone with no sibling checkouts. Override FIXTURE_DIR to point elsewhere.
+const FIXTURE_DIR = process.env.FIXTURE_DIR || path.join(__dirname, "fixtures");
 const DEMOGRAPHICS_FILE =
   process.env.DEMOGRAPHICS_FILE ||
   path.join(__dirname, "..", "public", "data", "demographics", "patient_demographics.json");

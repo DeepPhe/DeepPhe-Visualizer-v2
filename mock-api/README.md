@@ -1,8 +1,9 @@
 # Local mock API
 
-Serves the DeepPhe data API from the **DeepPhe-Viz-v2-alpha fixtures**
-(`DeepPhe-Viz-v2-alpha/public/docs/fake_patient*.json`) plus
-`public/data/demographics/patient_demographics.json`.
+Serves the DeepPhe data API from the fixtures vendored in `mock-api/fixtures/`
+(7 patients, copied byte-for-byte from `DeepPhe-Viz-v2-alpha/public/docs/`) plus
+`public/data/demographics/patient_demographics.json`. No sibling checkout is
+required; set `FIXTURE_DIR` to serve from elsewhere.
 
 ```bash
 npm run mock-api      # http://localhost:3333
