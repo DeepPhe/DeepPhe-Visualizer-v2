@@ -173,6 +173,7 @@ export default function PatientView() {
   const [factSelection, setFactSelection] = useState(null);
   const [summarySelection, setSummarySelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [isDocumentDrawerOpen, setIsDocumentDrawerOpen] = useState(false);
   const [selectionContext, setSelectionContext] = useState(null);
   // Shared between the event relation timeline and the document viewer, the way
   // the alpha shares `clickedTerms` across the patient layout.
@@ -338,6 +339,8 @@ export default function PatientView() {
       setFactSelection(null);
       setSummarySelection(null);
       setSelectedDocumentId("");
+      setIsDocumentDrawerOpen(false);
+      setTimelineConceptIds([]);
       setSelectionContext(null);
       setPatientSummaryData(null);
       setConfidenceThreshold(100);
@@ -349,6 +352,8 @@ export default function PatientView() {
         setFactSelection(null);
         setSummarySelection(null);
         setSelectedDocumentId("");
+        setIsDocumentDrawerOpen(false);
+        setTimelineConceptIds([]);
         setSelectionContext(null);
         setPatientSummaryData(null);
         return null;
@@ -360,6 +365,7 @@ export default function PatientView() {
         (r) => String(r?.id || "").trim() === mostRecentId
       );
       setSelectedDocumentId(mostRecentId);
+      setIsDocumentDrawerOpen(Boolean(mostRecentId));
       setSelectionContext({
         source: "auto",
         documentType: String(mostRecentReport?.type || "").trim() || null,
@@ -388,6 +394,7 @@ export default function PatientView() {
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -404,14 +411,15 @@ export default function PatientView() {
   );
 
   const handleCloseDocument = useCallback(() => {
-    setSelectedDocumentId("");
-    setSelectionContext(null);
+    // Keep the current report available to the event timeline after dismissal.
+    setIsDocumentDrawerOpen(false);
   }, []);
 
   const handleSelectRelatedDocument = useCallback(
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -442,7 +450,7 @@ export default function PatientView() {
       return;
     }
 
-    if (factSelection?.factId === normalizedFactId) {
+    if (factSelection?.factId === normalizedFactId && isDocumentDrawerOpen) {
       setFactSelection(null);
       setSelectionContext(null);
       return;
@@ -455,6 +463,7 @@ export default function PatientView() {
     if (nextSelection?.documentIds?.length > 0) {
       const firstDocId = String(nextSelection.documentIds[0] || "").trim();
       setSelectedDocumentId(firstDocId);
+      setIsDocumentDrawerOpen(Boolean(firstDocId));
 
       const { cancerIndex, tumorIndex } = resolveCancerTumorIndex(
         nextSelection.cancerId,
@@ -482,6 +491,7 @@ export default function PatientView() {
       setFactSelection(null);
       setSummarySelection(selection);
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -511,16 +521,18 @@ export default function PatientView() {
         return;
       }
 
-      if (summarySelection?.factId === selection.factId) {
+      if (summarySelection?.factId === selection.factId && isDocumentDrawerOpen) {
         setSummarySelection(null);
         setSelectedDocumentId("");
+        setIsDocumentDrawerOpen(false);
+        setTimelineConceptIds([]);
         setSelectionContext(null);
         return;
       }
 
       openSummaryDocument(selection, selection.documentIds[0]);
     },
-    [summarySelection, openSummaryDocument]
+    [summarySelection, openSummaryDocument, isDocumentDrawerOpen]
   );
 
   const handleSelectSummaryDocument = useCallback(
@@ -591,7 +603,7 @@ export default function PatientView() {
                 </Typography>
               </Stack>
 
-              {isLoading ? <CircularProgress size={20} /> : null}
+              {isLoading ? <CircularProgress size={20} aria-label="Loading patient" /> : null}
             </Stack>
           </Paper>
 
@@ -626,12 +638,12 @@ export default function PatientView() {
                   whiteSpace: "nowrap",
                 }}
               >
-                {selectedDocument
+                {isDocumentDrawerOpen && selectedDocument
                   ? `Document viewer opened: ${selectedDocument.name || selectedDocument.id}`
                   : ""}
               </Typography>
 
-              <Stack spacing={1}>
+              <Stack spacing={0.75}>
                 <Box
                   sx={{
                     border: 1,
@@ -706,6 +718,7 @@ export default function PatientView() {
                       birthDate={patientData.demographics?.birthDate}
                       selectedConceptIds={timelineConceptIds}
                       onSelectConceptIds={setTimelineConceptIds}
+                      onOpenReport={() => setIsDocumentDrawerOpen(true)}
                       expanded={isEventTimelineExpanded}
                       onToggleExpanded={handleToggleEventTimeline}
                       collapsiblePanelId={eventRelationTimelinePanelId}
@@ -743,7 +756,7 @@ export default function PatientView() {
               </Stack>
 
               <PatientDocumentDrawer
-                open={Boolean(selectedDocument)}
+                open={isDocumentDrawerOpen && Boolean(selectedDocument)}
                 document={selectedDocument}
                 concepts={patientData.concepts}
                 factSelection={activeSelection}

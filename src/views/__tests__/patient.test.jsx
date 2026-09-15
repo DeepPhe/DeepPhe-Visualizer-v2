@@ -206,6 +206,26 @@ describe("PatientView", () => {
         "patient-event-relation-panel",
         "patient-summary-panel",
       ]);
+
+      act(() => {
+        document.body.querySelector('button[aria-label="Close document"]')
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await waitFor(() => {
+        expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).toBeNull();
+      });
+      const scope = rendered.container.querySelector('[data-testid="event-relation-scope"]');
+      expect(scope.querySelector('option[value="current-report"]').disabled).toBe(false);
+      expect(rendered.container.textContent).toContain("Current report: Doc 1");
+      expect(rendered.container.textContent).not.toContain("Document viewer opened: Doc 1");
+      act(() => {
+        Array.from(rendered.container.querySelectorAll("button"))
+          .find((button) => button.textContent === "Open report")
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await waitFor(() => {
+        expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
+      });
     } finally {
       rendered.unmount();
     }

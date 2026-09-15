@@ -239,6 +239,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const [timelineConceptIds, setTimelineConceptIds] = useState([]);
   const [summarySelection, setSummarySelection] = useState(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [isDocumentDrawerOpen, setIsDocumentDrawerOpen] = useState(false);
   const [selectionContext, setSelectionContext] = useState(null);
   // Each patient panel can be collapsed independently. All start
   // expanded; collapsing is opt-in and preserves the multi-panel comparison
@@ -275,6 +276,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       setFactSelection(null);
       setSummarySelection(null);
       setSelectedDocumentId("");
+      setIsDocumentDrawerOpen(false);
+      setTimelineConceptIds([]);
       setSelectionContext(null);
       setOmopDetails(EMPTY_OMOP_DETAILS);
       setPatientSummaryData(null);
@@ -289,6 +292,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       setFactSelection(null);
       setSummarySelection(null);
       setSelectedDocumentId("");
+      setIsDocumentDrawerOpen(false);
+      setTimelineConceptIds([]);
       setSelectionContext(null);
     });
 
@@ -473,6 +478,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -489,14 +495,15 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   );
 
   const handleCloseDocument = useCallback(() => {
-    setSelectedDocumentId("");
-    setSelectionContext(null);
+    // Keep the current report available to the event timeline after dismissal.
+    setIsDocumentDrawerOpen(false);
   }, []);
 
   const handleSelectRelatedDocument = useCallback(
     (docId) => {
       const normalizedDocId = String(docId || "").trim();
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -534,6 +541,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       setFactSelection(null);
       setSummarySelection(selection);
       setSelectedDocumentId(normalizedDocId);
+      setIsDocumentDrawerOpen(Boolean(normalizedDocId));
 
       const report = (timelineData?.reportData || []).find(
         (r) => String(r?.id || "").trim() === normalizedDocId
@@ -567,16 +575,18 @@ export default function EmbeddedPatientView({ patientId = "" }) {
         return;
       }
 
-      if (summarySelection?.factId === selection.factId) {
+      if (summarySelection?.factId === selection.factId && isDocumentDrawerOpen) {
         setSummarySelection(null);
         setSelectedDocumentId("");
+        setIsDocumentDrawerOpen(false);
+        setTimelineConceptIds([]);
         setSelectionContext(null);
         return;
       }
 
       openSummaryDocument(selection, selection.documentIds[0]);
     },
-    [summarySelection, openSummaryDocument]
+    [summarySelection, openSummaryDocument, isDocumentDrawerOpen]
   );
 
   // Document picker: open the specific source document chosen from the list.
@@ -591,7 +601,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     const normalizedFactId = String(factId || "").trim();
     if (!normalizedFactId || !patientData) return;
 
-    if (factSelection?.factId === normalizedFactId) {
+    if (factSelection?.factId === normalizedFactId && isDocumentDrawerOpen) {
       setFactSelection(null);
       setSelectionContext(null);
       return;
@@ -605,6 +615,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     if (nextSelection?.documentIds?.length > 0) {
       const firstDocId = String(nextSelection.documentIds[0] || "").trim();
       setSelectedDocumentId(firstDocId);
+      setIsDocumentDrawerOpen(Boolean(firstDocId));
 
       const { cancerIndex, tumorIndex } = resolveCancerTumorIndex(
         nextSelection.cancerId,
@@ -625,7 +636,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   if (isLoading) {
     return (
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", py: 4 }}>
-        <CircularProgress size={24} />
+        <CircularProgress size={24} aria-label="Loading patient" />
         <Typography variant="body2" color="text.secondary" sx={{ ml: 1.5 }}>
           Loading {patientId}…
         </Typography>
@@ -899,7 +910,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           display: "flex",
           flexDirection: "column",
           alignItems: "stretch",
-          gap: 1,
+          gap: 0.75,
           flex: "0 0 auto",
           mx: 1.5,
           mb: 1,
@@ -967,6 +978,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
               birthDate={patientData.demographics?.birthDate}
               selectedConceptIds={timelineConceptIds}
               onSelectConceptIds={setTimelineConceptIds}
+              onOpenReport={() => setIsDocumentDrawerOpen(true)}
             />
           </Box>
         ) : null}
@@ -1000,7 +1012,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
       </Box>
 
       <PatientDocumentDrawer
-        open={Boolean(selectedDocument)}
+        open={isDocumentDrawerOpen && Boolean(selectedDocument)}
         document={selectedDocument}
         concepts={patientData.concepts}
         factSelection={activeSelection}

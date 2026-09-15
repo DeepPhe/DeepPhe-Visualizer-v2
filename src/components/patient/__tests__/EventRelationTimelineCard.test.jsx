@@ -52,6 +52,7 @@ function renderComponent(element) {
 
   return {
     container,
+    rerender: (nextElement) => act(() => root.render(nextElement)),
     unmount: () => {
       act(() => {
         root.unmount();
@@ -161,6 +162,8 @@ describe("EventRelationTimelineCard", () => {
       });
 
       const scopeSelect = container.querySelector("[data-testid='event-relation-scope']");
+      const originalX = container.querySelector("[data-concept-ids='c-treatment'] .relation-icon")
+        .getAttribute("x1");
 
       await act(async () => {
         setNativeSelectValue(scopeSelect, "current-report");
@@ -169,6 +172,61 @@ describe("EventRelationTimelineCard", () => {
       expect(container.querySelectorAll("[data-event-relation-id]")).toHaveLength(1);
       expect(container.textContent).toContain("1 of 3 relations");
       expect(container.querySelector("[data-concept-ids='c-treatment']")).not.toBeNull();
+      expect(container.querySelector("[data-concept-ids='c-treatment'] .relation-icon")
+        .getAttribute("x1")).toBe(originalX);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("can recover from a report with no events and still zoom", async () => {
+    mockTimelineFetch();
+    const { container, unmount } = renderComponent(
+      <EventRelationTimelineCard
+        patientId="fake_patient1"
+        concepts={CONCEPTS}
+        selectedDocument={{ id: "empty-report", mentions: [] }}
+      />
+    );
+    try {
+      await waitFor(() => expect(container.querySelectorAll("[data-event-relation-id]")).toHaveLength(3));
+      act(() => setNativeSelectValue(container.querySelector("select"), "current-report"));
+      expect(container.textContent).toContain("No event relations match the current report.");
+      expect(container.querySelector("select")).not.toBeNull();
+      act(() => setNativeSelectValue(container.querySelector("select"), "all"));
+      expect(container.querySelectorAll("[data-event-relation-id]")).toHaveLength(3);
+      expect(container.querySelector(".brush .overlay")).not.toBeNull();
+      const markX = () => container.querySelector("[data-concept-ids='c-treatment'] .relation-icon").getAttribute("x1");
+      const beforeZoom = markX();
+      act(() => container.querySelector(".zoom_ER").dispatchEvent(
+        new WheelEvent("wheel", { deltaY: -200, clientX: 300, bubbles: true, cancelable: true })
+      ));
+      expect(markX()).not.toBe(beforeZoom);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("preserves zoom and restores interactions after reopening the panel", async () => {
+    mockTimelineFetch();
+    const props = { patientId: "fake_patient1", concepts: CONCEPTS };
+    const { container, rerender, unmount } = renderComponent(<EventRelationTimelineCard {...props} />);
+    try {
+      await waitFor(() => expect(container.querySelectorAll("[data-event-relation-id]")).toHaveLength(3));
+      const zoom = () => act(() => container.querySelector(".zoom_ER").dispatchEvent(
+        new WheelEvent("wheel", { deltaY: -200, clientX: 300, bubbles: true, cancelable: true })
+      ));
+      const markX = () => container.querySelector("[data-concept-ids='c-treatment'] .relation-icon").getAttribute("x1");
+      zoom();
+      const zoomedX = markX();
+      const brushWidth = container.querySelector(".brush .selection").getAttribute("width");
+      rerender(<EventRelationTimelineCard {...props} expanded={false} />);
+      rerender(<EventRelationTimelineCard {...props} expanded />);
+      expect(markX()).toBe(zoomedX);
+      expect(container.querySelector(".brush .overlay")).not.toBeNull();
+      expect(container.querySelector(".brush .selection").getAttribute("width")).toBe(brushWidth);
+      zoom();
+      expect(markX()).not.toBe(zoomedX);
     } finally {
       unmount();
     }

@@ -70,6 +70,9 @@ Select a mark to select every concept it covers. The matching concepts are highl
 
 Selecting a concept in the Document Viewer works the other way too, and clearing it there clears it here. Select the mark again to deselect it.
 
+Closing the document drawer keeps the current report selected. Use **Open report**
+above the Event Timeline to reopen it and inspect the selected concepts.
+
 Marks are reachable with the keyboard: **Tab** to a mark and press **Enter** or **Space** to select it.
 
 ## Show only the current report
@@ -80,6 +83,9 @@ The **Showing** control above the chart filters the timeline:
 - **Filtered Patient Events** — only relations whose concepts appear in the report currently open in the Document Viewer.
 
 The count beside the panel title tells you how many relations are in view.
+The current report name appears above the chart. Filtering preserves the date
+range so that the remaining events stay in the same positions. If a report has
+no matching events, the Showing control remains available to return to all events.
 
 :::note
 

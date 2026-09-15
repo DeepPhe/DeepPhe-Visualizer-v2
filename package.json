@@ -34,6 +34,7 @@
     "build": "craco build",
     "test": "craco test",
     "mock-api": "node mock-api/server.js",
+    "demo": "cross-env PORT=3002 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build deepphe-visualizer-v2",
     "eject": "react-scripts eject",
     "lint": "eslint src/",
     "lint:patient-ids": "node scripts/check-no-patient-ids.mjs",

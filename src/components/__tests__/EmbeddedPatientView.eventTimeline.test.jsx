@@ -127,6 +127,7 @@ describe("EmbeddedPatientView event relation timeline integration", () => {
     );
 
     try {
+      await act(async () => { await Promise.resolve(); });
       await waitFor(() => {
         expect(container.querySelector('[data-testid="patient-event-relation-panel"]')).not.toBeNull();
       });
@@ -140,10 +141,11 @@ describe("EmbeddedPatientView event relation timeline integration", () => {
     }
   });
 
-  it("does not render the event relation panel for other patients", () => {
+  it("does not render the event relation panel for other patients", async () => {
     mockPatientHook("patient-2");
     const { container, unmount } = renderComponent(<EmbeddedPatientView patientId="patient-2" />);
 
+    await act(async () => { await Promise.resolve(); });
     expect(container.querySelector('[data-testid="patient-event-relation-panel"]')).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
     unmount();

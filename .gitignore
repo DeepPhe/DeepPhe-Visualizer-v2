@@ -51,6 +51,7 @@ src/example.json
 
 # local visual QA artifacts
 /screenshots/
+.playwright-cli/
 
 # generated documentation site
 site/

@@ -9,6 +9,7 @@ import {
   getEventRelationGlyph,
   packSpansIntoLanes,
 } from "../eventRelationTimelineLayout";
+import { zoomIdentity } from "d3-zoom";
 import {
   LANE,
   MARGINS,
@@ -205,6 +206,31 @@ describe("event relation timeline layout", () => {
     expect(axis.interiors[0].date.toISOString()).toBe("2009-04-01T00:00:00.000Z");
     expect(axis.interiors.every((i) => i.x > 0 && i.x <= layout.dimensions.svgWidth)).toBe(
       true
+    );
+  });
+
+  it("hides age ticks that pan outside the visible plot range", () => {
+    const layout = computeEventRelationTimelineLayout({
+      containerWidth: 1040,
+      spans: [span("a", "Finding", "2009-01-28", "2011-03-01")],
+    });
+    const zoomedX = zoomIdentity
+      .translate(-layout.dimensions.svgWidth * 0.35, 0)
+      .scale(1.8)
+      .rescaleX(layout.mainX);
+    const axis = computeEventRelationAgeAxis(
+      layout.domain,
+      zoomedX,
+      new Date(Date.UTC(1960, 3, 1))
+    );
+    const allTicks = [...axis.encounters, ...axis.interiors];
+
+    expect(axis.available).toBe(true);
+    expect(allTicks.every((tick) => tick.x >= 0 && tick.x <= layout.dimensions.svgWidth)).toBe(
+      true
+    );
+    expect(allTicks.map((tick) => tick.age)).not.toEqual(
+      expect.arrayContaining([48, 49])
     );
   });
 

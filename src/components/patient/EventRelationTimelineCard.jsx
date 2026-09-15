@@ -10,6 +10,7 @@ import PropTypes from "prop-types";
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -55,6 +56,7 @@ import {
   buildEventRelationHeatmap,
   buildEventRelationTooltip,
   computeEventRelationAgeAxis,
+  computeEventRelationDomain,
   computeEventRelationTimelineLayout,
   getEventRelationGlyph,
 } from "../../utils/patientView/eventRelationTimelineLayout";
@@ -343,6 +345,7 @@ export default function EventRelationTimelineCard({
   birthDate = "",
   selectedConceptIds = undefined,
   onSelectConceptIds = undefined,
+  onOpenReport = undefined,
 }) {
   const shouldRender = shouldShowEventRelationTimeline(patientId);
   const generatedId = useId().replace(/:/g, "");
@@ -497,15 +500,23 @@ export default function EventRelationTimelineCard({
     [baseModel, effectiveViewMode]
   );
 
+  // Keep dates in the same positions when the report filter changes.
+  const patientDomain = useMemo(
+    () => computeEventRelationDomain(baseModel?.spans || []),
+    [baseModel]
+  );
+  const hasVisibleChart = expanded && !isLoading && Boolean(visibleModel?.spans.length);
+
   const layout = useMemo(
     () =>
       computeEventRelationTimelineLayout({
         containerWidth,
         spans: visibleModel?.spans || [],
+        domain: patientDomain,
         collapsedGroups,
         showAgeAxis: Boolean(resolvedBirthDate),
       }),
-    [containerWidth, visibleModel, collapsedGroups, resolvedBirthDate]
+    [containerWidth, visibleModel, patientDomain, collapsedGroups, resolvedBirthDate]
   );
 
   const { dimensions, mainX, domain, groups, uniqueDates } = layout;
@@ -521,7 +532,7 @@ export default function EventRelationTimelineCard({
   // --- zoom ------------------------------------------------------------
   useEffect(() => {
     const node = zoomRectRef.current;
-    if (!node || dimensions.svgWidth <= 0) {
+    if (!hasVisibleChart || !node || dimensions.svgWidth <= 0) {
       return undefined;
     }
 
@@ -580,12 +591,12 @@ export default function EventRelationTimelineCard({
       select(node).on(".zoom", null);
       zoomBehaviorRef.current = null;
     };
-  }, [dimensions.svgWidth, dimensions.totalContentHeight]);
+  }, [hasVisibleChart, dimensions.svgWidth, dimensions.totalContentHeight]);
 
   // --- overview brush --------------------------------------------------
   useEffect(() => {
     const node = brushGroupRef.current;
-    if (!node || dimensions.svgWidth <= 0) {
+    if (!hasVisibleChart || !node || dimensions.svgWidth <= 0) {
       return undefined;
     }
 
@@ -629,7 +640,10 @@ export default function EventRelationTimelineCard({
     isSyncingRef.current = true;
     try {
       selection.call(behavior);
-      selection.call(behavior.move, [0, dimensions.svgWidth]);
+      selection.call(
+        behavior.move,
+        [0, dimensions.svgWidth].map((x) => zoomTransformRef.current.invertX(x))
+      );
     } finally {
       isSyncingRef.current = false;
     }
@@ -638,7 +652,7 @@ export default function EventRelationTimelineCard({
       selection.on(".brush", null);
       brushBehaviorRef.current = null;
     };
-  }, [dimensions.svgWidth]);
+  }, [hasVisibleChart, dimensions.svgWidth]);
 
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
@@ -740,8 +754,8 @@ export default function EventRelationTimelineCard({
             </Typography>
 
             {isLoading ? (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={18} />
+              <Stack direction="row" spacing={1} alignItems="center" role="status" aria-live="polite">
+                <CircularProgress size={18} aria-label="Loading event relations" />
                 <Typography variant="body2" color="text.secondary">
                   Loading event relations...
                 </Typography>
@@ -769,8 +783,52 @@ export default function EventRelationTimelineCard({
                   </Alert>
                 ) : null}
 
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  justifyContent="flex-end"
+                  sx={{ flexWrap: "wrap", gap: 1 }}
+                >
+                  <Typography component="label" htmlFor={`${generatedId}-scope`} variant="caption">
+                    Showing:
+                  </Typography>
+                  <Select
+                    native
+                    id={`${generatedId}-scope`}
+                    size="small"
+                    value={effectiveViewMode}
+                    onChange={(event) => setViewMode(event.target.value)}
+                    sx={{ fontSize: 12, height: 26, minWidth: 180, bgcolor: "background.paper" }}
+                    inputProps={{
+                      "aria-label": "Event relation timeline scope",
+                      "data-testid": "event-relation-scope",
+                    }}
+                  >
+                    <option value={EVENT_RELATION_TIMELINE_SCOPE_ALL}>
+                      All Patient Events
+                    </option>
+                    <option
+                      value={EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT}
+                      disabled={!canFilterToCurrentReport}
+                    >
+                      Filtered Patient Events
+                    </option>
+                  </Select>
+                  {selectedDocument && onOpenReport ? (
+                    <Button size="small" onClick={onOpenReport}>
+                      Open report
+                    </Button>
+                  ) : null}
+                </Stack>
+                {selectedDocument ? (
+                  <Typography variant="caption" color="text.secondary">
+                    Current report: {selectedDocument.name || selectedDocument.id}
+                  </Typography>
+                ) : null}
+
                 {visibleSpans.length === 0 ? (
-                  <Alert severity="info">
+                  <Alert severity="info" role="status">
                     {effectiveViewMode === EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT
                       ? "No event relations match the current report."
                       : "No matched event relations are available to display."}
@@ -816,41 +874,6 @@ export default function EventRelationTimelineCard({
                       />
                     </Box>
 
-                    {/* ---- "Showing:" scope select (alpha: legend dropdown) ---- */}
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                      justifyContent="flex-end"
-                      sx={{ mt: -3.5, mb: 1, pr: 1, position: "relative", zIndex: 1 }}
-                    >
-                      <Typography component="label" htmlFor={`${generatedId}-scope`} variant="caption">
-                        Showing:
-                      </Typography>
-                      <Select
-                        native
-                        id={`${generatedId}-scope`}
-                        size="small"
-                        value={effectiveViewMode}
-                        onChange={(event) => setViewMode(event.target.value)}
-                        sx={{ fontSize: 12, height: 26, minWidth: 180, bgcolor: "background.paper" }}
-                        inputProps={{
-                          "aria-label": "Event relation timeline scope",
-                          "data-testid": "event-relation-scope",
-                        }}
-                      >
-                        <option value={EVENT_RELATION_TIMELINE_SCOPE_ALL}>
-                          All Patient Events
-                        </option>
-                        <option
-                          value={EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT}
-                          disabled={!canFilterToCurrentReport}
-                        >
-                          Filtered Patient Events
-                        </option>
-                      </Select>
-                    </Stack>
-
                     {/* ---- main timeline svg ---- */}
                     <Box
                       component="svg"
@@ -870,6 +893,14 @@ export default function EventRelationTimelineCard({
                             y={-PADDING.top}
                             width={dimensions.svgWidth}
                             height={dimensions.totalContentHeight + GAPS.legendToMain + PADDING.top}
+                          />
+                        </clipPath>
+                        <clipPath id={`${generatedId}-age_axis_clip`} clipPathUnits="userSpaceOnUse">
+                          <rect
+                            x={-16}
+                            y={-8}
+                            width={dimensions.svgWidth + 32}
+                            height={40}
                           />
                         </clipPath>
                       </defs>
@@ -1059,55 +1090,57 @@ export default function EventRelationTimelineCard({
                           >
                             Patient Age
                           </text>
-                          {ageAxis.encounters.map((encounter, index) => (
-                            <g key={`age-edge:${index}`}>
-                              <text
-                                className="encounter_age"
-                                x={encounter.x}
-                                y={AGE_AREA.height / 2}
-                                dy=".5ex"
-                                textAnchor="middle"
-                                fontSize={11}
-                                fill="#444"
-                              >
-                                {encounter.age}
-                              </text>
-                              <line
-                                className="encounter_age_guideline"
-                                x1={encounter.x}
-                                y1={12}
-                                x2={encounter.x}
-                                y2={25}
-                                stroke="red"
-                                strokeWidth={1}
-                                shapeRendering="crispEdges"
-                              />
-                            </g>
-                          ))}
-                          {ageAxis.interiors.map((interior) => (
-                            <g key={`age-birthday:${interior.age}`}>
-                              <line
-                                className="interior_age_guideline"
-                                x1={interior.x}
-                                y1={12}
-                                x2={interior.x}
-                                y2={25}
-                                stroke="red"
-                                strokeWidth={1}
-                                shapeRendering="crispEdges"
-                              />
-                              <text
-                                className="years_since_label"
-                                x={interior.x}
-                                y={AGE_AREA.height / 2}
-                                textAnchor="middle"
-                                fontSize={11}
-                                fill="#444"
-                              >
-                                {interior.age}
-                              </text>
-                            </g>
-                          ))}
+                          <g clipPath={`url(#${generatedId}-age_axis_clip)`}>
+                            {ageAxis.encounters.map((encounter, index) => (
+                              <g key={`age-edge:${index}`}>
+                                <text
+                                  className="encounter_age"
+                                  x={encounter.x}
+                                  y={AGE_AREA.height / 2}
+                                  dy=".5ex"
+                                  textAnchor="middle"
+                                  fontSize={11}
+                                  fill="#444"
+                                >
+                                  {encounter.age}
+                                </text>
+                                <line
+                                  className="encounter_age_guideline"
+                                  x1={encounter.x}
+                                  y1={12}
+                                  x2={encounter.x}
+                                  y2={25}
+                                  stroke="red"
+                                  strokeWidth={1}
+                                  shapeRendering="crispEdges"
+                                />
+                              </g>
+                            ))}
+                            {ageAxis.interiors.map((interior) => (
+                              <g key={`age-birthday:${interior.age}`}>
+                                <line
+                                  className="interior_age_guideline"
+                                  x1={interior.x}
+                                  y1={12}
+                                  x2={interior.x}
+                                  y2={25}
+                                  stroke="red"
+                                  strokeWidth={1}
+                                  shapeRendering="crispEdges"
+                                />
+                                <text
+                                  className="years_since_label"
+                                  x={interior.x}
+                                  y={AGE_AREA.height / 2}
+                                  textAnchor="middle"
+                                  fontSize={11}
+                                  fill="#444"
+                                >
+                                  {interior.age}
+                                </text>
+                              </g>
+                            ))}
+                          </g>
                         </g>
                       ) : null}
 
@@ -1169,4 +1202,5 @@ EventRelationTimelineCard.propTypes = {
   birthDate: PropTypes.string,
   selectedConceptIds: PropTypes.arrayOf(PropTypes.string),
   onSelectConceptIds: PropTypes.func,
+  onOpenReport: PropTypes.func,
 };

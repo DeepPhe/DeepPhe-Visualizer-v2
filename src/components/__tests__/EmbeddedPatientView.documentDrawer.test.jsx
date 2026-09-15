@@ -312,7 +312,16 @@ describe("EmbeddedPatientView document drawer layout", () => {
         expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).toBeNull();
         expect(
           container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
-        ).toContain("selected:none");
+        ).toContain("selected:doc-3");
+      });
+
+      // The same report can be reopened after dismissing its drawer.
+      act(() => {
+        container.querySelector('[data-testid="mock-cancer-card"] button')
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await waitFor(() => {
+        expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
       });
     } finally {
       unmount();

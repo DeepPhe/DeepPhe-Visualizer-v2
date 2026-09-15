@@ -98,6 +98,7 @@ export function computeEventRelationDomain(spans = []) {
 export function computeEventRelationTimelineLayout({
   containerWidth = 1040,
   spans = [],
+  domain: suppliedDomain,
   collapsedGroups = new Set(),
   showAgeAxis = true,
 } = {}) {
@@ -106,7 +107,7 @@ export function computeEventRelationTimelineLayout({
     240,
     measuredWidth - MARGINS.left - PLOT_RIGHT_GUTTER
   );
-  const domain = computeEventRelationDomain(spans);
+  const domain = suppliedDomain || computeEventRelationDomain(spans);
   const mainX = scaleTime()
     .domain([domain.startDate, domain.endDate])
     .range([0, svgWidth]);
@@ -353,11 +354,18 @@ export function computeEventRelationAgeAxis(domain, xScale, birthDate = null) {
     return empty;
   }
 
-  const encounters = [domain.startDate, domain.endDate].map((date) => ({
-    date,
-    age: getAgeOnDate(birthDate, date),
-    x: xScale(date),
-  }));
+  const range = typeof xScale.range === "function" ? xScale.range() : [0, 0];
+  const rangeStart = Math.min(...range);
+  const rangeEnd = Math.max(...range);
+  const isVisibleTick = ({ x }) => x >= rangeStart && x <= rangeEnd;
+
+  const encounters = [domain.startDate, domain.endDate]
+    .map((date) => ({
+      date,
+      age: getAgeOnDate(birthDate, date),
+      x: xScale(date),
+    }))
+    .filter(isVisibleTick);
 
   // Each birthday strictly inside the domain, labelled with the age reached.
   const interiors = [];
@@ -371,7 +379,10 @@ export function computeEventRelationAgeAxis(domain, xScale, birthDate = null) {
     );
 
     if (birthday > domain.startDate && birthday < domain.endDate) {
-      interiors.push({ date: birthday, age, x: xScale(birthday) });
+      const tick = { date: birthday, age, x: xScale(birthday) };
+      if (isVisibleTick(tick)) {
+        interiors.push(tick);
+      }
     }
   }
 
