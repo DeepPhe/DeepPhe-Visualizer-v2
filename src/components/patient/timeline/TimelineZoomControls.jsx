@@ -1,11 +1,14 @@
 import React from "react";
 import PropTypes from "prop-types";
 import { IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import KeyboardArrowLeftIcon from "@mui/icons-material/KeyboardArrowLeft";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
+import RemoveIcon from "@mui/icons-material/Remove";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import usePatientViewPresentation from "../../../hooks/usePatientViewPresentation";
 
 const BUTTON_SX = { width: 24, height: 24, p: 0.25 };
 
@@ -50,6 +53,12 @@ export default function TimelineZoomControls({
   disabled = false,
   labels,
 }) {
+  // Two magnifiers that differ only by the +/- inside them are a known
+  // recognition failure; the improved view uses plain + and - instead.
+  const { isImproved } = usePatientViewPresentation();
+  const ZoomOutGlyph = isImproved ? RemoveIcon : ZoomOutIcon;
+  const ZoomInGlyph = isImproved ? AddIcon : ZoomInIcon;
+
   return (
     <Stack direction="row" spacing={0.15} alignItems="center" role="group" aria-label={labels.group}>
       <Typography
@@ -73,7 +82,7 @@ export default function TimelineZoomControls({
         onClick={onZoomOut}
         disabled={disabled || !canZoomOut}
       >
-        <ZoomOutIcon fontSize="small" />
+        <ZoomOutGlyph fontSize="small" />
       </ControlButton>
       <ControlButton
         title="Zoom in (+)"
@@ -81,7 +90,7 @@ export default function TimelineZoomControls({
         onClick={onZoomIn}
         disabled={disabled || !canZoomIn}
       >
-        <ZoomInIcon fontSize="small" />
+        <ZoomInGlyph fontSize="small" />
       </ControlButton>
       <ControlButton
         title="Pan later (→)"

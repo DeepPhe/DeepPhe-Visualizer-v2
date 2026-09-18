@@ -20,6 +20,7 @@ import PatientDocumentsCard from "../components/patient/PatientDocumentsCard";
 import PatientDocumentDrawer from "../components/patient/PatientDocumentDrawer";
 import EventRelationTimelineCard from "../components/patient/EventRelationTimelineCard";
 import TimelineLinkProvider from "../components/patient/timeline/TimelineLinkProvider";
+import PatientViewPresentationToggle from "../components/patient/PatientViewPresentationToggle";
 import PatientSummaryCard from "../components/patient/PatientSummaryCard";
 import {
   loadPatientFilterSummary,
@@ -32,6 +33,7 @@ import { findDocumentIdsForConceptIds } from "../utils/patientView/documentMenti
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 import { resolveSummarySelection } from "../utils/patientView/summarySelection";
 import { getThemeByKey } from "../themes";
+import usePatientViewPresentation from "../hooks/usePatientViewPresentation";
 
 const DEFAULT_THEME_KEY = "govuk";
 const DETAIL_SECTION_DEFINITIONS = [
@@ -168,6 +170,10 @@ function getPatientIdFromSearchParams(searchParams) {
 
 export default function PatientView() {
   const [searchParams] = useSearchParams();
+  // One containment level in the improved view: the panels' own paper surface
+  // and the spacing between them, instead of a border around a bordered card.
+  const { isImproved } = usePatientViewPresentation();
+  const panelBorderWidth = isImproved ? 0 : 1;
   const [patientIdInput, setPatientIdInput] = useState("");
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
@@ -614,7 +620,10 @@ export default function PatientView() {
                 </Typography>
               </Stack>
 
-              {isLoading ? <CircularProgress size={20} aria-label="Loading patient" /> : null}
+              <Stack direction="row" spacing={1.25} alignItems="center">
+                <PatientViewPresentationToggle />
+                {isLoading ? <CircularProgress size={20} aria-label="Loading patient" /> : null}
+              </Stack>
             </Stack>
           </Paper>
 
@@ -672,7 +681,7 @@ export default function PatientView() {
                   sx={{
                     minWidth: 0,
                     minHeight: 0,
-                    border: 1,
+                    border: panelBorderWidth,
                     borderColor: "divider",
                     borderRadius: 1,
                     overflow: "hidden",
@@ -695,7 +704,7 @@ export default function PatientView() {
                   sx={{
                     minWidth: 0,
                     minHeight: 0,
-                    border: 1,
+                    border: panelBorderWidth,
                     borderColor: "divider",
                     borderRadius: 1,
                     overflow: "visible",

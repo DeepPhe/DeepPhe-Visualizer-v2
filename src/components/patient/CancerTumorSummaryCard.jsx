@@ -12,6 +12,9 @@ import {
   Typography,
 } from "@mui/material";
 import { toDisplayName } from "../../utils/displayNames";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
+import CancerComparisonMatrix from "./CancerComparisonMatrix";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 
 const SUMMARY_CATEGORY_PRIORITY = [
@@ -279,6 +282,9 @@ export default function CancerTumorSummaryCard({
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
   const normalizedCancers = Array.isArray(cancers) ? cancers : [];
+  // The improved view compares the cancers in one matrix; the alpha view keeps
+  // the per-cancer cards.
+  const { isImproved } = usePatientViewPresentation();
 
   return (
     <Card
@@ -303,7 +309,7 @@ export default function CancerTumorSummaryCard({
         }}
         titleTypographyProps={{
           variant: "subtitle1",
-          sx: { fontWeight: 800, fontSize: "0.95rem" },
+          sx: { fontWeight: 800, fontSize: "0.95rem", ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}) },
         }}
         action={
           <Stack direction="row" spacing={0.5} alignItems="center">
@@ -357,6 +363,12 @@ export default function CancerTumorSummaryCard({
           <Typography variant="body2" color="text.secondary">
             No cancer summary data available for this patient.
           </Typography>
+        ) : isImproved ? (
+          <CancerComparisonMatrix
+            cancers={normalizedCancers}
+            activeFactId={activeFactId}
+            onFactSelect={onFactSelect}
+          />
         ) : (
           /* Cancer records sit side by side and reflow to fewer columns as the
              panel narrows; stacked full-width rows left most of the row empty. */

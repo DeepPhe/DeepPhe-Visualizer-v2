@@ -1,5 +1,7 @@
 import React from "react";
 import PropTypes from "prop-types";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
 import {
   Box,
   Card,
@@ -7,7 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 
-function DemographicItem({ label, value = "", capitalize = false }) {
+function DemographicItem({ label, value = "", capitalize = false, typeSteps = false }) {
   return (
     <Box
       sx={{
@@ -21,7 +23,12 @@ function DemographicItem({ label, value = "", capitalize = false }) {
         component="span"
         variant="caption"
         color="text.secondary"
-        sx={{ letterSpacing: 0.2, whiteSpace: "nowrap", flex: "0 0 auto" }}
+        sx={{
+          letterSpacing: 0.2,
+          whiteSpace: "nowrap",
+          flex: "0 0 auto",
+          ...(typeSteps ? PATIENT_VIEW_TYPE.fieldLabel : {}),
+        }}
       >
         {label}
       </Typography>
@@ -31,6 +38,7 @@ function DemographicItem({ label, value = "", capitalize = false }) {
         sx={{
           fontWeight: 600,
           lineHeight: 1.12,
+          ...(typeSteps ? PATIENT_VIEW_TYPE.value : {}),
           overflowWrap: "anywhere",
           minWidth: 0,
           ...(capitalize ? { textTransform: "capitalize" } : {}),
@@ -44,6 +52,7 @@ function DemographicItem({ label, value = "", capitalize = false }) {
 
 DemographicItem.propTypes = {
   label: PropTypes.string.isRequired,
+  typeSteps: PropTypes.bool,
   value: PropTypes.string,
   capitalize: PropTypes.bool,
 };
@@ -57,6 +66,7 @@ function getRaceEthnicity(demographics = {}) {
 
 export default function PatientDemographicsCard({ patientData = null }) {
   const demographics = patientData?.demographics || {};
+  const { isImproved } = usePatientViewPresentation();
 
   return (
     <Card
@@ -84,6 +94,7 @@ export default function PatientDemographicsCard({ patientData = null }) {
           component="h2"
           sx={{
             fontWeight: 800,
+            ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}),
             fontSize: "0.95rem",
             letterSpacing: 0,
             whiteSpace: "nowrap",
@@ -101,16 +112,17 @@ export default function PatientDemographicsCard({ patientData = null }) {
             alignItems: "center",
           }}
         >
-          <DemographicItem label="Patient ID" value={patientData?.patientId} />
-          <DemographicItem label="Gender" value={demographics?.gender} capitalize />
+          <DemographicItem typeSteps={isImproved} label="Patient ID" value={patientData?.patientId} />
+          <DemographicItem typeSteps={isImproved} label="Gender" value={demographics?.gender} capitalize />
           <DemographicItem
+            typeSteps={isImproved}
             label="Race/Ethnicity"
             value={getRaceEthnicity(demographics)}
             capitalize
           />
-          <DemographicItem label="Birth Date" value={demographics?.birthDate} />
-          <DemographicItem label="First Encounter" value={demographics?.firstEncounterDate} />
-          <DemographicItem label="Last Encounter" value={demographics?.lastEncounterDate} />
+          <DemographicItem typeSteps={isImproved} label="Birth Date" value={demographics?.birthDate} />
+          <DemographicItem typeSteps={isImproved} label="First Encounter" value={demographics?.firstEncounterDate} />
+          <DemographicItem typeSteps={isImproved} label="Last Encounter" value={demographics?.lastEncounterDate} />
         </Box>
       </CardContent>
     </Card>

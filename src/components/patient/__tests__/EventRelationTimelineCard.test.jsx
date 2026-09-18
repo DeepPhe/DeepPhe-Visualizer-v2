@@ -10,6 +10,8 @@ import { THEME_OPTIONS, getThemeByKey } from "../../../themes";
 import { WCAG_AA_TEXT_CONTRAST, WCAG_UI_CONTRAST } from "../../../utils/colorContrast";
 import { resetStaticEventRelationTimelineCacheForTests } from "../../../clients/eventRelationTimeline";
 import { TIMELINE_PLOT_INSET } from "../../../constants/timelineFrame";
+import PatientViewPresentationProvider from "../PatientViewPresentationProvider";
+import PatientViewPresentationToggle from "../PatientViewPresentationToggle";
 
 // Composited panel background the timeline SVG sits on, per theme (the vapor
 // paper is a translucent white over its near-black page).
@@ -122,6 +124,10 @@ function mockTimelineFetch(tsvText = TEST_TSV) {
 }
 
 describe("EventRelationTimelineCard", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   afterEach(() => {
     resetStaticEventRelationTimelineCacheForTests();
     jest.clearAllMocks();
@@ -155,7 +161,7 @@ describe("EventRelationTimelineCard", () => {
       // Group labels count merged spans, in the alpha's "Group (n):" form.
       expect(container.textContent).toContain("Finding (2):");
       expect(container.textContent).toContain("Treatment (1):");
-      expect(container.textContent).toContain("3 spans from 3 relations");
+      expect(container.textContent).toContain("3 relations drawn as 3 spans");
       // Alpha colouring: green marks, red reserved for negation.
       const negatedMark = container.querySelector(
         '[data-negated="true"] .relation-icon'
@@ -564,6 +570,58 @@ describe("EventRelationTimelineCard", () => {
         WCAG_UI_CONTRAST
       );
     });
+  });
+
+  it("reads the improved way by default, and the alpha way when switched", async () => {
+    mockTimelineFetch();
+    const { container, unmount } = renderComponent(
+      <PatientViewPresentationProvider>
+        <PatientViewPresentationToggle />
+        <EventRelationTimelineCard patientId="fake_patient1" concepts={CONCEPTS} />
+      </PatientViewPresentationProvider>
+    );
+
+    try {
+      await waitFor(() => expect(container.querySelectorAll("[data-event-relation-id]")).toHaveLength(3));
+
+      // Improved: banded lane groups, a non-color cue for negation and a key
+      // for it, and a status line that explains the span/relation counts.
+      expect(container.querySelectorAll("[data-testid='event-timeline-lane-stripe']").length).toBeGreaterThan(0);
+      expect(
+        container.querySelector('[data-negated="true"] .relation-icon').getAttribute("stroke-dasharray")
+      ).toBe("7 4");
+      expect(
+        container.querySelector('[data-negated="false"] .relation-icon').getAttribute("stroke-dasharray")
+      ).toBeNull();
+      expect(container.textContent).toContain("Negated");
+      expect(container.textContent).toContain("relations drawn as");
+      expect(container.textContent).toContain("Showing the full range:");
+      // Zoom in/out read as + and -, not two near-identical magnifiers.
+      expect(container.querySelector('button[aria-label="Zoom in event timeline"] svg')
+        .getAttribute("data-testid")).toBe("AddIcon");
+
+      // Switching to Alpha restores the ported reading.
+      act(() => {
+        container
+          .querySelector("[data-testid='patient-view-presentation-alpha']")
+          .click();
+      });
+
+      expect(container.querySelectorAll("[data-testid='event-timeline-lane-stripe']")).toHaveLength(0);
+      expect(
+        container.querySelector('[data-negated="true"] .relation-icon').getAttribute("stroke-dasharray")
+      ).toBeNull();
+      expect(container.textContent).toContain("3 spans from 3 relations");
+      expect(container.textContent).not.toContain("relations drawn as");
+      expect(container.querySelector('button[aria-label="Zoom in event timeline"] svg')
+        .getAttribute("data-testid")).toBe("ZoomInIcon");
+      // Both readings keep the negation in text, for screen readers.
+      expect(
+        container.querySelector('[data-negated="true"]').getAttribute("aria-label")
+      ).toContain("Negated.");
+    } finally {
+      unmount();
+    }
   });
 
   it("does not fetch or render for non-target patients", () => {

@@ -294,7 +294,10 @@ export function formatEventRelationDuration(startLabel, endLabel) {
 }
 
 /** Alpha tooltip text, including its "Name (xN)" duplicate collapsing. */
-export function buildEventRelationTooltip(span = {}, { includeDuration = true } = {}) {
+export function buildEventRelationTooltip(
+  span = {},
+  { includeDuration = true, formatDate = (value) => value } = {}
+) {
   const nameCounts = {};
   (span.conceptLabels || []).forEach((name) => {
     const key = name || "Unknown";
@@ -310,7 +313,9 @@ export function buildEventRelationTooltip(span = {}, { includeDuration = true } 
       ? `Duration: ${formatEventRelationDuration(span.start, span.end)}\n`
       : "";
 
-  return `${durationLine}${span.relation1}: ${span.start}\n${span.relation2}: ${span.end}\nConcept Name: ${conceptNamesDisplay}`;
+  return `${durationLine}${span.relation1}: ${formatDate(span.start)}\n${span.relation2}: ${formatDate(
+    span.end
+  )}\nConcept Name: ${conceptNamesDisplay}`;
 }
 
 /**

@@ -62,12 +62,15 @@ import {
 } from "../../utils/patientView/timelineChartLayout";
 import {
   describeViewportRange,
+  formatHandleDate,
   getMinimumWindowRatio,
   viewportToDateWindow,
 } from "../../utils/patientView/timelineViewport";
 import { clientXToSvgX } from "../../hooks/useTimelineViewport";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
 import useLinkedTimelineViewport from "../../hooks/useLinkedTimelineViewport";
 import { TIMELINE_CONTENT_PADDING_X, TIMELINE_PLOT_INSET } from "../../constants/timelineFrame";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 import TimelineAxis from "./timeline/TimelineAxis";
 import TimelineOverviewStrip from "./timeline/TimelineOverviewStrip";
@@ -75,6 +78,8 @@ import TimelineZoomControls from "./timeline/TimelineZoomControls";
 
 const DEFAULT_CONTAINER_WIDTH = 1040;
 const AXIS_FONT_SIZE = 10;
+// Dash pattern that marks a negated span without relying on its red color.
+const NEGATED_DASH_ARRAY = "7 4";
 
 const ZOOM_CONTROL_LABELS = {
   group: "Event timeline zoom controls",
@@ -130,6 +135,9 @@ export function getEventTimelineColors(theme) {
     // shared with the document timeline (getOverviewStripColors).
     axisText: textSecondary,
     axisLine: palette.text?.disabled || textSecondary,
+    // Banding behind alternate lane groups, so a mark reads against its own
+    // group rather than blending into the one below it.
+    laneStripe: alpha(textSecondary, isDark ? 0.1 : 0.06),
   };
 }
 
@@ -206,6 +214,44 @@ function RelationLegendItem({ relation }) {
 RelationLegendItem.propTypes = {
   relation: PropTypes.string.isRequired,
 };
+
+const NEGATED_LEGEND_TITLE = "Negated: the note records the concept's absence";
+
+/** Explains what red means, and carries the same dash the marks use. */
+function NegatedLegendItem() {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 0.75,
+        minWidth: 86,
+        fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+        fontSize: 14,
+      }}
+    >
+      <Box
+        component="svg"
+        role="img"
+        aria-label={NEGATED_LEGEND_TITLE}
+        width={18}
+        height={14}
+        viewBox="0 0 18 14"
+        sx={{ flex: "0 0 auto", overflow: "visible" }}
+      >
+        <title>{NEGATED_LEGEND_TITLE}</title>
+        <path
+          d="M 0 7 L 18 7"
+          stroke={NEGATED_RELATION_COLOR}
+          strokeWidth={3}
+          strokeDasharray={NEGATED_DASH_ARRAY}
+        />
+      </Box>
+      <Box component="span">Negated</Box>
+    </Box>
+  );
+}
 
 const visuallyHiddenSx = {
   position: "absolute",
@@ -320,15 +366,24 @@ function SpanMark({
   idPrefix,
   onToggle,
   selectedOutlineColor = SELECTED_OUTLINE_COLOR,
+  dashNegated = false,
+  formatDate = (value) => value,
 }) {
   const glyph = getEventRelationGlyph({ ...span, x1, x2 }, { expanded });
   const stroke = span.negated ? NEGATED_RELATION_COLOR : RELATION_COLOR;
+  // Red vs green is the alpha's only visual cue for negation, which fails for
+  // the most common color blindness. The improved view dashes negated marks so
+  // the distinction survives without color (WCAG 1.4.1).
+  const strokeDasharray = dashNegated && span.negated ? NEGATED_DASH_ARRAY : undefined;
   const isDimmed = hasActiveSelection && !isSelected;
   const strokeOpacity = isDimmed ? 0.3 : expanded ? 0.75 : 0.5;
-  const tooltip = buildEventRelationTooltip(span, { includeDuration: glyph.kind === "span" });
-  const label = `${span.conceptLabels.join(", ")}. ${span.laneGroup}. ${span.relation1} ${
+  const tooltip = buildEventRelationTooltip(span, {
+    includeDuration: glyph.kind === "span",
+    formatDate,
+  });
+  const label = `${span.conceptLabels.join(", ")}. ${span.laneGroup}. ${span.relation1} ${formatDate(
     span.start
-  }; ${span.relation2} ${span.end}.${span.negated ? " Negated." : ""}`;
+  )}; ${span.relation2} ${formatDate(span.end)}.${span.negated ? " Negated." : ""}`;
   const selectionClass = isSelected ? "selected" : isDimmed ? "unselected" : "";
 
   const handleKeyDown = (event) => {
@@ -380,6 +435,7 @@ function SpanMark({
           stroke={stroke}
           strokeWidth={4}
           strokeOpacity={strokeOpacity}
+          strokeDasharray={strokeDasharray}
         />
       </FocusableGroup>
     );
@@ -417,6 +473,7 @@ function SpanMark({
         stroke={stroke}
         strokeWidth={5}
         strokeOpacity={strokeOpacity}
+        strokeDasharray={strokeDasharray}
         markerStart={markerUrl(idPrefix, glyph.markerStart, isSelected)}
         markerEnd={markerUrl(idPrefix, glyph.markerEnd, isSelected)}
       />
@@ -437,6 +494,8 @@ SpanMark.propTypes = {
   idPrefix: PropTypes.string.isRequired,
   onToggle: PropTypes.func.isRequired,
   selectedOutlineColor: PropTypes.string,
+  dashNegated: PropTypes.bool,
+  formatDate: PropTypes.func,
 };
 
 export default function EventRelationTimelineCard({
@@ -456,6 +515,7 @@ export default function EventRelationTimelineCard({
   const shouldRender = shouldShowEventRelationTimeline(patientId);
   const theme = useTheme();
   const colors = useMemo(() => getEventTimelineColors(theme), [theme]);
+  const { isImproved } = usePatientViewPresentation();
   const generatedId = useId().replace(/:/g, "");
   const panelBodyId = collapsiblePanelId || `${generatedId}-event-relation-timeline-body`;
   const descriptionId = `${generatedId}-event-relation-description`;
@@ -684,6 +744,30 @@ export default function EventRelationTimelineCard({
 
   const overviewRows = useMemo(() => buildEventRelationOverviewRows(groups), [groups]);
 
+  // "Viewing <window> of <whole range>": the chart's axis and the strip's axis
+  // cover different spans, and saying so beats leaving readers to infer it.
+  const formatRange = (startDate, endDate) =>
+    `${formatHandleDate(startDate, { includeYear: true })} – ${formatHandleDate(endDate, {
+      includeYear: true,
+    })}`;
+  // One date format across the view: "Jan 23, 2010" everywhere a date is read,
+  // rather than ISO here and slashes there.
+  const formatSpanDate = useCallback(
+    (isoDate) => {
+      if (!isImproved) {
+        return isoDate;
+      }
+      const [year, month, day] = String(isoDate || "").split("-").map(Number);
+      return Number.isFinite(year)
+        ? formatHandleDate(new Date(year, (month || 1) - 1, day || 1), { includeYear: true })
+        : isoDate;
+    },
+    [isImproved]
+  );
+  const [visibleStartDate, visibleEndDate] = visibleX.domain();
+  const visibleRangeLabel = formatRange(visibleStartDate, visibleEndDate);
+  const fullRangeLabel = formatRange(domain.startDate, domain.endDate);
+
   const ageAxis = useMemo(
     () => computeEventRelationAgeAxis(domain, visibleX, resolvedBirthDate),
     [domain, visibleX, resolvedBirthDate]
@@ -736,6 +820,7 @@ export default function EventRelationTimelineCard({
 
   const cardError = loadError || modelState.error;
   const visibleSpans = visibleModel?.spans || [];
+  const hasNegatedSpan = visibleSpans.some((span) => span.negated);
   const presentRelations = visibleModel?.presentRelations || [];
   const relationChipLabel =
     effectiveViewMode === EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT
@@ -777,7 +862,10 @@ export default function EventRelationTimelineCard({
     >
       <CardHeader
         title={sectionLabel}
-        titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
+        titleTypographyProps={{
+          variant: "subtitle1",
+          sx: { fontWeight: 700, ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}) },
+        }}
         sx={{ py: 1, px: 1.5, "& .MuiCardHeader-action": { alignSelf: "center", m: 0 } }}
         action={
           <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
@@ -889,11 +977,14 @@ export default function EventRelationTimelineCard({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Event Occurrence:
+                          {isImproved
+                            ? "Event occurrence, relative to the date at that end:"
+                            : "Event Occurrence:"}
                         </Typography>
                         {presentRelations.map((relation) => (
                           <RelationLegendItem key={relation} relation={relation} />
                         ))}
+                        {isImproved && hasNegatedSpan ? <NegatedLegendItem /> : null}
                       </Stack>
 
                       <Stack
@@ -1160,6 +1251,18 @@ export default function EventRelationTimelineCard({
                                 data-group-key={group.key}
                                 transform={`translate(0, ${group.yOffset + LANE.GROUP_TOP_PADDING})`}
                               >
+                                {isImproved && groupIndex % 2 === 1 ? (
+                                  <rect
+                                    className="lane-stripe"
+                                    data-testid="event-timeline-lane-stripe"
+                                    x={0}
+                                    y={-LANE.GROUP_TOP_PADDING + 2}
+                                    width={dimensions.svgWidth}
+                                    height={group.height + LANE.GROUP_TOP_PADDING - 4}
+                                    fill={colors.laneStripe}
+                                    pointerEvents="none"
+                                  />
+                                ) : null}
                                 {!group.expanded ? (
                                   <g className="heatmap">
                                     {heatmap.map((bin, binIndex) => (
@@ -1205,6 +1308,8 @@ export default function EventRelationTimelineCard({
                                       idPrefix={generatedId}
                                       onToggle={handleSpanToggle}
                                       selectedOutlineColor={colors.selectedOutline}
+                                      dashNegated={isImproved}
+                                      formatDate={formatSpanDate}
                                     />
                                   </g>
                                 ))}
@@ -1338,9 +1443,17 @@ export default function EventRelationTimelineCard({
                       color="text.secondary"
                       sx={{ display: "block", mt: 0.5 }}
                     >
-                      {`${baseModel.patientId || patientId} | ${visibleSpans.length} spans from ${
-                        visibleModel?.matchedRowCount || 0
-                      } relations`}
+                      {isImproved
+                        ? `${baseModel.patientId || patientId} | ${
+                            isZoomed
+                              ? `Viewing ${visibleRangeLabel} of ${fullRangeLabel}`
+                              : `Showing the full range: ${fullRangeLabel}`
+                          } | ${
+                            visibleModel?.matchedRowCount || 0
+                          } relations drawn as ${visibleSpans.length} spans (relations sharing a lane and both dates merge into one)`
+                        : `${baseModel.patientId || patientId} | ${visibleSpans.length} spans from ${
+                            visibleModel?.matchedRowCount || 0
+                          } relations`}
                       {selectedSpanCount > 0 ? ` | ${selectedSpanCount} selected` : ""}
                     </Typography>
                       </>

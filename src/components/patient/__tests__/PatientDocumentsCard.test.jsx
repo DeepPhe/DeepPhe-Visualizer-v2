@@ -553,6 +553,33 @@ describe("PatientDocumentsCard", () => {
       unmount();
     });
 
+
+    it("names the visible range against the whole range, in the improved view only", () => {
+      const { container, unmount } = renderComponent(
+        <PatientDocumentsCard timelineData={buildLongTimelineData()} />
+      );
+      const caption = () => byTestId(container, "document-timeline-range-caption");
+
+      // At 100% there is no window to contrast with the whole range.
+      expect(caption().textContent).toMatch(
+        /^Showing the full range: [A-Z][a-z]{2} \d{1,2}, 2010 – [A-Z][a-z]{2} \d{1,2}, 2011$/
+      );
+
+      act(() => {
+        container
+          .querySelector('[aria-label="Zoom in timeline"]')
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      // Zoomed, it names the window against the whole range.
+      expect(caption().textContent).toMatch(
+        /^Viewing [A-Z][a-z]{2} \d{1,2}, 20\d{2} – [A-Z][a-z]{2} \d{1,2}, 20\d{2} of [A-Z][a-z]{2} \d{1,2}, 2010 – [A-Z][a-z]{2} \d{1,2}, 2011$/
+      );
+      const [visible, whole] = caption().textContent.replace("Viewing ", "").split(" of ");
+      expect(visible).not.toBe(whole);
+
+      unmount();
+    });
+
     it("announces the selected range once the reader stops changing it", () => {
       jest.useFakeTimers();
       const { container, unmount } = renderComponent(

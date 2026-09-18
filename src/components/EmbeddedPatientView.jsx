@@ -7,6 +7,7 @@ import PatientDocumentsCard from "./patient/PatientDocumentsCard";
 import PatientDocumentDrawer from "./patient/PatientDocumentDrawer";
 import EventRelationTimelineCard from "./patient/EventRelationTimelineCard";
 import TimelineLinkProvider from "./patient/timeline/TimelineLinkProvider";
+import PatientViewPresentationToggle from "./patient/PatientViewPresentationToggle";
 import PatientSummaryCard from "./patient/PatientSummaryCard";
 import { getInstances } from "../controllers/omap";
 import { loadPatientFilterSummary } from "../controllers/patient";
@@ -16,6 +17,7 @@ import { asRowArray, getValueFromRow } from "../utils/dataProcessing";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 import { findDocumentIdsForConceptIds } from "../utils/patientView/documentMentions";
 import { resolveSummarySelection } from "../utils/patientView/summarySelection";
+import usePatientViewPresentation from "../hooks/usePatientViewPresentation";
 
 /**
  * @typedef {Object} SelectionContext
@@ -224,6 +226,7 @@ async function loadPatientOmopDetails(patientId) {
 
 export default function EmbeddedPatientView({ patientId = "" }) {
   const theme = useTheme();
+  const { isImproved } = usePatientViewPresentation();
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
   const [factSelection, setFactSelection] = useState(null);
@@ -683,9 +686,12 @@ export default function EmbeddedPatientView({ patientId = "" }) {
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
-    border: 1,
+    // One containment level in the improved view: the panel's own surface and
+    // the gap to the next, rather than a border around a bordered card.
+    border: isImproved ? 0 : 1,
     borderColor: "divider",
     borderRadius: 1,
+    bgcolor: "background.paper",
   };
 
   return (
@@ -750,6 +756,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
               </Typography>
             </Box>
           ))}
+          <Box sx={{ ml: "auto" }}>
+            <PatientViewPresentationToggle dense />
+          </Box>
         </Box>
       ) : null}
 

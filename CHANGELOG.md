@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collapsible concept column inside the Document Viewer
 - Clickable **Patient Summary** findings that open their source note in the
   Document Viewer
+- A **View** control on the patient view switches between the **Improved**
+  presentation (default) and the **Alpha** one, and remembers the choice. The
+  improved view compares the cancers in one matrix with tumors nested and
+  undocumented fields shown as a dash, drops a level of nested borders, uses
+  four text sizes, bands alternate event lanes, marks negated events with a
+  dashed line as well as red, names the visible date range against the whole
+  range, and replaces the two magnifier icons with + and −
 
 ### Changed
 - The Patient Document Timeline's date range slider was drawn against the full

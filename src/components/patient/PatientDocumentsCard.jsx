@@ -24,11 +24,13 @@ import {
 import {
   computeOverviewStripLayout,
   describeViewportRange,
+  formatHandleDate,
   getMinimumWindowRatio,
   viewportToDateWindow,
 } from "../../utils/patientView/timelineViewport";
 import { clientXToSvgX } from "../../hooks/useTimelineViewport";
 import useLinkedTimelineViewport from "../../hooks/useLinkedTimelineViewport";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
 import {
   COMPACT_TIMELINE_WIDTH,
   DOCUMENT_CHART_BORDER_WIDTH,
@@ -36,6 +38,7 @@ import {
   TIMELINE_PLOT_INSET,
 } from "../../constants/timelineFrame";
 import { getReadableTextColor } from "../../utils/colorContrast";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 import TimelineAxis from "./timeline/TimelineAxis";
 import TimelineOverviewStrip from "./timeline/TimelineOverviewStrip";
@@ -248,6 +251,7 @@ export default function PatientDocumentsCard({
   sectionLabel = "Patient Document Timeline",
 }) {
   const theme = useTheme();
+  const { isImproved } = usePatientViewPresentation();
   const timelineColors = getTimelineSvgColors(theme);
   // High-contrast foreground for the "currently viewed" marker so its ring stays
   // visible on every theme (near-black on light themes, near-white on dark ones).
@@ -497,6 +501,14 @@ export default function PatientDocumentsCard({
 
   const clientToSvgX = useCallback((clientX) => clientXToSvgX(svgRef.current, clientX), []);
 
+  const formatRange = (startDate, endDate) =>
+    `${formatHandleDate(startDate, { includeYear: true })} – ${formatHandleDate(endDate, {
+      includeYear: true,
+    })}`;
+  const visibleWindow = viewportToDateWindow(viewport, dateDomain.startDate, dateDomain.endDate);
+  const visibleRangeLabel = formatRange(visibleWindow.startDate, visibleWindow.endDate);
+  const fullRangeLabel = formatRange(dateDomain.startDate, dateDomain.endDate);
+
   const handlePointerDown = (event) => {
     handlePlotPointerDown(event, { clientToX: clientToSvgX, plotWidth });
   };
@@ -550,7 +562,10 @@ export default function PatientDocumentsCard({
     >
       <CardHeader
         title="Patient Document Timeline"
-        titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700, lineHeight: 1.25 } }}
+        titleTypographyProps={{
+          variant: "subtitle1",
+          sx: { fontWeight: 700, lineHeight: 1.25, ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}) },
+        }}
         sx={{
           py: 0.5,
           px: 1.25,
@@ -905,6 +920,19 @@ export default function PatientDocumentsCard({
                     </g>
                   </svg>
                 </Box>
+
+                {isImproved ? (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    data-testid="document-timeline-range-caption"
+                    sx={{ lineHeight: 1.35 }}
+                  >
+                    {isZoomed
+                      ? `Viewing ${visibleRangeLabel} of ${fullRangeLabel}`
+                      : `Showing the full range: ${fullRangeLabel}`}
+                  </Typography>
+                ) : null}
 
                 <Typography variant="caption" color="text.secondary" sx={visuallyHiddenSx}>
                   Click a point to load that document (Tab + Enter/Space for keyboard selection).

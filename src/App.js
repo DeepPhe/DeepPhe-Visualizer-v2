@@ -5,6 +5,7 @@ import FiltersView from "./views/filters";
 import AccessibilityStatement from "./views/AccessibilityStatement";
 import FilterSetsConfigView from "./views/FilterSetsConfigView";
 import PatientView from "./views/patient";
+import PatientViewPresentationProvider from "./components/patient/PatientViewPresentationProvider";
 import PerfPanel from "./components/PerfPanel";
 import FeedbackWidget from "./components/FeedbackWidget";
 
@@ -41,6 +42,7 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      <PatientViewPresentationProvider>
       <Routes>
         <Route path="/" element={<FiltersView />} />
         <Route path="/debug" element={<HomeView />} />
@@ -49,6 +51,7 @@ function App() {
         <Route path="/patient" element={<PatientView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </PatientViewPresentationProvider>
       {SHOW_PERF_TRACKER ? <PerfPanel /> : null}
       <FeedbackWidget />
     </BrowserRouter>

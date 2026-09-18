@@ -18,6 +18,8 @@ Events are grouped into four lanes, labelled on the left with the number of mark
 - **Stage, Grade**; and
 - **Treatment**.
 
+The Improved view bands alternate lanes, so a mark reads against its own lane rather than blending into the next.
+
 Within a lane, marks are packed onto as few rows as possible — two events share a row when their date ranges do not overlap. A row is not a single concept, so hover a mark to read which concepts it covers.
 
 Where several concepts in the same lane share exactly the same start and end date, they are drawn as **one mark**. The tooltip lists every concept it stands for, with a `(xN)` count when a name repeats.
@@ -35,7 +37,7 @@ The shape of each end tells you how precisely the date is known:
 
 The legend above the chart shows each of these.
 
-Marks are **green**. A **red** mark means the concept is **negated** — the note records its absence, not its presence. Colour is not the only cue: the tooltip and the screen-reader label both state the negation, and the relation and dates are given in words.
+Marks are **green**. A **red** mark means the concept is **negated** — the note records its absence, not its presence. In the **Improved** view (see [Choose how the patient view reads](overview.md#choose-how-the-patient-view-reads)) a negated mark is also **dashed**, so the distinction does not depend on telling red from green, and the legend includes a key for it. In either view the tooltip and the screen-reader label state the negation, and the relation and dates are given in words.
 
 Dashed vertical guidelines mark every date that carries an event, so you can line marks up across lanes.
 
@@ -91,7 +93,7 @@ The **Showing** control above the chart filters the timeline:
 - **All Patient Events** — every temporal relation for the patient.
 - **Filtered Patient Events** — only relations whose concepts appear in the report currently open in the Document Viewer.
 
-The count beside the panel title tells you how many relations are in view.
+The count beside the panel title tells you how many relations are in view. Below the chart, the Improved view spells out the difference between the two numbers: relations that share a lane and both dates are drawn as one span.
 The current report name appears above the chart. Filtering preserves the date
 range so that the remaining events stay in the same positions. If a report has
 no matching events, the Showing control remains available to return to all events.

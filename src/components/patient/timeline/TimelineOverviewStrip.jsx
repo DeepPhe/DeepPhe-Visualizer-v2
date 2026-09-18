@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { styled, useTheme } from "@mui/material/styles";
+import usePatientViewPresentation from "../../../hooks/usePatientViewPresentation";
 import TimelineAxis from "./TimelineAxis";
 import {
   applySliderKey,
@@ -34,7 +35,7 @@ const MINI_MARK_MIN_WIDTH = 3;
  * same in each. Text and outlines come from theme tokens that meet WCAG AA on
  * every palette.
  */
-export function getOverviewStripColors(theme) {
+export function getOverviewStripColors(theme, { tintedTrack = false } = {}) {
   const palette = theme?.palette || {};
   const textSecondary = palette.text?.secondary || "#505A5F";
   const textPrimary = palette.text?.primary || "#0B0C0C";
@@ -42,10 +43,12 @@ export function getOverviewStripColors(theme) {
   const accent = palette.primary?.main || textSecondary;
 
   return {
-    // Light enough that pale miniature marks still show through.
-    trackFill: mutedLine,
-    trackOpacity: 0.16,
-    trackStroke: mutedLine,
+    // Light enough that pale miniature marks still show through. The improved
+    // view tints the track so it reads as its own surface, not a second plot:
+    // its axis covers the whole date range, the one above it only the selection.
+    trackFill: tintedTrack ? accent : mutedLine,
+    trackOpacity: tintedTrack ? 0.08 : 0.16,
+    trackStroke: tintedTrack ? accent : mutedLine,
     windowFill: accent,
     windowFillOpacity: 0.1,
     windowStroke: accent,
@@ -109,7 +112,11 @@ export default function TimelineOverviewStrip({
   labelClassName = undefined,
 }) {
   const theme = useTheme();
-  const colors = useMemo(() => getOverviewStripColors(theme), [theme]);
+  const { isImproved } = usePatientViewPresentation();
+  const colors = useMemo(
+    () => getOverviewStripColors(theme, { tintedTrack: isImproved }),
+    [theme, isImproved]
+  );
   const [dragMode, setDragMode] = useState(null);
   const endDragRef = useRef(null);
 
