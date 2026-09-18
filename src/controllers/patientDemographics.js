@@ -43,11 +43,13 @@ export function parsePatientBirthDate(value) {
     return null;
   }
 
-  const date = new Date(Date.UTC(year, monthIndex, day));
+  // Local midnight, like the timelines' dates: the Event Timeline's age axis
+  // compares the two by calendar fields.
+  const date = new Date(year, monthIndex, day);
   if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== monthIndex ||
-    date.getUTCDate() !== day
+    date.getFullYear() !== year ||
+    date.getMonth() !== monthIndex ||
+    date.getDate() !== day
   ) {
     return null;
   }
@@ -62,20 +64,20 @@ export function toIsoBirthDate(value) {
     return "";
   }
 
-  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getUTCDate()}`.padStart(2, "0");
-  return `${date.getUTCFullYear()}-${month}-${day}`;
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** Whole years completed at `onDate`. */
+/** Whole years completed at `onDate`, by local calendar date. */
 export function getAgeOnDate(birthDate, onDate) {
   if (!(birthDate instanceof Date) || !(onDate instanceof Date)) {
     return null;
   }
 
-  let age = onDate.getUTCFullYear() - birthDate.getUTCFullYear();
-  const monthDelta = onDate.getUTCMonth() - birthDate.getUTCMonth();
-  if (monthDelta < 0 || (monthDelta === 0 && onDate.getUTCDate() < birthDate.getUTCDate())) {
+  let age = onDate.getFullYear() - birthDate.getFullYear();
+  const monthDelta = onDate.getMonth() - birthDate.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && onDate.getDate() < birthDate.getDate())) {
     age -= 1;
   }
 

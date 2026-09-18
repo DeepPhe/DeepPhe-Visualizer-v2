@@ -9,11 +9,15 @@ import {
   LANE_GROUP_ORDER,
   LEGEND,
   MARGINS,
-  OVERVIEW,
+  NEGATED_RELATION_COLOR,
+  OVERVIEW_TOP_GAP,
   PLOT_RIGHT_GUTTER,
+  RELATION_COLOR,
   TIMELINE_PADDING_DAYS,
+  VIEWBOX_TOP,
 } from "../../constants/eventRelationTimeline";
 import { getAgeOnDate } from "../../controllers/patientDemographics";
+import { computeOverviewStripLayout } from "./timelineViewport";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -81,12 +85,16 @@ export function computeEventRelationDomain(spans = []) {
   const times = (spans || []).flatMap((span) => [span.startTime, span.endTime]);
 
   if (times.length === 0) {
-    const now = Date.UTC(2010, 0, 1);
+    const now = new Date(2010, 0, 1).getTime();
     return { startDate: new Date(now), endDate: new Date(now + MS_PER_DAY) };
   }
 
-  const startDate = new Date(Math.min(...times) - TIMELINE_PADDING_DAYS * MS_PER_DAY);
-  const endDate = new Date(Math.max(...times) + TIMELINE_PADDING_DAYS * MS_PER_DAY);
+  // Pad by calendar days (dates are local midnight), so a daylight-saving
+  // change inside the padding can't move the domain ends off midnight.
+  const startDate = new Date(Math.min(...times));
+  startDate.setDate(startDate.getDate() - TIMELINE_PADDING_DAYS);
+  const endDate = new Date(Math.max(...times));
+  endDate.setDate(endDate.getDate() + TIMELINE_PADDING_DAYS);
   return { startDate, endDate };
 }
 
@@ -101,12 +109,14 @@ export function computeEventRelationTimelineLayout({
   domain: suppliedDomain,
   collapsedGroups = new Set(),
   showAgeAxis = true,
+  // Label gutter and right gutter, in px. The alpha's by default; the card
+  // passes the frame it shares with the document timeline.
+  plotInsets = { left: MARGINS.left, right: PLOT_RIGHT_GUTTER },
 } = {}) {
   const measuredWidth = Math.round(Number(containerWidth) || 1040);
-  const svgWidth = Math.max(
-    240,
-    measuredWidth - MARGINS.left - PLOT_RIGHT_GUTTER
-  );
+  const insetLeft = Number(plotInsets?.left ?? MARGINS.left);
+  const insetRight = Number(plotInsets?.right ?? PLOT_RIGHT_GUTTER);
+  const svgWidth = Math.max(240, measuredWidth - insetLeft - insetRight);
   const domain = suppliedDomain || computeEventRelationDomain(spans);
   const mainX = scaleTime()
     .domain([domain.startDate, domain.endDate])
@@ -153,17 +163,12 @@ export function computeEventRelationTimelineLayout({
   const mainTop = MARGINS.top + LEGEND.height + GAPS.legendToMain;
   const ageTop = mainTop + totalContentHeight + GAPS.pad;
   const ageBandHeight = showAgeAxis ? AGE_AREA.height + AGE_AREA.bottomPad : 0;
-  const overviewTop = ageTop + ageBandHeight;
-  const svgTotalHeight =
-    MARGINS.top +
-    LEGEND.height +
-    GAPS.legendToMain +
-    totalContentHeight +
-    GAPS.pad +
-    OVERVIEW.height +
-    GAPS.pad +
-    (showAgeAxis ? AGE_AREA.height : 0) +
-    MARGINS.bottom;
+  const overviewTop = ageTop + ageBandHeight + OVERVIEW_TOP_GAP;
+  // The overview strip has one mini-row per drawn lane group.
+  const overview = computeOverviewStripLayout({ rowCount: groups.length });
+  // The viewBox starts VIEWBOX_TOP down (the legend is HTML above the SVG), so
+  // the drawable height runs from there to the bottom of the overview strip.
+  const svgTotalHeight = overviewTop + overview.height + MARGINS.bottom - VIEWBOX_TOP;
 
   // Unique event dates get a dashed vertical guideline across every lane.
   const uniqueDates = [
@@ -180,20 +185,39 @@ export function computeEventRelationTimelineLayout({
       // The plot has a minimum width, so on a narrow container the drawn area
       // is wider than the container. The viewBox must describe the content, not
       // the container, or the right-hand end of the chart is clipped away.
-      viewBoxWidth: MARGINS.left + svgWidth + PLOT_RIGHT_GUTTER,
+      viewBoxWidth: insetLeft + svgWidth + insetRight,
+      viewBoxTop: VIEWBOX_TOP,
       svgWidth,
       svgTotalHeight,
       totalContentHeight,
-      marginLeft: MARGINS.left,
+      marginLeft: insetLeft,
       mainTop,
       ageTop,
       overviewTop,
+      overviewHeight: overview.height,
       showAgeAxis,
     },
     groups,
     uniqueDates,
     spans: positionedSpans,
   };
+}
+
+/**
+ * Overview-strip rows for the event timeline: one row per drawn lane group, in
+ * chart order, with each merged span at its full-domain (`mainX`) position.
+ * Collapsed groups keep their row.
+ */
+export function buildEventRelationOverviewRows(groups = []) {
+  return (groups || []).map((group) => ({
+    key: group.key,
+    marks: (group.spans || []).map((span) => ({
+      key: span.id,
+      x1: span.x1,
+      x2: span.x2,
+      color: span.negated ? NEGATED_RELATION_COLOR : RELATION_COLOR,
+    })),
+  }));
 }
 
 /**
@@ -371,11 +395,9 @@ export function computeEventRelationAgeAxis(domain, xScale, birthDate = null) {
   const interiors = [];
   for (let age = startAge + 1; age <= endAge; age += 1) {
     const birthday = new Date(
-      Date.UTC(
-        birthDate.getUTCFullYear() + age,
-        birthDate.getUTCMonth(),
-        birthDate.getUTCDate()
-      )
+      birthDate.getFullYear() + age,
+      birthDate.getMonth(),
+      birthDate.getDate()
     );
 
     if (birthday > domain.startDate && birthday < domain.endDate) {

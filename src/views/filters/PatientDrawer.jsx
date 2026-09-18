@@ -1,7 +1,8 @@
 import React from "react";
 import PropTypes from "prop-types";
-import { Box, IconButton, Paper, Tab, Tabs, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, IconButton, Paper, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import RemoveIcon from "@mui/icons-material/Remove";
@@ -28,7 +29,7 @@ export default function PatientDrawer({
   pageError = "",
   onRetryPatientSummary = undefined,
   statusText = "",
-  collapsedHeaderSummary = null,
+  emptyStateHint = "",
   onOpenPatientTab = undefined,
   setIsExpanded = undefined,
   setIsMaximized = undefined,
@@ -38,15 +39,14 @@ export default function PatientDrawer({
   }
 
   const cohortLabel = Math.max(0, Number(cohortSize) || 0).toLocaleString();
+  const activePatientId = activeDrawerTab > 0 ? openPatientIds[activeDrawerTab - 1] || "" : "";
 
   return (
     <Box
       sx={{
         position: "fixed",
-        // Full-bleed on narrow screens so the drawer isn't squeezed into the
-        // middle 80% of an already-small viewport; inset to 10% from md up.
-        left: { xs: 4, md: "10%" },
-        right: { xs: 4, md: "10%" },
+        left: isMaximized ? { xs: 4, md: 16 } : { xs: 4, md: 16, lg: "5%" },
+        right: isMaximized ? { xs: 4, md: 16 } : { xs: 4, md: 16, lg: "5%" },
         bottom: { xs: 8, md: 16 },
         top: isMaximized ? { xs: 72, md: 84 } : "auto",
         zIndex: (theme) => theme.zIndex.modal - 1,
@@ -84,31 +84,6 @@ export default function PatientDrawer({
           flexDirection: "column",
         }}
       >
-        {filterSummaryText ? (
-          <Box
-            sx={{
-              borderBottom: 1,
-              borderColor: "divider",
-              px: 1.5,
-              py: 0.75,
-              bgcolor: "action.hover",
-            }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{
-                lineHeight: 1.35,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-              title={filterSummaryText}
-            >
-              {`Filters: ${filterSummaryText}`}
-            </Typography>
-          </Box>
-        ) : null}
         <Box
           onDoubleClick={(event) => {
             const isInteractiveTarget = event.target.closest('button, [role="tab"], [role="button"]');
@@ -144,59 +119,61 @@ export default function PatientDrawer({
             }}
           >
             <Tab
-              label={`Selected Patients (${cohortLabel})`}
+              label={
+                <Box
+                  component="span"
+                  title={filterSummaryText ? `Filters: ${filterSummaryText}` : undefined}
+                  sx={{ display: "flex", alignItems: "baseline", gap: 0.75, minWidth: 0 }}
+                >
+                  <Typography component="span" variant="caption" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                    {`Selected Patients (${cohortLabel})`}
+                  </Typography>
+                  {filterSummaryText ? (
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    >
+                      {`— ${filterSummaryText}`}
+                    </Typography>
+                  ) : null}
+                </Box>
+              }
               id="drawer-tab-0"
               aria-controls="drawer-tabpanel-0"
-              sx={{ textTransform: "none", fontWeight: 600 }}
+              aria-label={
+                filterSummaryText
+                  ? `Selected Patients (${cohortLabel}). Filters: ${filterSummaryText}`
+                  : `Selected Patients (${cohortLabel})`
+              }
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                maxWidth: { xs: 260, sm: 520, lg: 760 },
+              }}
             />
             {openPatientIds.map((patientId, index) => (
               <Tab
                 key={patientId}
                 id={`drawer-tab-${index + 1}`}
                 aria-controls={`drawer-tabpanel-${index + 1}`}
+                aria-label={`Patient ${patientId}. Press Delete or Backspace to close.`}
+                onKeyDown={(event) => {
+                  if (event.key === "Delete" || event.key === "Backspace") {
+                    event.preventDefault();
+                    onClosePatientTab?.(patientId, event);
+                  }
+                }}
                 sx={{ textTransform: "none" }}
                 label={
-                  <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <Typography
-                      component="span"
-                      variant="caption"
-                      sx={{ fontFamily: "ui-monospace, monospace", fontWeight: 500 }}
-                    >
-                      {patientId}
-                    </Typography>
-                    <Box
-                      component="span"
-                      role="button"
-                      aria-label={`Close patient tab for ${patientId}`}
-                      onClick={(event) => onClosePatientTab?.(patientId, event)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          onClosePatientTab?.(patientId, event);
-                        }
-                      }}
-                      tabIndex={0}
-                      sx={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        fontSize: "0.6rem",
-                        lineHeight: 1,
-                        ml: 0.25,
-                        "&:hover": { bgcolor: "action.hover" },
-                        "&:focus-visible": {
-                          outline: "2px solid",
-                          outlineColor: "primary.main",
-                          outlineOffset: 1,
-                        },
-                      }}
-                    >
-                      ×
-                    </Box>
-                  </Box>
+                  <Typography
+                    component="span"
+                    variant="caption"
+                    sx={{ fontFamily: "ui-monospace, monospace", fontWeight: 500 }}
+                  >
+                    {patientId}
+                  </Typography>
                 }
               />
             ))}
@@ -206,6 +183,17 @@ export default function PatientDrawer({
             aria-label="Drawer window controls"
             sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, ml: 0.25 }}
           >
+            {activePatientId ? (
+              <Tooltip title={`Close patient tab ${activePatientId}`}>
+                <IconButton
+                  size="small"
+                  aria-label={`Close patient tab for ${activePatientId}`}
+                  onClick={(event) => onClosePatientTab?.(activePatientId, event)}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
             <Tooltip title={isExpanded ? "Minimize (collapse to header) — Esc" : "Restore"}>
               <IconButton
                 size="small"
@@ -254,33 +242,35 @@ export default function PatientDrawer({
           aria-labelledby="drawer-tab-0"
           hidden={activeDrawerTab !== 0 || !isExpanded}
           style={{ display: activeDrawerTab === 0 && isExpanded ? "block" : "none" }}
-          sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: 1.5, py: 1.25 }}
+          sx={{ flex: 1, minHeight: 0, overflowY: "auto", px: { xs: 1, md: 1.5 }, py: 1 }}
         >
           {activeDrawerTab === 0 ? (
-            <PatientGrid
-              data={patientGridRows}
-              cohortSize={cohortSize}
-              totalCohortCount={cohortSize}
-              totalPages={totalPatientGridPages}
-              currentPage={currentPatientGridPage}
-              pageSize={pageSize}
-              onPageChange={onPageChange}
-              isLoading={isTableLoading}
-              error={pageError}
-              onRetry={onRetryPatientSummary}
-              embedded
-              title={`Selected Patients (${cohortLabel})`}
-              subtitle={isExpanded ? statusText : ""}
-              collapsible
-              expanded={isExpanded}
-              onToggleExpanded={() => setIsExpanded?.((previousValue) => !previousValue)}
-              compactHeader
-              toggleButtonTestId="patient-grid-drawer-toggle"
-              collapsiblePanelId={panelId}
-              collapsedHeaderSummary={collapsedHeaderSummary}
-              onPatientOpen={onOpenPatientTab}
-              openPatientIds={openPatientIds}
-            />
+            <Box sx={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+              {emptyStateHint ? (
+                <Alert severity="info" sx={{ mb: 1, flexShrink: 0 }}>
+                  {emptyStateHint}
+                </Alert>
+              ) : null}
+              <PatientGrid
+                data={patientGridRows}
+                cohortSize={cohortSize}
+                totalCohortCount={cohortSize}
+                totalPages={totalPatientGridPages}
+                currentPage={currentPatientGridPage}
+                pageSize={pageSize}
+                onPageChange={onPageChange}
+                isLoading={isTableLoading}
+                error={pageError}
+                onRetry={onRetryPatientSummary}
+                embedded
+                title=""
+                subtitle={statusText}
+                compactHeader
+                collapsiblePanelId={panelId}
+                onPatientOpen={onOpenPatientTab}
+                openPatientIds={openPatientIds}
+              />
+            </Box>
           ) : null}
         </Box>
 
@@ -332,7 +322,7 @@ PatientDrawer.propTypes = {
   pageError: PropTypes.string,
   onRetryPatientSummary: PropTypes.func,
   statusText: PropTypes.string,
-  collapsedHeaderSummary: PropTypes.node,
+  emptyStateHint: PropTypes.string,
   onOpenPatientTab: PropTypes.func,
   setIsExpanded: PropTypes.func,
   setIsMaximized: PropTypes.func,

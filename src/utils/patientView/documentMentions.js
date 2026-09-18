@@ -103,6 +103,44 @@ export function getDocumentConcepts(document = {}, concepts = []) {
   });
 }
 
+export function findDocumentIdsForConceptIds(documents = [], concepts = [], conceptIds = []) {
+  const selectedConceptIds = new Set(
+    normalizeArray(conceptIds)
+      .map((conceptId) => String(conceptId || "").trim())
+      .filter(Boolean)
+  );
+
+  if (selectedConceptIds.size === 0) {
+    return [];
+  }
+
+  const selectedMentionIds = new Set();
+  normalizeArray(concepts).forEach((concept) => {
+    const conceptId = String(concept?.id || "").trim();
+    if (!selectedConceptIds.has(conceptId)) {
+      return;
+    }
+
+    normalizeArray(concept?.mentionIds)
+      .map((mentionId) => String(mentionId || "").trim())
+      .filter(Boolean)
+      .forEach((mentionId) => selectedMentionIds.add(mentionId));
+  });
+
+  if (selectedMentionIds.size === 0) {
+    return [];
+  }
+
+  return normalizeArray(documents)
+    .filter((document) =>
+      normalizeArray(document?.mentions).some((mention) =>
+        selectedMentionIds.has(String(mention?.id || "").trim())
+      )
+    )
+    .map((document) => String(document?.id || "").trim())
+    .filter(Boolean);
+}
+
 export function buildGroupColorByName(concepts = []) {
   const groupNames = [...new Set(normalizeArray(concepts).map((concept) => getGroupName(concept)))];
 

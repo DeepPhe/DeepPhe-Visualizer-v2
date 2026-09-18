@@ -19,6 +19,7 @@ import CancerTumorSummaryCard from "../components/patient/CancerTumorSummaryCard
 import PatientDocumentsCard from "../components/patient/PatientDocumentsCard";
 import PatientDocumentDrawer from "../components/patient/PatientDocumentDrawer";
 import EventRelationTimelineCard from "../components/patient/EventRelationTimelineCard";
+import TimelineLinkProvider from "../components/patient/timeline/TimelineLinkProvider";
 import PatientSummaryCard from "../components/patient/PatientSummaryCard";
 import {
   loadPatientFilterSummary,
@@ -27,6 +28,7 @@ import {
 } from "../controllers/patient";
 import { shouldShowEventRelationTimeline } from "../controllers/eventRelationTimeline";
 import { usePatientData } from "../hooks/usePatientData";
+import { findDocumentIdsForConceptIds } from "../utils/patientView/documentMentions";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
 import { resolveSummarySelection } from "../utils/patientView/summarySelection";
 import { getThemeByKey } from "../themes";
@@ -243,6 +245,15 @@ export default function PatientView() {
   const patientSummarySections = useMemo(
     () => getSummaryDetailSections(patientSummaryData || patientData?.rawPatient || patientData),
     [patientData, patientSummaryData]
+  );
+  const eventRelatedDocumentIds = useMemo(
+    () =>
+      findDocumentIdsForConceptIds(
+        patientData?.documents,
+        patientData?.concepts,
+        timelineConceptIds
+      ),
+    [patientData, timelineConceptIds]
   );
 
   const reportById = useMemo(() => {
@@ -678,6 +689,8 @@ export default function PatientView() {
                   />
                 </Box>
 
+                {/* Links the two timelines: one date range, one zoom, aligned strips. */}
+                <TimelineLinkProvider resetKey={loadedPatientTimelineId || ""}>
                 <Box
                   sx={{
                     minWidth: 0,
@@ -694,6 +707,7 @@ export default function PatientView() {
                     timelineData={timelineData}
                     selectedDocumentId={selectedDocumentId}
                     relatedDocumentIds={activeSelection?.documentIds || []}
+                    eventRelatedDocumentIds={eventRelatedDocumentIds}
                     onSelectDocument={handleSelectDocumentFromTimeline}
                   />
                 </Box>
@@ -725,6 +739,7 @@ export default function PatientView() {
                     />
                   </Box>
                 ) : null}
+                </TimelineLinkProvider>
 
                 <Box
                   sx={{

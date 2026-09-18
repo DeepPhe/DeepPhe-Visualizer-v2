@@ -26,8 +26,8 @@ const RECORDS = [
 
 describe("patient demographics controller", () => {
   it("parses both the ISO and MM-DD-YYYY birth date shapes", () => {
-    expect(parsePatientBirthDate("1960-04-01").toISOString()).toBe("1960-04-01T00:00:00.000Z");
-    expect(parsePatientBirthDate("04-01-1960").toISOString()).toBe("1960-04-01T00:00:00.000Z");
+    expect(parsePatientBirthDate("1960-04-01").getTime()).toBe(new Date(1960, 3, 1).getTime());
+    expect(parsePatientBirthDate("04-01-1960").getTime()).toBe(new Date(1960, 3, 1).getTime());
     expect(parsePatientBirthDate("")).toBeNull();
     expect(parsePatientBirthDate("unknown")).toBeNull();
     expect(parsePatientBirthDate("1960-13-01")).toBeNull();
@@ -40,18 +40,19 @@ describe("patient demographics controller", () => {
   });
 
   it("counts whole years completed, not calendar-year differences", () => {
-    const dob = new Date(Date.UTC(1960, 3, 1));
+    // Birth dates, like the timelines' dates, are local midnight.
+    const dob = new Date(1960, 3, 1);
 
-    expect(getAgeOnDate(dob, new Date(Date.UTC(2010, 2, 31)))).toBe(49);
-    expect(getAgeOnDate(dob, new Date(Date.UTC(2010, 3, 1)))).toBe(50);
+    expect(getAgeOnDate(dob, new Date(2010, 2, 31))).toBe(49);
+    expect(getAgeOnDate(dob, new Date(2010, 3, 1))).toBe(50);
   });
 
   it("looks records up by patient id", () => {
     expect(findPatientDemographicsRecord(RECORDS, "fake_patient2").Gender).toBe("male");
     expect(findPatientDemographicsRecord(RECORDS, "nobody")).toBeNull();
     expect(findPatientDemographicsRecord(null, "fake_patient1")).toBeNull();
-    expect(findDemographicsBirthDate(RECORDS, "fake_patient1").toISOString()).toBe(
-      "1960-04-01T00:00:00.000Z"
+    expect(findDemographicsBirthDate(RECORDS, "fake_patient1").getTime()).toBe(
+      new Date(1960, 3, 1).getTime()
     );
   });
 

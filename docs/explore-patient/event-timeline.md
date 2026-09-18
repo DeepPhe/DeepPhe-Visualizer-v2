@@ -51,12 +51,21 @@ The age axis only appears when the patient's date of birth is known. When it is 
 
 ## Change the date range
 
-The chart opens showing the full range of the patient's events, padded slightly at both ends.
+The chart opens showing the full range of the patient's events, padded by 50 days at both ends. It works the same way as the [Patient Document Timeline](document-timeline.md#zoom-into-a-date-range).
 
-- **Scroll** over the chart to zoom the date axis in and out.
-- **Drag** on the **Date** band beneath the chart to select a narrower window.
+The **Date** strip beneath the chart is an overview of the full range. It never moves: its left and right dates stay fixed, and it draws a small copy of every mark, one row per lane. Two handles on it select the range the chart above shows.
 
-The two stay in step: zooming moves the band, and dragging the band rescales the chart.
+- **Drag a handle** to move that end of the range. While zoomed in, each handle shows its date underneath. The handles cannot cross.
+- **Drag the shaded window** to move the range, or **press the strip outside the window** to center the range there.
+- Use the buttons above the chart to **zoom in**, **zoom out**, **pan earlier**, **pan later**, or **reset**. Each pan moves the range by a fifth of its length. Zoom goes up to 1600%.
+- When zoomed in, **drag the chart** sideways to pan.
+- With a mark focused, press `+` or `-` to zoom, `0` to reset, and `←` or `→` to pan. On a focused handle, `←` and `→` move it, and `Home` and `End` jump to either end.
+
+Scrolling the mouse wheel over the chart scrolls the page; it does not zoom. Collapsing a lane, or switching **Showing**, keeps the current range.
+
+The Event Timeline is **linked to the [Patient Document Timeline](document-timeline.md#linked-to-the-event-timeline)**. Both show the same date range, changing it in either one changes both, and their strips and date axes line up vertically, so an event sits directly below the documents written at the same time.
+
+All dates on this chart are calendar dates, shown the same in every time zone.
 
 ## Collapse a lane
 

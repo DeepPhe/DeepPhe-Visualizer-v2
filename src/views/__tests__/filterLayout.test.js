@@ -3,16 +3,70 @@ import {
   buildTallestAlignedLayout,
   estimateCardHeight,
 } from "../filterLayout";
-import { OVERSIZED_MIN_ROWS_BY_DENSITY, getOversizedRowThreshold } from "../filters/layoutConfig";
+import {
+  OVERSIZED_MIN_ROWS_BY_DENSITY,
+  buildBalancedMasonryLayout,
+  getOversizedRowThreshold,
+} from "../filters/layoutConfig";
 
 describe("filterLayout helpers", () => {
+  it("globally balances outer domains while keeping the priority row anchored", () => {
+    const layout = buildBalancedMasonryLayout(
+      [390, 606, 914, 1296, 482, 914, 698, 698, 914].map((height, index) => ({
+        id: String(index),
+        height,
+      })),
+      3,
+      16
+    );
+
+    expect([layout.columnById["0"], layout.columnById["1"], layout.columnById["2"]]).toEqual([
+      1, 2, 3,
+    ]);
+    expect(layout.columnById).toEqual({
+      0: 1,
+      1: 2,
+      2: 3,
+      3: 1,
+      4: 3,
+      5: 2,
+      6: 1,
+      7: 2,
+      8: 3,
+    });
+    expect(Math.max(...layout.columnHeights) - Math.min(...layout.columnHeights)).toBe(166);
+  });
+
+  it("keeps the naturally balanced two-column clinical sequence", () => {
+    const layout = buildBalancedMasonryLayout(
+      [390, 606, 914, 1296, 482, 914, 698, 698, 914].map((height, index) => ({
+        id: String(index),
+        height,
+      })),
+      2,
+      16
+    );
+
+    expect(layout.columnById).toEqual({
+      0: 1,
+      1: 2,
+      2: 1,
+      3: 2,
+      4: 1,
+      5: 2,
+      6: 1,
+      7: 2,
+      8: 1,
+    });
+  });
+
   it("estimates card height from row count", () => {
     expect(estimateCardHeight(3)).toBe(228);
     expect(estimateCardHeight(2, 20, 80)).toBe(120);
     expect(estimateCardHeight(-5, 20, 80)).toBe(80);
   });
 
-  it("stretches shorter solo measured cards to align with the tallest column", () => {
+  it("keeps shorter solo measured cards at their natural height", () => {
     const layout = buildTallestAlignedLayout(
       ["A", "B", "C"],
       { A: 120, B: 120, C: 120 },
@@ -23,7 +77,7 @@ describe("filterLayout helpers", () => {
 
     expect(layout.tallestFilterBoxHeight).toBe(120);
     expect(layout.tallestMeasuredFilterBoxHeight).toBe(160);
-    expect(layout.cardHeightOverrideByClass).toEqual({ B: 160, C: 160 });
+    expect(layout.cardHeightOverrideByClass).toEqual({});
     expect(layout.cardMarginBottomByClass).toEqual({ A: 0, B: 0, C: 0 });
   });
 
@@ -41,8 +95,8 @@ describe("filterLayout helpers", () => {
 
     expect(layout.baseCardHeightByClass).toEqual({ A: 200, B: 180, C: 150 });
     expect(layout.measuredCardHeightByClass).toEqual({ A: 200, B: 180, C: 150 });
-    expect(layout.resolvedCardHeightByClass).toEqual({ A: 354, B: 180, C: 150 });
-    expect(layout.cardHeightOverrideByClass).toEqual({ A: 354 });
+    expect(layout.resolvedCardHeightByClass).toEqual({ A: 200, B: 180, C: 150 });
+    expect(layout.cardHeightOverrideByClass).toEqual({});
     expect(layout.cardMarginBottomByClass).toEqual({ A: 0, B: 24, C: 0 });
     expect(layout.sectionHeight).toBe(378);
   });
@@ -63,7 +117,7 @@ describe("filterLayout helpers", () => {
 
     expect(layout.baseCardHeightByClass).toEqual({ A: 250, B: 90 });
     expect(layout.measuredCardHeightByClass).toEqual({ A: 0, B: 0 });
-    expect(layout.cardHeightOverrideByClass).toEqual({ B: 250 });
+    expect(layout.cardHeightOverrideByClass).toEqual({});
     expect(layout.cardMarginBottomByClass).toEqual({ A: 0, B: 0 });
     expect(layout.sectionHeight).toBe(270);
   });
@@ -166,6 +220,40 @@ describe("filterLayout helpers", () => {
     expect(longColumn).toEqual(["LongList"]);
   });
 
+  it("does not inflate short cards when an oversized sibling activates wrapper packing", () => {
+    const layout = buildFilterSectionLayout({
+      classNames: ["LongList", "FourRows", "TwoRows"],
+      rowCountByClass: { LongList: 25, FourRows: 4, TwoRows: 2 },
+      measuredCardHeightByClass: {
+        LongList: 212,
+        FourRows: 172,
+        TwoRows: 112,
+      },
+      desiredCardHeightByClass: {
+        LongList: 804,
+        FourRows: 172,
+        TwoRows: 112,
+      },
+      naturalGapPx: 16,
+      maxColumns: 3,
+      cardBottomMargin: 24,
+      stackableCardMaxHeight: 212,
+      oversizedRowThreshold: 24,
+    });
+
+    expect(layout.columnGroups).toEqual([
+      ["LongList"],
+      ["FourRows"],
+      ["TwoRows"],
+    ]);
+    expect(layout.cardHeightOverrideByClass).toEqual({});
+    expect(layout.resolvedCardHeightByClass).toEqual({
+      LongList: 212,
+      FourRows: 172,
+      TwoRows: 112,
+    });
+  });
+
   it("does not dedicate a column to a card with only 24 rows (boundary)", () => {
     // Same shapes as above but one row fewer: not oversized, so the height
     // packer is free to pair the short LongList card with a sibling.
@@ -201,7 +289,7 @@ describe("filterLayout helpers", () => {
     expect(compactMin - 1 > threshold).toBe(false); // one fewer does not
   });
 
-  it("keeps demographics column bottoms aligned so Ethnicity ends level with Race", () => {
+  it("keeps demographics cards content-sized with only the rendered gap", () => {
     const layout = buildFilterSectionLayout({
       classNames: ["AGE_AT_DX", "RACE", "GENDER", "ETHNICITY"],
       baseCardHeightByClass: {
@@ -242,10 +330,10 @@ describe("filterLayout helpers", () => {
       )
     );
 
-    expect(columnHeights).toEqual([516, 516, 516]);
-    expect(layout.resolvedCardHeightByClass.AGE_AT_DX).toBe(516);
+    expect(columnHeights).toEqual([480, 516, 480]);
+    expect(layout.resolvedCardHeightByClass.AGE_AT_DX).toBe(480);
     expect(layout.resolvedCardHeightByClass.RACE).toBe(516);
-    expect(layout.cardMarginBottomByClass.GENDER).toBe(60);
+    expect(layout.cardMarginBottomByClass.GENDER).toBe(24);
     expect(layout.cardMarginBottomByClass.ETHNICITY).toBe(0);
   });
 
@@ -306,7 +394,7 @@ describe("filterLayout helpers", () => {
     expect(layout.columnGroups).toEqual([["A"], ["B", "C"]]);
   });
 
-  it("equalizes column heights for mixed solo and multi-card columns", () => {
+  it("keeps mixed solo and multi-card columns at natural heights", () => {
     const layout = buildFilterSectionLayout({
       classNames: ["A", "B", "C", "D", "E"],
       measuredCardHeightByClass: {
@@ -334,7 +422,7 @@ describe("filterLayout helpers", () => {
       );
     const columnHeights = layout.columnGroups.map(getColumnHeight);
 
-    expect(columnHeights).toEqual([624, 624, 624]);
+    expect(columnHeights).toEqual([520, 624, 484]);
     expect(layout.sectionHeight).toBe(648);
   });
 
@@ -370,8 +458,9 @@ describe("filterLayout helpers", () => {
       ["Histologic Features"],
       ["Pathologic Process"],
     ]);
-    expect(layout.cardHeightOverrideByClass["Histologic Features"]).toBe(464);
-    expect(layout.cardHeightOverrideByClass["Pathologic Process"]).toBe(464);
+    expect(layout.cardHeightOverrideByClass).toEqual({});
+    expect(layout.scrollableCardStretchByClass["Histologic Features"]).toBe(464);
+    expect(layout.scrollableCardStretchByClass["Pathologic Process"]).toBe(444);
   });
 
   it("LPT distributes equal-height Compact+ cards across bins, balancing by height", () => {

@@ -1,6 +1,6 @@
 import React from "react";
 import PropTypes from "prop-types";
-import { TableCell, TableRow } from "@mui/material";
+import { Box, TableCell, TableRow } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { flexRender } from "@tanstack/react-table";
 import DetailPanel from "./PatientDetailPanel";
@@ -11,6 +11,8 @@ import DetailPanel from "./PatientDetailPanel";
 // the detail panel would never appear. Expansion is read live at render time.
 function PatientGridRow({ row, rowIndex, columnCount, onToggleExpansion, onPatientOpen, onDetailContextMenu }) {
   const theme = useTheme();
+  const rowBackground = rowIndex % 2 === 0 ? theme.palette.background.paper : theme.palette.background.default;
+  const rowHoverBackground = theme.custom?.rowHoverBg || alpha(theme.palette.primary.main, 0.08);
 
   return (
     <>
@@ -19,32 +21,40 @@ function PatientGridRow({ row, rowIndex, columnCount, onToggleExpansion, onPatie
         onClick={row.getCanExpand() ? () => onToggleExpansion(row.id) : undefined}
         sx={{
           cursor: row.getCanExpand() ? "pointer" : "default",
-          bgcolor:
-            rowIndex % 2 === 0
-              ? "transparent"
-              : alpha(
-                  theme.palette.mode === "dark" ? theme.palette.common.white : theme.palette.common.black,
-                  theme.palette.mode === "dark" ? 0.02 : 0.03
-                ),
+          bgcolor: rowBackground,
+          "&:hover > td[data-pinned-column='true']": {
+            background: `linear-gradient(${rowHoverBackground}, ${rowHoverBackground}), ${rowBackground}`,
+          },
         }}
       >
-        {row.getVisibleCells().map((cell) => (
-          <TableCell
-            key={cell.id}
-            data-column-id={cell.column.id}
-            data-column-size={cell.column.getSize()}
-            sx={{
-              py: 0.7,
-              verticalAlign: "top",
-              width: cell.column.getSize(),
-              minWidth: cell.column.getSize(),
-              maxWidth: cell.column.getSize(),
-              overflow: "hidden",
-            }}
-          >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </TableCell>
-        ))}
+        {row.getVisibleCells().map((cell) => {
+          const columnMeta = cell.column.columnDef.meta || {};
+
+          return (
+            <TableCell
+              key={cell.id}
+              data-column-id={cell.column.id}
+              data-column-size={cell.column.getSize()}
+              data-pinned-column={columnMeta.pinned ? "true" : undefined}
+              sx={{
+                py: 0.7,
+                verticalAlign: "top",
+                width: cell.column.getSize(),
+                minWidth: cell.column.getSize(),
+                maxWidth: cell.column.getSize(),
+                overflow: "hidden",
+                position: columnMeta.pinned ? "sticky" : "static",
+                left: columnMeta.pinned ? columnMeta.stickyLeft : "auto",
+                zIndex: columnMeta.pinned ? 2 : 1,
+                bgcolor: columnMeta.pinned ? rowBackground : "inherit",
+                boxShadow:
+                  cell.column.id === "patientId" ? `2px 0 4px ${alpha(theme.palette.common.black, 0.1)}` : "none",
+              }}
+            >
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </TableCell>
+          );
+        })}
       </TableRow>
 
       {row.getIsExpanded() ? (
@@ -66,7 +76,16 @@ function PatientGridRow({ row, rowIndex, columnCount, onToggleExpansion, onPatie
               bgcolor: theme.custom?.rowHoverBg || alpha(theme.palette.primary.main, 0.08),
             }}
           >
-            <DetailPanel row={row} onPatientOpen={onPatientOpen} />
+            <Box
+              sx={{
+                position: "sticky",
+                left: 0,
+                width: "min(calc(100vw - 32px), 100%)",
+                maxWidth: "100%",
+              }}
+            >
+              <DetailPanel row={row} onPatientOpen={onPatientOpen} />
+            </Box>
           </TableCell>
         </TableRow>
       ) : null}

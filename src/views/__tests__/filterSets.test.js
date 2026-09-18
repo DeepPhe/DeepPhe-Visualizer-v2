@@ -122,12 +122,14 @@ describe("filterSets", () => {
     expect(FILTER_ENTRY_BY_TYPE_CLASS.get("attributes:Lymph Involvement")).toMatchObject({
       type: "attributes",
       key: "Lymph Involvement",
-      maxHeightPx: 300,
       enabled: true,
     });
+    expect(
+      FILTER_ENTRY_BY_TYPE_CLASS.get("attributes:Lymph Involvement").maxHeightPx
+    ).toBeUndefined();
   });
 
-  it("passes maxHeightPx through configured set resolution and defaults to undefined otherwise", () => {
+  it("uses the shared card-height policy for configured and extra filters", () => {
     const resolvedSets = resolveFilterSetsWithExtras(
       ["lymph involvement", "novel class"],
       "attributes"
@@ -136,8 +138,8 @@ describe("filterSets", () => {
     expect(resolvedSets.map((set) => set.label)).toEqual(["Staging & Disease Extent", "Uncategorized"]);
     expect(resolvedSets[0].filters[0]).toMatchObject({
       key: "lymph involvement",
-      maxHeightPx: 300,
     });
+    expect(resolvedSets[0].filters[0].maxHeightPx).toBeUndefined();
     expect(resolvedSets[1].filters[0].maxHeightPx).toBeUndefined();
   });
 

@@ -29,6 +29,117 @@ export function capColumnsByWidth(configuredColumns, availableWidthPx, minColumn
   return Math.max(1, Math.min(cap, widthCap));
 }
 
+/**
+ * Assign measured masonry items to globally balanced columns while keeping the
+ * first visible row anchored left-to-right. Items remain in their original DOM
+ * order; callers apply the returned column number with CSS `order`.
+ *
+ * The section count on the filter page is deliberately small, so an exact
+ * search gives a visibly better result than the usual one-item-at-a-time
+ * shortest-column heuristic. A bounded LPT fallback keeps the helper safe for
+ * unexpectedly large custom configurations.
+ */
+export function buildBalancedMasonryLayout(items = [], columnCount = 1, spacingPx = 0) {
+  const normalizedItems = (Array.isArray(items) ? items : [])
+    .map((item, index) => ({
+      id: String(item?.id ?? index),
+      height: Math.max(0, Number(item?.height) || 0),
+    }))
+    .filter((item) => item.height > 0);
+  const resolvedColumnCount = Math.max(
+    1,
+    Math.min(normalizedItems.length || 1, Math.floor(Number(columnCount) || 1))
+  );
+  const resolvedSpacing = Math.max(0, Number(spacingPx) || 0);
+  const columnById = {};
+
+  if (normalizedItems.length === 0) {
+    return { columnById, columnHeights: [], height: 0 };
+  }
+
+  const columnHeights = Array(resolvedColumnCount).fill(0);
+  const assignments = Array(normalizedItems.length).fill(0);
+  const itemOuterHeight = (item) => item.height + resolvedSpacing;
+
+  // Preserve the page's priority hierarchy: the first N domains always form
+  // the first visible row, one per column.
+  for (let index = 0; index < resolvedColumnCount; index += 1) {
+    assignments[index] = index;
+    columnHeights[index] += itemOuterHeight(normalizedItems[index]);
+  }
+
+  const remainingCount = normalizedItems.length - resolvedColumnCount;
+  const searchSize = resolvedColumnCount ** Math.max(0, remainingCount);
+  let best = null;
+
+  const considerCurrentAssignment = () => {
+    const maxHeight = Math.max(...columnHeights);
+    const minHeight = Math.min(...columnHeights);
+    const range = maxHeight - minHeight;
+    const sequentialPenalty = assignments.reduce(
+      (sum, columnIndex, itemIndex) =>
+        sum + (columnIndex === itemIndex % resolvedColumnCount ? 0 : 1),
+      0
+    );
+    const score = [range, maxHeight, sequentialPenalty];
+    const isBetter =
+      !best ||
+      score.some(
+        (value, scoreIndex) =>
+          value < best.score[scoreIndex] &&
+          score.slice(0, scoreIndex).every((entry, entryIndex) => entry === best.score[entryIndex])
+      );
+    if (isBetter) {
+      best = {
+        score,
+        assignments: [...assignments],
+        columnHeights: [...columnHeights],
+      };
+    }
+  };
+
+  if (searchSize <= 100000) {
+    const search = (itemIndex) => {
+      if (itemIndex >= normalizedItems.length) {
+        considerCurrentAssignment();
+        return;
+      }
+      const outerHeight = itemOuterHeight(normalizedItems[itemIndex]);
+      for (let columnIndex = 0; columnIndex < resolvedColumnCount; columnIndex += 1) {
+        assignments[itemIndex] = columnIndex;
+        columnHeights[columnIndex] += outerHeight;
+        search(itemIndex + 1);
+        columnHeights[columnIndex] -= outerHeight;
+      }
+    };
+    search(resolvedColumnCount);
+  } else {
+    // Large custom layouts: place the tallest remaining domains first into the
+    // current shortest column, then restore source order within each column.
+    normalizedItems
+      .map((item, index) => ({ item, index }))
+      .slice(resolvedColumnCount)
+      .sort((left, right) => right.item.height - left.item.height || left.index - right.index)
+      .forEach(({ item, index }) => {
+        const shortestColumn = columnHeights.indexOf(Math.min(...columnHeights));
+        assignments[index] = shortestColumn;
+        columnHeights[shortestColumn] += itemOuterHeight(item);
+      });
+    considerCurrentAssignment();
+  }
+
+  best.assignments.forEach((columnIndex, itemIndex) => {
+    columnById[normalizedItems[itemIndex].id] = columnIndex + 1;
+  });
+
+  return {
+    columnById,
+    columnHeights: best.columnHeights,
+    // MUI Masonry adds one spacing unit beyond its measured max column height.
+    height: Math.ceil(Math.max(...best.columnHeights) + resolvedSpacing),
+  };
+}
+
 export const FILTER_SECTION_LABEL_SX = {
   display: "block",
   fontSize: "0.85rem",

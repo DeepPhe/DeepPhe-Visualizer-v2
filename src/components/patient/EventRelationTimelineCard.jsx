@@ -21,15 +21,11 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { styled } from "@mui/material/styles";
-import { select } from "d3-selection";
-import { zoom as d3Zoom, zoomIdentity } from "d3-zoom";
-import { brushX, brushSelection } from "d3-brush";
-import { axisBottom, axisTop } from "d3-axis";
+import { alpha, styled, useTheme } from "@mui/material/styles";
+import { scaleTime } from "d3-scale";
 import {
   AGE_AREA,
   COLLAPSED_CAP_COLOR,
-  DATE_ANCHOR_COLOR,
   EVENT_RELATION_TIMELINE_SCOPE_ALL,
   EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT,
   GAPS,
@@ -37,7 +33,6 @@ import {
   LEGEND,
   MARGINS,
   NEGATED_RELATION_COLOR,
-  OVERVIEW,
   PADDING,
   RELATION_COLOR,
   SELECTED_OUTLINE_COLOR,
@@ -54,15 +49,89 @@ import {
 } from "../../controllers/eventRelationTimeline";
 import {
   buildEventRelationHeatmap,
+  buildEventRelationOverviewRows,
   buildEventRelationTooltip,
   computeEventRelationAgeAxis,
   computeEventRelationDomain,
   computeEventRelationTimelineLayout,
   getEventRelationGlyph,
 } from "../../utils/patientView/eventRelationTimelineLayout";
+import {
+  resolveResponsiveTickCount,
+  resolveTicks,
+} from "../../utils/patientView/timelineChartLayout";
+import {
+  describeViewportRange,
+  getMinimumWindowRatio,
+  viewportToDateWindow,
+} from "../../utils/patientView/timelineViewport";
+import { clientXToSvgX } from "../../hooks/useTimelineViewport";
+import useLinkedTimelineViewport from "../../hooks/useLinkedTimelineViewport";
+import { TIMELINE_CONTENT_PADDING_X, TIMELINE_PLOT_INSET } from "../../constants/timelineFrame";
 import SectionCollapseToggle from "./SectionCollapseToggle";
+import TimelineAxis from "./timeline/TimelineAxis";
+import TimelineOverviewStrip from "./timeline/TimelineOverviewStrip";
+import TimelineZoomControls from "./timeline/TimelineZoomControls";
 
 const DEFAULT_CONTAINER_WIDTH = 1040;
+const AXIS_FONT_SIZE = 10;
+
+const ZOOM_CONTROL_LABELS = {
+  group: "Event timeline zoom controls",
+  zoomIn: "Zoom in event timeline",
+  zoomOut: "Zoom out event timeline",
+  panEarlier: "Pan event timeline earlier",
+  panLater: "Pan event timeline later",
+  reset: "Reset event timeline zoom",
+};
+
+const OVERVIEW_STRIP_LABELS = {
+  group: "Event timeline date range",
+  window: "Pan event timeline date range",
+  start: "Start of event timeline date range",
+  end: "End of event timeline date range",
+};
+
+/**
+ * Theme-aware colors for the event timeline chrome (axes, gridlines and the
+ * selection halo). The alpha hardcoded light-mode grays and a black selection
+ * outline, which disappear or turn glaringly bright on the dark themes. The
+ * semantic mark colors (green relations, red negation) are intentionally left
+ * out — they carry meaning and read on every palette.
+ */
+export function getEventTimelineColors(theme) {
+  const palette = theme?.palette || {};
+  const textSecondary = palette.text?.secondary || "#505A5F";
+  const textPrimary = palette.text?.primary || "#0B0C0C";
+  const isDark = palette.mode === "dark";
+
+  return {
+    // Row and axis titles: the lane labels ("Finding (5):"), "Patient Age" and
+    // "Date". The alpha left these unstyled, so they rendered black in every
+    // theme — invisible on the dark ones.
+    labelText: textPrimary,
+    // Age-axis tick labels (alpha: #444) — read as text, so aim for AA contrast.
+    ageText: textSecondary,
+    // Structural hairlines: lane-group dividers, heatmap frame, legend rule, and
+    // the scope <Select> outline (alpha: #ccc / #dbdbdb, ~11:1 and harsh on
+    // dark). A muted text-derived tint keeps the lane grouping readable in both
+    // modes without the near-white line the raw dark divider token can't match.
+    structureLine: alpha(textSecondary, isDark ? 0.24 : 0.45),
+    // Group collapse chevrons (alpha: #666) — a UI control, so keep them visible.
+    toggleIcon: textSecondary,
+    // Reference gridline at each unique date (alpha: #d3d3d3, ~12:1 and far too
+    // loud on dark). Slightly stronger than the dividers since dashing lightens
+    // its perceived weight, but still muted against the marks.
+    dateAnchor: alpha(textSecondary, isDark ? 0.34 : 0.55),
+    // Halo drawn behind a selected span/marker (alpha: black — invisible on a
+    // dark panel). The primary text color contrasts with the panel either way.
+    selectedOutline: textPrimary,
+    // Date axes above and below the lanes. The overview strip's colors are
+    // shared with the document timeline (getOverviewStripColors).
+    axisText: textSecondary,
+    axisLine: palette.text?.disabled || textSecondary,
+  };
+}
 
 /**
  * Focusable SVG group. `outline: none` on a tabbable element strips the focus
@@ -98,6 +167,46 @@ const RELATION_LEGEND_TITLES = {
   After: "Event occurs *after* time/date",
 };
 
+function RelationLegendItem({ relation }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 0.75,
+        minWidth: 86,
+        fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+        fontSize: 14,
+      }}
+    >
+      <Box
+        component="svg"
+        role="img"
+        aria-label={`${relation}: ${RELATION_LEGEND_TITLES[relation] || relation}`}
+        width={18}
+        height={14}
+        viewBox="0 0 18 14"
+        sx={{ flex: "0 0 auto", overflow: "visible" }}
+      >
+        <title>{RELATION_LEGEND_TITLES[relation] || relation}</title>
+        <path
+          d={RELATION_LEGEND_PATHS[relation]}
+          transform="translate(3, 1)"
+          fill={RELATION_COLOR}
+          stroke={RELATION_COLOR}
+          strokeWidth={relation === "Overlaps" ? 4 : 2}
+        />
+      </Box>
+      <Box component="span">{relation}</Box>
+    </Box>
+  );
+}
+
+RelationLegendItem.propTypes = {
+  relation: PropTypes.string.isRequired,
+};
+
 const visuallyHiddenSx = {
   position: "absolute",
   // "1px", not 1: MUI's sx treats a bare 1 on width/height as 100%, which makes
@@ -117,7 +226,7 @@ function normalizeString(value) {
  * Marker defs ported from the alpha. Note the arrow/cap fills are green even on
  * a negated (red) span -- that is what the alpha draws.
  */
-function TimelineMarkerDefs({ idPrefix }) {
+function TimelineMarkerDefs({ idPrefix, selectedOutlineColor = SELECTED_OUTLINE_COLOR }) {
   const marker = (id, children, refX = 6) => (
     <marker
       key={id}
@@ -141,7 +250,7 @@ function TimelineMarkerDefs({ idPrefix }) {
         <path
           d="M 0 0 L 12 6 L 0 12 Z"
           fill={RELATION_COLOR}
-          stroke={SELECTED_OUTLINE_COLOR}
+          stroke={selectedOutlineColor}
           strokeWidth={1}
         />,
         4
@@ -152,7 +261,7 @@ function TimelineMarkerDefs({ idPrefix }) {
         <path
           d="M 12 0 L 0 6 L 12 12 Z"
           fill={RELATION_COLOR}
-          stroke={SELECTED_OUTLINE_COLOR}
+          stroke={selectedOutlineColor}
           strokeWidth={1}
         />
       )}
@@ -167,7 +276,7 @@ function TimelineMarkerDefs({ idPrefix }) {
       {marker(
         "selectedVerticalLineCap",
         <>
-          <path d="M6 0 L6 12" stroke={SELECTED_OUTLINE_COLOR} strokeWidth={5} />
+          <path d="M6 0 L6 12" stroke={selectedOutlineColor} strokeWidth={5} />
           <path d="M6 0 L6 12" stroke={RELATION_COLOR} strokeWidth={3} strokeOpacity={0.75} />
         </>
       )}
@@ -175,7 +284,10 @@ function TimelineMarkerDefs({ idPrefix }) {
   );
 }
 
-TimelineMarkerDefs.propTypes = { idPrefix: PropTypes.string.isRequired };
+TimelineMarkerDefs.propTypes = {
+  idPrefix: PropTypes.string.isRequired,
+  selectedOutlineColor: PropTypes.string,
+};
 
 function markerUrl(idPrefix, name, isSelected) {
   if (!name) {
@@ -198,14 +310,26 @@ function markerUrl(idPrefix, name, isSelected) {
  * a 5px stroke at y=0, a hidden 7px black outline that appears when selected,
  * and a same-day On/On drawn as a bare vertical tick instead.
  */
-function SpanMark({ span, x1, x2, expanded, isSelected, idPrefix, onToggle }) {
+function SpanMark({
+  span,
+  x1,
+  x2,
+  expanded,
+  isSelected,
+  hasActiveSelection,
+  idPrefix,
+  onToggle,
+  selectedOutlineColor = SELECTED_OUTLINE_COLOR,
+}) {
   const glyph = getEventRelationGlyph({ ...span, x1, x2 }, { expanded });
   const stroke = span.negated ? NEGATED_RELATION_COLOR : RELATION_COLOR;
-  const strokeOpacity = expanded ? 0.75 : 0.5;
+  const isDimmed = hasActiveSelection && !isSelected;
+  const strokeOpacity = isDimmed ? 0.3 : expanded ? 0.75 : 0.5;
   const tooltip = buildEventRelationTooltip(span, { includeDuration: glyph.kind === "span" });
   const label = `${span.conceptLabels.join(", ")}. ${span.laneGroup}. ${span.relation1} ${
     span.start
   }; ${span.relation2} ${span.end}.${span.negated ? " Negated." : ""}`;
+  const selectionClass = isSelected ? "selected" : isDimmed ? "unselected" : "";
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -226,12 +350,14 @@ function SpanMark({ span, x1, x2, expanded, isSelected, idPrefix, onToggle }) {
   if (glyph.kind === "tick") {
     return (
       <FocusableGroup
+        className={`event-relation-mark ${selectionClass}`.trim()}
         data-event-relation-id={span.id}
         data-concept-ids={span.conceptIds.join(",")}
         data-lane-group={span.laneGroup}
         data-relation-key={span.relationKey}
         data-negated={span.negated ? "true" : "false"}
         data-selected={isSelected ? "true" : "false"}
+        data-selection-state={selectionClass || "none"}
         {...common}
       >
         <title>{tooltip}</title>
@@ -241,7 +367,7 @@ function SpanMark({ span, x1, x2, expanded, isSelected, idPrefix, onToggle }) {
           y1={-7}
           x2={x1}
           y2={7}
-          stroke={SELECTED_OUTLINE_COLOR}
+          stroke={selectedOutlineColor}
           strokeWidth={5}
           strokeOpacity={isSelected ? 1 : 0}
         />
@@ -261,12 +387,14 @@ function SpanMark({ span, x1, x2, expanded, isSelected, idPrefix, onToggle }) {
 
   return (
     <FocusableGroup
+      className={`event-relation-mark ${selectionClass}`.trim()}
       data-event-relation-id={span.id}
       data-concept-ids={span.conceptIds.join(",")}
       data-lane-group={span.laneGroup}
       data-relation-key={span.relationKey}
       data-negated={span.negated ? "true" : "false"}
       data-selected={isSelected ? "true" : "false"}
+      data-selection-state={selectionClass || "none"}
       {...common}
     >
       <title>{tooltip}</title>
@@ -276,7 +404,7 @@ function SpanMark({ span, x1, x2, expanded, isSelected, idPrefix, onToggle }) {
         y1={0}
         x2={x2}
         y2={0}
-        stroke={SELECTED_OUTLINE_COLOR}
+        stroke={selectedOutlineColor}
         strokeWidth={7}
         strokeOpacity={isSelected ? 1 : 0}
       />
@@ -305,32 +433,10 @@ SpanMark.propTypes = {
   x2: PropTypes.number.isRequired,
   expanded: PropTypes.bool.isRequired,
   isSelected: PropTypes.bool.isRequired,
+  hasActiveSelection: PropTypes.bool.isRequired,
   idPrefix: PropTypes.string.isRequired,
   onToggle: PropTypes.func.isRequired,
-};
-
-/** d3-axis rendered into a ref'd <g> so tick selection stays d3's job. */
-function TimeAxis({ scale, orientation, transform, className }) {
-  const groupRef = useRef(null);
-
-  useEffect(() => {
-    if (!groupRef.current || !scale) {
-      return;
-    }
-    const axis = (orientation === "top" ? axisTop(scale) : axisBottom(scale))
-      .tickSizeInner(5)
-      .tickSizeOuter(0);
-    select(groupRef.current).call(axis);
-  }, [scale, orientation]);
-
-  return <g ref={groupRef} className={className} transform={transform} />;
-}
-
-TimeAxis.propTypes = {
-  scale: PropTypes.func,
-  orientation: PropTypes.oneOf(["top", "bottom"]).isRequired,
-  transform: PropTypes.string,
-  className: PropTypes.string,
+  selectedOutlineColor: PropTypes.string,
 };
 
 export default function EventRelationTimelineCard({
@@ -348,19 +454,15 @@ export default function EventRelationTimelineCard({
   onOpenReport = undefined,
 }) {
   const shouldRender = shouldShowEventRelationTimeline(patientId);
+  const theme = useTheme();
+  const colors = useMemo(() => getEventTimelineColors(theme), [theme]);
   const generatedId = useId().replace(/:/g, "");
   const panelBodyId = collapsiblePanelId || `${generatedId}-event-relation-timeline-body`;
   const descriptionId = `${generatedId}-event-relation-description`;
   const statusId = `${generatedId}-event-relation-status`;
 
   const resizeObserverRef = useRef(null);
-  const zoomRectRef = useRef(null);
-  const brushGroupRef = useRef(null);
-  const zoomBehaviorRef = useRef(null);
-  const brushBehaviorRef = useRef(null);
-  const isSyncingRef = useRef(false);
-  const zoomTransformRef = useRef(zoomIdentity);
-  const lastZoomWidthRef = useRef(null);
+  const svgRef = useRef(null);
 
   const [rawTimelineText, setRawTimelineText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -368,7 +470,6 @@ export default function EventRelationTimelineCard({
   const [viewMode, setViewMode] = useState(EVENT_RELATION_TIMELINE_SCOPE_ALL);
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
   const [containerWidth, setContainerWidth] = useState(DEFAULT_CONTAINER_WIDTH);
-  const [zoomTransform, setZoomTransform] = useState(() => zoomIdentity);
   const [demographics, setDemographics] = useState(null);
   const [internalSelection, setInternalSelection] = useState([]);
 
@@ -507,152 +608,96 @@ export default function EventRelationTimelineCard({
   );
   const hasVisibleChart = expanded && !isLoading && Boolean(visibleModel?.spans.length);
 
+  // --- zoom and pan ----------------------------------------------------
+  // Under a TimelineLinkProvider this is shared with the document timeline,
+  // over a date domain covering both, and the two line up. The viewport is
+  // ratio-based, so a resize or a collapsed lane keeps the reader's range. The
+  // domain comes from every span, not the "Showing" filter, so switching scope
+  // keeps it too.
+  const hasEventData = shouldRender && Boolean(baseModel?.spans?.length);
+  const {
+    viewport,
+    setViewport,
+    zoomIn,
+    zoomOut,
+    panEarlier,
+    panLater,
+    reset: resetZoom,
+    handlePlotKeyDown,
+    handlePlotPointerDown,
+    isDragging,
+    announcement: rangeAnnouncement,
+    isAnnouncer,
+    domain: sharedDomain,
+    isZoomed,
+    zoomPercent,
+    canZoomIn,
+    canZoomOut,
+    canPanEarlier,
+    canPanLater,
+    canReset,
+  } = useLinkedTimelineViewport({
+    id: "event-timeline",
+    priority: 1,
+    domain: hasEventData ? patientDomain : null,
+    resetKey: `${patientId}|${patientDomain.startDate.getTime()}|${patientDomain.endDate.getTime()}`,
+    describeRange: (nextViewport) =>
+      describeViewportRange(nextViewport, patientDomain.startDate, patientDomain.endDate),
+  });
+
   const layout = useMemo(
     () =>
       computeEventRelationTimelineLayout({
         containerWidth,
         spans: visibleModel?.spans || [],
-        domain: patientDomain,
+        domain: sharedDomain || patientDomain,
         collapsedGroups,
         showAgeAxis: Boolean(resolvedBirthDate),
+        plotInsets: TIMELINE_PLOT_INSET,
       }),
-    [containerWidth, visibleModel, patientDomain, collapsedGroups, resolvedBirthDate]
+    [containerWidth, visibleModel, sharedDomain, patientDomain, collapsedGroups, resolvedBirthDate]
   );
 
   const { dimensions, mainX, domain, groups, uniqueDates } = layout;
 
-  // The zoomed x scale drives every mark; the unzoomed one drives the overview.
-  const visibleX = useMemo(() => zoomTransform.rescaleX(mainX), [zoomTransform, mainX]);
+  // The zoomed x scale drives every mark and both main axes; `mainX` (the full
+  // domain) drives the overview strip.
+  const visibleX = useMemo(() => {
+    const { startDate, endDate } = viewportToDateWindow(
+      viewport,
+      domain.startDate,
+      domain.endDate
+    );
+    return scaleTime().domain([startDate, endDate]).range(mainX.range());
+  }, [viewport, domain, mainX]);
+
+  const mainAxisTicks = useMemo(() => {
+    const [startDate, endDate] = visibleX.domain();
+    return resolveTicks(
+      startDate,
+      endDate,
+      dimensions.svgWidth,
+      0,
+      resolveResponsiveTickCount(dimensions.svgWidth)
+    );
+  }, [visibleX, dimensions.svgWidth]);
+
+  const overviewRows = useMemo(() => buildEventRelationOverviewRows(groups), [groups]);
 
   const ageAxis = useMemo(
     () => computeEventRelationAgeAxis(domain, visibleX, resolvedBirthDate),
     [domain, visibleX, resolvedBirthDate]
   );
 
-  // --- zoom ------------------------------------------------------------
-  useEffect(() => {
-    const node = zoomRectRef.current;
-    if (!hasVisibleChart || !node || dimensions.svgWidth <= 0) {
-      return undefined;
-    }
-
-    const behavior = d3Zoom()
-      .scaleExtent([1, Infinity])
-      .translateExtent([
-        [0, 0],
-        [dimensions.svgWidth, dimensions.totalContentHeight],
-      ])
-      .extent([
-        [0, 0],
-        [dimensions.svgWidth, dimensions.totalContentHeight],
-      ])
-      .on("zoom", (event) => {
-        if (isSyncingRef.current) {
-          return;
-        }
-        zoomTransformRef.current = event.transform;
-        setZoomTransform(event.transform);
-
-        const brushNode = brushGroupRef.current;
-        if (brushNode && brushBehaviorRef.current) {
-          isSyncingRef.current = true;
-          try {
-            select(brushNode).call(
-              brushBehaviorRef.current.move,
-              [0, dimensions.svgWidth].map(event.transform.invertX, event.transform)
-            );
-          } finally {
-            isSyncingRef.current = false;
-          }
-        }
-      });
-
-    zoomBehaviorRef.current = behavior;
-
-    // Only a width change invalidates the transform -- it is in pixel space.
-    // Collapsing a lane changes the height and rebuilds this behaviour, and
-    // resetting here would throw away the reader's current date range.
-    const widthChanged = lastZoomWidthRef.current !== dimensions.svgWidth;
-    lastZoomWidthRef.current = dimensions.svgWidth;
-    const nextTransform = widthChanged ? zoomIdentity : zoomTransformRef.current;
-
-    isSyncingRef.current = true;
-    try {
-      select(node).call(behavior).call(behavior.transform, nextTransform);
-    } finally {
-      isSyncingRef.current = false;
-    }
-    zoomTransformRef.current = nextTransform;
-    if (widthChanged) {
-      setZoomTransform(zoomIdentity);
-    }
-
-    return () => {
-      select(node).on(".zoom", null);
-      zoomBehaviorRef.current = null;
-    };
-  }, [hasVisibleChart, dimensions.svgWidth, dimensions.totalContentHeight]);
-
-  // --- overview brush --------------------------------------------------
-  useEffect(() => {
-    const node = brushGroupRef.current;
-    if (!hasVisibleChart || !node || dimensions.svgWidth <= 0) {
-      return undefined;
-    }
-
-    const behavior = brushX()
-      .extent([
-        [0, 0],
-        [dimensions.svgWidth, OVERVIEW.height],
-      ])
-      .on("brush", () => {
-        if (isSyncingRef.current) {
-          return;
-        }
-        const selection = brushSelection(node);
-        if (!selection || selection[1] - selection[0] <= 0) {
-          return;
-        }
-
-        const nextTransform = zoomIdentity
-          .scale(dimensions.svgWidth / (selection[1] - selection[0]))
-          .translate(-selection[0], 0);
-
-        zoomTransformRef.current = nextTransform;
-        setZoomTransform(nextTransform);
-
-        if (zoomRectRef.current && zoomBehaviorRef.current) {
-          isSyncingRef.current = true;
-          try {
-            select(zoomRectRef.current).call(
-              zoomBehaviorRef.current.transform,
-              nextTransform
-            );
-          } finally {
-            isSyncingRef.current = false;
-          }
-        }
-      });
-
-    brushBehaviorRef.current = behavior;
-    const selection = select(node);
-
-    isSyncingRef.current = true;
-    try {
-      selection.call(behavior);
-      selection.call(
-        behavior.move,
-        [0, dimensions.svgWidth].map((x) => zoomTransformRef.current.invertX(x))
-      );
-    } finally {
-      isSyncingRef.current = false;
-    }
-
-    return () => {
-      selection.on(".brush", null);
-      brushBehaviorRef.current = null;
-    };
-  }, [hasVisibleChart, dimensions.svgWidth]);
+  // Pointer x in the plot's own units: the plot starts `marginLeft` into the SVG.
+  const plotOffsetX = dimensions.marginLeft;
+  const clientToPlotX = useCallback(
+    (clientX) => {
+      const svgX = clientXToSvgX(svgRef.current, clientX);
+      return svgX == null ? null : svgX - plotOffsetX;
+    },
+    [plotOffsetX]
+  );
 
   const toggleGroup = useCallback((groupKey) => {
     setCollapsedGroups((previous) => {
@@ -700,6 +745,23 @@ export default function EventRelationTimelineCard({
   const selectedSpanCount = visibleSpans.filter((span) =>
     (span.conceptIds || []).some((id) => activeSelectionSet.has(id))
   ).length;
+  const zoomControls = (
+    <TimelineZoomControls
+      zoomPercent={zoomPercent}
+      onZoomIn={() => zoomIn()}
+      onZoomOut={() => zoomOut()}
+      onPanEarlier={panEarlier}
+      onPanLater={panLater}
+      onReset={resetZoom}
+      canZoomIn={canZoomIn}
+      canZoomOut={canZoomOut}
+      canPanEarlier={canPanEarlier}
+      canPanLater={canPanLater}
+      canReset={canReset}
+      disabled={!hasVisibleChart}
+      labels={ZOOM_CONTROL_LABELS}
+    />
+  );
 
   return (
     <Card
@@ -733,13 +795,26 @@ export default function EventRelationTimelineCard({
           </Stack>
         }
       />
+      {/* Outside the collapsible body, so linked range changes are still
+          announced while this section is collapsed. One linked timeline owns it. */}
+      {isAnnouncer ? (
+        <Typography
+          variant="caption"
+          aria-live="polite"
+          data-testid="event-timeline-range-status"
+          sx={visuallyHiddenSx}
+        >
+          {rangeAnnouncement}
+        </Typography>
+      ) : null}
       {expanded ? (
         <>
           <Divider />
           <CardContent
             id={panelBodyId}
             sx={{
-              px: 1.5,
+              // Matches the document timeline, so the two plots line up.
+              px: TIMELINE_CONTENT_PADDING_X,
               py: 1.25,
               "&:last-child": { pb: 1.25 },
               ...(embedded ? { minHeight: 0, overflow: "visible" } : {}),
@@ -749,8 +824,10 @@ export default function EventRelationTimelineCard({
               Event relation timeline. Temporal relations are packed into
               overlap-free lanes grouped by Finding, Disease, Stage Grade and
               Treatment. Marks are green, or red when the concept is negated.
-              Drag the overview band below the chart, or scroll over the chart,
-              to zoom the date range.
+              Use the zoom buttons, the + and − keys, or the handles on the
+              overview strip below the chart to choose the date range; drag the
+              chart or press ← and → to pan. The overview strip always shows the
+              full date range.
             </Typography>
 
             {isLoading ? (
@@ -783,110 +860,155 @@ export default function EventRelationTimelineCard({
                   </Alert>
                 ) : null}
 
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  justifyContent="flex-end"
-                  sx={{ flexWrap: "wrap", gap: 1 }}
-                >
-                  <Typography component="label" htmlFor={`${generatedId}-scope`} variant="caption">
-                    Showing:
-                  </Typography>
-                  <Select
-                    native
-                    id={`${generatedId}-scope`}
-                    size="small"
-                    value={effectiveViewMode}
-                    onChange={(event) => setViewMode(event.target.value)}
-                    sx={{ fontSize: 12, height: 26, minWidth: 180, bgcolor: "background.paper" }}
-                    inputProps={{
-                      "aria-label": "Event relation timeline scope",
-                      "data-testid": "event-relation-scope",
-                    }}
-                  >
-                    <option value={EVENT_RELATION_TIMELINE_SCOPE_ALL}>
-                      All Patient Events
-                    </option>
-                    <option
-                      value={EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT}
-                      disabled={!canFilterToCurrentReport}
-                    >
-                      Filtered Patient Events
-                    </option>
-                  </Select>
-                  {selectedDocument && onOpenReport ? (
-                    <Button size="small" onClick={onOpenReport}>
-                      Open report
-                    </Button>
-                  ) : null}
-                </Stack>
-                {selectedDocument ? (
-                  <Typography variant="caption" color="text.secondary">
-                    Current report: {selectedDocument.name || selectedDocument.id}
-                  </Typography>
-                ) : null}
-
-                {visibleSpans.length === 0 ? (
-                  <Alert severity="info" role="status">
-                    {effectiveViewMode === EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT
-                      ? "No event relations match the current report."
-                      : "No matched event relations are available to display."}
-                  </Alert>
-                ) : (
-                  <Box ref={setContainerNode} sx={{ width: "100%", minWidth: 0 }}>
-                    {/* ---- legend svg (alpha: legendSvg) ---- */}
+                <Box ref={setContainerNode} sx={{ width: "100%", minWidth: 0 }}>
                     <Box
-                      component="svg"
-                      aria-hidden="true"
-                      focusable="false"
-                      width="100%"
-                      viewBox={`0 0 ${dimensions.viewBoxWidth} ${LEGEND.height}`}
-                      sx={{ display: "block", height: LEGEND.height, overflow: "visible" }}
+                      className="event-relation-legend"
+                      sx={{
+                        minHeight: LEGEND.height,
+                        borderBottom: `1px solid ${colors.structureLine}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 1,
+                        flexWrap: "wrap",
+                        px: 1.25,
+                        py: 0.5,
+                      }}
                     >
-                      <text x={10} y={MARGINS.top + LEGEND.anchorY} dy=".5ex" fontSize={14}>
-                        Event Occurrence:
-                      </text>
-                      <g transform={`translate(130, ${MARGINS.top})`}>
-                        {presentRelations.map((relation, index) => (
-                          <g key={relation} transform={`translate(${index * 110}, 0)`}>
-                            <path
-                              d={RELATION_LEGEND_PATHS[relation]}
-                              fill={RELATION_COLOR}
-                              stroke={RELATION_COLOR}
-                              strokeWidth={relation === "Overlaps" ? 4 : 2}
-                            />
-                            <text x={25} y={10} alignmentBaseline="middle" fontSize={14}>
-                              {relation}
-                              <title>{RELATION_LEGEND_TITLES[relation]}</title>
-                            </text>
-                          </g>
+                      <Stack
+                        direction="row"
+                        spacing={1.25}
+                        alignItems="center"
+                        sx={{ flexWrap: "wrap", rowGap: 0.5, minWidth: 0 }}
+                      >
+                        <Typography
+                          component="span"
+                          sx={{
+                            fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+                            fontSize: 14,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Event Occurrence:
+                        </Typography>
+                        {presentRelations.map((relation) => (
+                          <RelationLegendItem key={relation} relation={relation} />
                         ))}
-                      </g>
-                      <line
-                        x1={10}
-                        y1={LEGEND.height}
-                        x2={dimensions.viewBoxWidth}
-                        y2={LEGEND.height}
-                        stroke="#dbdbdb"
-                        strokeWidth={1}
-                        shapeRendering="crispEdges"
-                      />
-                    </Box>
+                      </Stack>
 
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        alignItems="center"
+                        justifyContent="flex-end"
+                        sx={{ flexWrap: "wrap", rowGap: 0.5 }}
+                      >
+                        {zoomControls}
+                        <Typography
+                          component="label"
+                          htmlFor={`${generatedId}-scope`}
+                          sx={{
+                            fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+                            fontSize: 14,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Showing:
+                        </Typography>
+                        <Select
+                          native
+                          id={`${generatedId}-scope`}
+                          size="small"
+                          value={effectiveViewMode}
+                          onChange={(event) => setViewMode(event.target.value)}
+                          sx={{
+                            fontFamily: "Arial, sans-serif",
+                            fontSize: 12,
+                            height: 24,
+                            minWidth: 165,
+                            bgcolor: "background.paper",
+                            "& .MuiNativeSelect-select": {
+                              py: 0,
+                              height: 24,
+                              lineHeight: "24px",
+                            },
+                            "& fieldset": { borderColor: colors.structureLine },
+                          }}
+                          inputProps={{
+                            "aria-label": "Event relation timeline scope",
+                            "data-testid": "event-relation-scope",
+                          }}
+                        >
+                          <option value={EVENT_RELATION_TIMELINE_SCOPE_ALL}>
+                            All Patient Events
+                          </option>
+                          <option
+                            value={EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT}
+                            disabled={!canFilterToCurrentReport}
+                          >
+                            Filtered Patient Events
+                          </option>
+                        </Select>
+                        {selectedDocument && onOpenReport ? (
+                          <Button size="small" onClick={onOpenReport}>
+                            Open report
+                          </Button>
+                        ) : null}
+                      </Stack>
+                    </Box>
+                    {selectedDocument ? (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block", mt: 0.5 }}
+                      >
+                        Current report: {selectedDocument.name || selectedDocument.id}
+                      </Typography>
+                    ) : null}
+
+                    {visibleSpans.length === 0 ? (
+                      <Alert severity="info" role="status" sx={{ mt: 1 }}>
+                        {effectiveViewMode === EVENT_RELATION_TIMELINE_SCOPE_CURRENT_REPORT
+                          ? "No event relations match the current report."
+                          : "No matched event relations are available to display."}
+                      </Alert>
+                    ) : (
+                      <>
                     {/* ---- main timeline svg ---- */}
                     <Box
                       component="svg"
+                      ref={svgRef}
                       width="100%"
-                      viewBox={`0 20 ${dimensions.viewBoxWidth} ${dimensions.svgTotalHeight}`}
+                      viewBox={`0 ${dimensions.viewBoxTop} ${dimensions.viewBoxWidth} ${dimensions.svgTotalHeight}`}
                       preserveAspectRatio="xMidYMid meet"
                       role="group"
                       aria-label="Event relation timeline chart"
                       aria-describedby={descriptionId}
-                      sx={{ display: "block", overflow: "visible" }}
+                      onKeyDown={handlePlotKeyDown}
+                      sx={{
+                        display: "block",
+                        overflow: "visible",
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                        "& .main-ER-x-axis-top text, & .main-ER-x-axis-bottom text, & .overview-x-axis text": {
+                          fontFamily: "Monaco, monospace",
+                          fontSize: "10px",
+                        },
+                        "& .report_type_label, & .age_label, & .overview_label": {
+                          fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+                          fontSize: "14px",
+                        },
+                        "& .encounter_age, & .years_since_label": {
+                          fontFamily: "Roboto, Helvetica, Arial, sans-serif",
+                          fontSize: "11px",
+                        },
+                      }}
                     >
                       <defs>
-                        <TimelineMarkerDefs idPrefix={generatedId} />
+                        <TimelineMarkerDefs
+                          idPrefix={generatedId}
+                          selectedOutlineColor={colors.selectedOutline}
+                        />
                         <clipPath id={`${generatedId}-secondary_area_clip`} clipPathUnits="userSpaceOnUse">
                           <rect
                             x={0}
@@ -905,31 +1027,58 @@ export default function EventRelationTimelineCard({
                         </clipPath>
                       </defs>
 
+                      {/* Press-and-drag here pans a zoomed chart. Spans sit above it. */}
                       <rect
-                        ref={zoomRectRef}
                         className="zoom_ER"
                         width={dimensions.svgWidth}
                         height={dimensions.totalContentHeight + GAPS.legendToMain}
-                        transform={`translate(${MARGINS.left}, ${MARGINS.top + LEGEND.height})`}
+                        transform={`translate(${dimensions.marginLeft}, ${MARGINS.top + LEGEND.height})`}
                         fill="transparent"
-                        style={{ cursor: "grab" }}
+                        style={{
+                          cursor: isDragging ? "grabbing" : isZoomed ? "grab" : "default",
+                          // Vertical gestures still scroll the page.
+                          touchAction: "pan-y",
+                        }}
+                        onPointerDown={(event) =>
+                          handlePlotPointerDown(event, {
+                            clientToX: clientToPlotX,
+                            plotWidth: dimensions.svgWidth,
+                          })
+                        }
                       />
 
                       {/* axes (not clipped) */}
                       <g
                         className="axis-layer"
-                        transform={`translate(${MARGINS.left}, ${dimensions.mainTop})`}
+                        transform={`translate(${dimensions.marginLeft}, ${dimensions.mainTop})`}
                       >
-                        <TimeAxis scale={visibleX} orientation="top" className="main-ER-x-axis-top" />
-                        <TimeAxis
-                          scale={visibleX}
+                        <TimelineAxis
+                          ticks={mainAxisTicks}
+                          x1={0}
+                          x2={dimensions.svgWidth}
+                          y={0}
+                          orientation="top"
+                          labelOffset={8}
+                          lineColor={colors.axisLine}
+                          textColor={colors.axisText}
+                          fontSize={AXIS_FONT_SIZE}
+                          className="main-ER-x-axis-top"
+                        />
+                        <TimelineAxis
+                          ticks={mainAxisTicks}
+                          x1={0}
+                          x2={dimensions.svgWidth}
+                          y={dimensions.totalContentHeight}
                           orientation="bottom"
+                          labelOffset={15}
+                          lineColor={colors.axisLine}
+                          textColor={colors.axisText}
+                          fontSize={AXIS_FONT_SIZE}
                           className="main-ER-x-axis-bottom"
-                          transform={`translate(0, ${dimensions.totalContentHeight})`}
                         />
                       </g>
 
-                      <g className="main_ER_root" transform={`translate(${MARGINS.left}, ${dimensions.mainTop})`}>
+                      <g className="main_ER_root" transform={`translate(${dimensions.marginLeft}, ${dimensions.mainTop})`}>
                         {/* labels + toggles */}
                         <g className="main_ER_ui">
                           {groups.map((group) => (
@@ -939,6 +1088,7 @@ export default function EventRelationTimelineCard({
                             >
                               <text
                                 className="report_type_label"
+                                fill={colors.labelText}
                                 transform={`translate(${-TEXT.marginLeft}, ${group.height / 2 - 5})`}
                                 dy="0.35em"
                                 textAnchor="end"
@@ -967,7 +1117,7 @@ export default function EventRelationTimelineCard({
                                   d="M -4 -2.67 L 0 1.33 L 4 -2.67"
                                   transform={group.expanded ? "rotate(0)" : "rotate(-90)"}
                                   fill="none"
-                                  stroke="#666"
+                                  stroke={colors.toggleIcon}
                                   strokeWidth={2}
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
@@ -988,7 +1138,7 @@ export default function EventRelationTimelineCard({
                                 x2={visibleX(date)}
                                 y1={0}
                                 y2={dimensions.totalContentHeight}
-                                stroke={DATE_ANCHOR_COLOR}
+                                stroke={colors.dateAnchor}
                                 strokeWidth={2}
                                 strokeDasharray="3,3"
                                 opacity={0.9}
@@ -1029,7 +1179,7 @@ export default function EventRelationTimelineCard({
                                       width={dimensions.svgWidth}
                                       height={10}
                                       fill="none"
-                                      stroke="#ccc"
+                                      stroke={colors.structureLine}
                                       strokeWidth={1}
                                     />
                                   </g>
@@ -1051,8 +1201,10 @@ export default function EventRelationTimelineCard({
                                       isSelected={(span.conceptIds || []).some((id) =>
                                         activeSelectionSet.has(id)
                                       )}
+                                      hasActiveSelection={activeSelectionSet.size > 0}
                                       idPrefix={generatedId}
                                       onToggle={handleSpanToggle}
+                                      selectedOutlineColor={colors.selectedOutline}
                                     />
                                   </g>
                                 ))}
@@ -1064,7 +1216,7 @@ export default function EventRelationTimelineCard({
                                     x2={dimensions.svgWidth}
                                     y1={group.height}
                                     y2={group.height}
-                                    stroke="#ccc"
+                                    stroke={colors.structureLine}
                                     strokeWidth={1}
                                   />
                                 ) : null}
@@ -1078,10 +1230,11 @@ export default function EventRelationTimelineCard({
                       {ageAxis.available ? (
                         <g
                           className="age_ER"
-                          transform={`translate(${MARGINS.left}, ${dimensions.ageTop})`}
+                          transform={`translate(${dimensions.marginLeft}, ${dimensions.ageTop})`}
                         >
                           <text
                             className="age_label"
+                            fill={colors.labelText}
                             x={-TEXT.marginLeft}
                             y={AGE_AREA.height / 2}
                             dy=".5ex"
@@ -1100,7 +1253,7 @@ export default function EventRelationTimelineCard({
                                   dy=".5ex"
                                   textAnchor="middle"
                                   fontSize={11}
-                                  fill="#444"
+                                  fill={colors.ageText}
                                 >
                                   {encounter.age}
                                 </text>
@@ -1134,7 +1287,7 @@ export default function EventRelationTimelineCard({
                                   y={AGE_AREA.height / 2}
                                   textAnchor="middle"
                                   fontSize={11}
-                                  fill="#444"
+                                  fill={colors.ageText}
                                 >
                                   {interior.age}
                                 </text>
@@ -1144,25 +1297,36 @@ export default function EventRelationTimelineCard({
                         </g>
                       ) : null}
 
-                      {/* overview + brush */}
-                      <g className="overview" transform={`translate(${MARGINS.left}, ${dimensions.overviewTop})`}>
+                      {/* overview strip: the full date range, never zoomed */}
+                      <g className="overview" transform={`translate(${dimensions.marginLeft}, ${dimensions.overviewTop})`}>
                         <text
                           className="overview_label"
+                          fill={colors.labelText}
                           x={-TEXT.marginLeft}
-                          y={OVERVIEW.height}
+                          y={dimensions.overviewHeight / 2}
                           dy=".5ex"
                           textAnchor="end"
                           fontSize={14}
                         >
                           Date
                         </text>
-                        <TimeAxis
-                          scale={mainX}
-                          orientation="bottom"
+                        <TimelineOverviewStrip
+                          plotLeft={0}
+                          plotWidth={dimensions.svgWidth}
+                          top={0}
+                          rows={overviewRows}
+                          viewport={viewport}
+                          onViewportChange={setViewport}
+                          minWindowRatio={getMinimumWindowRatio(dimensions.svgWidth)}
+                          domainStart={domain.startDate}
+                          domainEnd={domain.endDate}
+                          tickCount={resolveResponsiveTickCount(dimensions.svgWidth)}
+                          fontSize={AXIS_FONT_SIZE}
+                          clientToX={clientToPlotX}
+                          labels={OVERVIEW_STRIP_LABELS}
+                          testIdPrefix="event-timeline"
                           className="overview-x-axis"
-                          transform={`translate(0, ${OVERVIEW.height})`}
                         />
-                        <g ref={brushGroupRef} className="brush" />
                       </g>
                     </Box>
 
@@ -1179,8 +1343,9 @@ export default function EventRelationTimelineCard({
                       } relations`}
                       {selectedSpanCount > 0 ? ` | ${selectedSpanCount} selected` : ""}
                     </Typography>
+                      </>
+                    )}
                   </Box>
-                )}
               </Stack>
             )}
           </CardContent>

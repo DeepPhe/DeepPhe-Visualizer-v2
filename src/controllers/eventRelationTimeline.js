@@ -39,7 +39,10 @@ function normalizeRelation(value) {
   return relation || "";
 }
 
-function parseUtcDate(value, rowNumber, columnName) {
+// A TSV date is a calendar date, built at local midnight like the document
+// timeline's dates. The two timelines are linked and aligned, so they must
+// share one convention or a date would label differently in each.
+function parseCalendarDate(value, rowNumber, columnName) {
   const normalized = normalizeString(value);
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
 
@@ -50,12 +53,12 @@ function parseUtcDate(value, rowNumber, columnName) {
   const year = Number(match[1]);
   const monthIndex = Number(match[2]) - 1;
   const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, monthIndex, day));
+  const date = new Date(year, monthIndex, day);
 
   if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== monthIndex ||
-    date.getUTCDate() !== day
+    date.getFullYear() !== year ||
+    date.getMonth() !== monthIndex ||
+    date.getDate() !== day
   ) {
     throw new Error(`Invalid ${columnName} value on row ${rowNumber}: ${normalized}`);
   }
@@ -68,9 +71,9 @@ function formatDateLabel(date) {
     return "";
   }
 
-  const year = date.getUTCFullYear();
-  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -118,8 +121,8 @@ export function parseEventRelationTimelineTsv(tsvText) {
     const conceptId = normalizeString(columns[columnIndexByName.ConceptID]);
     const relation1 = normalizeRelation(columns[columnIndexByName.Relation1]);
     const relation2 = normalizeRelation(columns[columnIndexByName.Relation2]);
-    const date1 = parseUtcDate(columns[columnIndexByName.Date1], rowNumber, "Date1");
-    const date2 = parseUtcDate(columns[columnIndexByName.Date2], rowNumber, "Date2");
+    const date1 = parseCalendarDate(columns[columnIndexByName.Date1], rowNumber, "Date1");
+    const date2 = parseCalendarDate(columns[columnIndexByName.Date2], rowNumber, "Date2");
 
     if (!patientId) {
       throw new Error(`Missing PatientID value on row ${rowNumber}.`);
@@ -251,6 +254,21 @@ function countBy(items, getKey) {
   }, {});
 }
 
+function getPresentRelations(spans = []) {
+  const orderedRelations = [];
+  const addRelation = (relation) => {
+    const normalizedRelation = normalizeRelation(relation);
+    if (normalizedRelation && !orderedRelations.includes(normalizedRelation)) {
+      orderedRelations.push(normalizedRelation);
+    }
+  };
+
+  (Array.isArray(spans) ? spans : []).forEach((span) => addRelation(span.relation1));
+  (Array.isArray(spans) ? spans : []).forEach((span) => addRelation(span.relation2));
+
+  return orderedRelations;
+}
+
 export function buildEventRelationTimelineModel({
   tsvText = "",
   relations = undefined,
@@ -302,10 +320,9 @@ export function buildEventRelationTimelineModel({
     laneGroupCounts: countBy(spans, (span) => span.laneGroup),
     dpheGroupCounts: countBy(rows, (row) => row.dpheGroup),
     relationCounts: countBy(spans, (span) => span.relationKey),
-    // Distinct relations present, for the legend (alpha: allRelations).
-    presentRelations: TEMPORAL_RELATIONS.filter((relation) =>
-      spans.some((span) => span.relation1 === relation || span.relation2 === relation)
-    ),
+    // Distinct relations present, for the legend (alpha: start relations first,
+    // then end relations, both deduped in data order).
+    presentRelations: getPresentRelations(spans),
     unmatchedConceptIds: [...unmatchedConceptIds].sort(),
     uncategorizedConceptIds: [...uncategorizedConceptIds].sort(),
     currentReportConceptIds: [...selectedDocumentConceptIds].sort(),
@@ -328,8 +345,6 @@ export function filterEventRelationTimelineModel(model, scope) {
     spans,
     laneGroupCounts: countBy(spans, (span) => span.laneGroup),
     relationCounts: countBy(spans, (span) => span.relationKey),
-    presentRelations: TEMPORAL_RELATIONS.filter((relation) =>
-      spans.some((span) => span.relation1 === relation || span.relation2 === relation)
-    ),
+    presentRelations: getPresentRelations(spans),
   };
 }

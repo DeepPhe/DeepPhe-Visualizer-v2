@@ -6,6 +6,7 @@ import CancerTumorSummaryCard from "./patient/CancerTumorSummaryCard";
 import PatientDocumentsCard from "./patient/PatientDocumentsCard";
 import PatientDocumentDrawer from "./patient/PatientDocumentDrawer";
 import EventRelationTimelineCard from "./patient/EventRelationTimelineCard";
+import TimelineLinkProvider from "./patient/timeline/TimelineLinkProvider";
 import PatientSummaryCard from "./patient/PatientSummaryCard";
 import { getInstances } from "../controllers/omap";
 import { loadPatientFilterSummary } from "../controllers/patient";
@@ -13,6 +14,7 @@ import { shouldShowEventRelationTimeline } from "../controllers/eventRelationTim
 import { usePatientData } from "../hooks/usePatientData";
 import { asRowArray, getValueFromRow } from "../utils/dataProcessing";
 import { resolveFactSelection } from "../utils/patientView/factLinking";
+import { findDocumentIdsForConceptIds } from "../utils/patientView/documentMentions";
 import { resolveSummarySelection } from "../utils/patientView/summarySelection";
 
 /**
@@ -426,6 +428,15 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const patientSummarySections = useMemo(
     () => getSummaryDetailSections(patientSummaryData || patientData?.rawPatient || patientData),
     [patientData, patientSummaryData]
+  );
+  const eventRelatedDocumentIds = useMemo(
+    () =>
+      findDocumentIdsForConceptIds(
+        patientData?.documents,
+        patientData?.concepts,
+        timelineConceptIds
+      ),
+    [patientData, timelineConceptIds]
   );
 
   // Timeline report metadata keyed by document id, for labeling the document
@@ -938,6 +949,8 @@ export default function EmbeddedPatientView({ patientId = "" }) {
           />
         </Box>
 
+        {/* Links the two timelines: one date range, one zoom, aligned strips. */}
+        <TimelineLinkProvider resetKey={patientData?.patientId || patientId || ""}>
         <Box
           sx={{
             ...panelFrameSx,
@@ -951,6 +964,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             timelineData={timelineData}
             selectedDocumentId={selectedDocumentId}
             relatedDocumentIds={activeSelection?.documentIds || []}
+            eventRelatedDocumentIds={eventRelatedDocumentIds}
             onSelectDocument={handleSelectDocumentFromTimeline}
             expanded={!collapsedSections.timeline}
             onToggleExpanded={() => toggleSection("timeline")}
@@ -982,6 +996,7 @@ export default function EmbeddedPatientView({ patientId = "" }) {
             />
           </Box>
         ) : null}
+        </TimelineLinkProvider>
 
         {hasSummary ? (
           <Box

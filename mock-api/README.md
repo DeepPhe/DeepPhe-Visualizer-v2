@@ -5,6 +5,13 @@ Serves the DeepPhe data API from the fixtures vendored in `mock-api/fixtures/`
 `public/data/demographics/patient_demographics.json`. No sibling checkout is
 required; set `FIXTURE_DIR` to serve from elsewhere.
 
+`FIXTURE_DIR` can point at either layout:
+
+- flat patient files, such as `mock-api/fixtures/fake_patient1.json`
+- directory-shaped DeepPhe JSON output, such as
+  `dphe_output_500/json/fake_patient500/fake_patient500.json` plus that
+  patient's `*_Doc.json`, `*_Cancers.json`, and `*_Concepts.json` files
+
 ```bash
 npm run mock-api      # http://localhost:3333
 npm start             # the app expects the API on 3333

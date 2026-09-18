@@ -99,9 +99,7 @@ describe("PatientGrid column sizing", () => {
     );
 
     const patientIdHeader = container.querySelector('thead th[data-column-id="patientId"]');
-    const patientIdResizeHandle = container.querySelector(
-      '[data-testid="patient-grid-column-resizer-patientId"]'
-    );
+    const patientIdResizeHandle = container.querySelector('[data-testid="patient-grid-column-resizer-patientId"]');
 
     expect(patientIdHeader).not.toBeNull();
     expect(patientIdResizeHandle).not.toBeNull();
@@ -123,6 +121,49 @@ describe("PatientGrid column sizing", () => {
 
     unmount();
   });
+
+  it("supports keyboard resizing for patient columns", async () => {
+    const { container, unmount } = renderComponent(
+      <PatientGrid embedded data={[baseRow]} totalCohortCount={1} cohortSize={1} />
+    );
+
+    const patientIdHeader = container.querySelector('thead th[data-column-id="patientId"]');
+    const patientIdResizeHandle = container.querySelector('[data-testid="patient-grid-column-resizer-patientId"]');
+
+    expect(patientIdResizeHandle?.getAttribute("tabindex")).toBe("0");
+    expect(patientIdResizeHandle?.getAttribute("aria-valuenow")).toBe("200");
+
+    await act(async () => {
+      patientIdResizeHandle?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(Number(patientIdHeader?.getAttribute("data-column-size"))).toBe(210);
+    });
+
+    unmount();
+  });
+
+  it("keeps page-scoped tools explicit and patient identity columns pinned", () => {
+    const { container, unmount } = renderComponent(
+      <PatientGrid embedded data={[baseRow]} totalCohortCount={25} cohortSize={25} totalPages={3} />
+    );
+
+    expect(container.querySelector('input[placeholder="Search current page…"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="Search loaded patient page"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Export current patient page to CSV"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Sort Patient ID on current page"]')).not.toBeNull();
+    expect(container.textContent).toContain("Search, sort, and export apply to this loaded page.");
+    expect(container.querySelector('tbody td[data-column-id="expand"]')?.getAttribute("data-pinned-column")).toBe(
+      "true"
+    );
+    expect(container.querySelector('tbody td[data-column-id="patientId"]')?.getAttribute("data-pinned-column")).toBe(
+      "true"
+    );
+
+    unmount();
+  });
 });
 
 describe("PatientGrid detail panel actions", () => {
@@ -139,12 +180,7 @@ describe("PatientGrid detail panel actions", () => {
     };
 
     const { container, unmount } = renderComponent(
-      <PatientGrid
-        embedded
-        data={[rowWithConfidenceDetails]}
-        totalCohortCount={1}
-        cohortSize={1}
-      />
+      <PatientGrid embedded data={[rowWithConfidenceDetails]} totalCohortCount={1} cohortSize={1} />
     );
 
     const expandButton = container.querySelector('button[aria-label="Expand row details"]');
@@ -155,9 +191,7 @@ describe("PatientGrid detail panel actions", () => {
 
     let slider = null;
     await waitFor(() => {
-      slider = container.querySelector(
-        'input[aria-label="Minimum patient drawer finding confidence percent"]'
-      );
+      slider = container.querySelector('input[aria-label="Minimum patient drawer finding confidence percent"]');
       expect(slider).not.toBeNull();
     });
 
@@ -169,6 +203,17 @@ describe("PatientGrid detail panel actions", () => {
     expect(container.textContent).toContain("High Confidence Finding");
     expect(container.textContent).not.toContain("Low Confidence Finding");
     expect(container.textContent).toContain("1 finding hidden below 50% confidence.");
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      valueSetter?.call(slider, "75");
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Confidence: >=75%");
+    });
 
     unmount();
   });
@@ -184,13 +229,7 @@ describe("PatientGrid detail panel actions", () => {
     };
 
     const { container, unmount } = renderComponent(
-      <PatientGrid
-        embedded
-        data={[rowWithDetails]}
-        totalCohortCount={1}
-        cohortSize={1}
-        onPatientOpen={onPatientOpen}
-      />
+      <PatientGrid embedded data={[rowWithDetails]} totalCohortCount={1} cohortSize={1} onPatientOpen={onPatientOpen} />
     );
 
     const expandButton = container.querySelector('button[aria-label="Expand row details"]');

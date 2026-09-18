@@ -90,7 +90,22 @@ function formatDateTimeLabel(date) {
   return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
 
-function formatTickLabel(date, dateRangeDays) {
+// Below this many pixels per tick, labels start to crowd each other.
+export const MIN_TICK_SPACING = 150;
+
+export function resolveResponsiveTickCount(plotWidth, maxTickCount = 7) {
+  const numericPlotWidth = Math.max(0, Number(plotWidth) || 0);
+  const numericMaxTickCount = Math.max(2, Number(maxTickCount) || 7);
+  return Math.min(
+    numericMaxTickCount,
+    Math.max(2, Math.floor(numericPlotWidth / MIN_TICK_SPACING) + 1)
+  );
+}
+
+// `timeZone` must match how the timeline built its dates: document dates are
+// local (`new Date(year, month, day)`), event dates are UTC midnight. Formatting
+// a UTC-midnight date in local time prints the previous day across the Americas.
+export function formatTickLabel(date, dateRangeDays, { timeZone } = {}) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return "";
   }
@@ -98,11 +113,11 @@ function formatTickLabel(date, dateRangeDays) {
   const options =
     dateRangeDays >= 370
       ? { month: "short", year: "numeric" }
-      : dateRangeDays >= 120
-        ? { month: "short", day: "numeric" }
-        : { month: "short", day: "numeric" };
+      : { month: "short", day: "numeric" };
 
-  return new Intl.DateTimeFormat("en-US", options).format(date);
+  return new Intl.DateTimeFormat("en-US", timeZone ? { ...options, timeZone } : options).format(
+    date
+  );
 }
 
 function formatDateKey(date) {
@@ -219,7 +234,14 @@ function resolveEpisodeLegend(reports, episodeCounts = {}) {
     .filter((episode) => episode.count > 0);
 }
 
-export function resolveTicks(startDate, endDate, width, plotLeft, tickCount = 7) {
+export function resolveTicks(
+  startDate,
+  endDate,
+  width,
+  plotLeft,
+  tickCount = 7,
+  { timeZone } = {}
+) {
   if (!(startDate instanceof Date) || !(endDate instanceof Date)) {
     return [];
   }
@@ -237,9 +259,35 @@ export function resolveTicks(startDate, endDate, width, plotLeft, tickCount = 7)
     return {
       date,
       x: plotLeft + plotWidth * ratio,
-      label: formatTickLabel(date, dateRangeDays),
+      label: formatTickLabel(date, dateRangeDays, { timeZone }),
     };
   });
+}
+
+/**
+ * Overview-strip rows for the document timeline: one row per report type, in
+ * lane order, with a zero-width mark per dated document at its full-domain x.
+ * `stroke` outlines each mark like the detail dots, so pale episode colors
+ * stay visible on the strip.
+ */
+export function buildDocumentOverviewRows(rows = [], points = [], { stroke } = {}) {
+  return (rows || []).map((row) => ({
+    key: row.type,
+    marks: (points || [])
+      .filter(
+        (point) =>
+          point.type === row.type &&
+          point.dateObject instanceof Date &&
+          !Number.isNaN(point.dateObject.getTime())
+      )
+      .map((point) => ({
+        key: point.id,
+        x1: point.x,
+        x2: point.x,
+        color: point.episodeColor,
+        ...(stroke ? { stroke } : {}),
+      })),
+  }));
 }
 
 function buildPointLayout({ reports, reportTypes, dimensions, dateDomain }) {
@@ -333,7 +381,41 @@ function buildPointLayout({ reports, reportTypes, dimensions, dateDomain }) {
   };
 }
 
+function resolveReportDate(report) {
+  return parseDocumentDate(report?.timelineDate || report?.date) || parseDocumentDate(report?.date);
+}
+
+/**
+ * The document timeline's own date domain: its dated documents padded by
+ * `datePaddingDays`. Null whenever the chart isn't drawn (no dated documents,
+ * or every document sharing one timestamp), so a linked timeline never widens
+ * the shared domain for a chart nobody can see.
+ */
+export function resolveTimelineDateDomain(
+  timelineData = {},
+  { datePaddingDays = DEFAULT_DIMENSIONS.datePaddingDays } = {}
+) {
+  const reportsWithIds = (Array.isArray(timelineData?.reportData) ? timelineData.reportData : [])
+    .filter((report) => normalizeString(report?.id));
+  const datedReports = reportsWithIds
+    .map((report) => ({ dateObject: resolveReportDate(report) }))
+    .filter((report) => report.dateObject instanceof Date && !Number.isNaN(report.dateObject.getTime()));
+  const uniqueTimestamps = new Set(datedReports.map((report) => report.dateObject.getTime()));
+
+  // Mirrors buildTimelineChartModel's `hasDateCollapse`.
+  if (datedReports.length === 0 || (reportsWithIds.length > 1 && uniqueTimestamps.size === 1)) {
+    return null;
+  }
+  return resolveDateDomain(datedReports, datePaddingDays);
+}
+
+/**
+ * `options` holds the layout dimensions, plus an optional `dateDomain` that
+ * replaces the documents' own domain (used when the timeline is linked to the
+ * Event Timeline and both share one).
+ */
 export function buildTimelineChartModel(timelineData = {}, options = {}) {
+  const { dateDomain: dateDomainOverride, ...layoutOptions } = options || {};
   const reportData = Array.isArray(timelineData?.reportData) ? timelineData.reportData : [];
 
   const reports = reportData
@@ -343,18 +425,17 @@ export function buildTimelineChartModel(timelineData = {}, options = {}) {
         return null;
       }
 
-      const dateObject = parseDocumentDate(report?.date);
-      const timelineDateObject = parseDocumentDate(report?.timelineDate || report?.date);
       const episodeLabel = normalizeEpisodeLabel(report?.episode);
+      const resolvedDate = resolveReportDate(report);
 
       return {
         id,
         type: normalizeString(report?.type, "Unknown"),
         name: normalizeString(report?.name, id),
         formattedDate: normalizeString(report?.formattedDate),
-        dateObject: timelineDateObject || dateObject,
-        dateLabel: formatDateLabel(timelineDateObject || dateObject),
-        dateTimeLabel: formatDateTimeLabel(timelineDateObject || dateObject),
+        dateObject: resolvedDate,
+        dateLabel: formatDateLabel(resolvedDate),
+        dateTimeLabel: formatDateTimeLabel(resolvedDate),
         episodeLabel,
         episodeColor: EPISODE_COLORS[episodeLabel] || "#9E9E9E",
         dateSource: normalizeString(report?.timelineDateSource, "date"),
@@ -384,18 +465,27 @@ export function buildTimelineChartModel(timelineData = {}, options = {}) {
     });
 
   const reportTypes = resolveReportTypes(reports, timelineData?.reportTypes);
-  const dateDomain = resolveDateDomain(
-    reports,
-    Number(options.datePaddingDays || DEFAULT_DIMENSIONS.datePaddingDays)
-  );
+  const hasDomainOverride =
+    dateDomainOverride?.startDate instanceof Date &&
+    dateDomainOverride?.endDate instanceof Date &&
+    dateDomainOverride.endDate.getTime() > dateDomainOverride.startDate.getTime();
+  const dateDomain = hasDomainOverride
+    ? {
+        startDate: new Date(dateDomainOverride.startDate.getTime()),
+        endDate: new Date(dateDomainOverride.endDate.getTime()),
+      }
+    : resolveDateDomain(
+        reports,
+        Number(layoutOptions.datePaddingDays || DEFAULT_DIMENSIONS.datePaddingDays)
+      );
 
   const dimensions = {
     ...DEFAULT_DIMENSIONS,
-    ...options,
+    ...layoutOptions,
     plotWidth:
-      Number(options?.svgWidth || DEFAULT_DIMENSIONS.svgWidth) -
-      Number(options?.plotLeft || DEFAULT_DIMENSIONS.plotLeft) -
-      Number(options?.plotRight || DEFAULT_DIMENSIONS.plotRight),
+      Number(layoutOptions.svgWidth || DEFAULT_DIMENSIONS.svgWidth) -
+      Number(layoutOptions.plotLeft || DEFAULT_DIMENSIONS.plotLeft) -
+      Number(layoutOptions.plotRight || DEFAULT_DIMENSIONS.plotRight),
   };
 
   const { points, rows } = buildPointLayout({

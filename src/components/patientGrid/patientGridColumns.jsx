@@ -1,9 +1,6 @@
 import React from "react";
-import PropTypes from "prop-types";
 import { Box, IconButton, Tooltip, Typography } from "@mui/material";
 import { visuallyHidden } from "@mui/utils";
-import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 
 const MIN_TOOLTIP_TEXT_LENGTH = 25;
@@ -107,7 +104,7 @@ export function createColumns({ onToggleRow }) {
       size: 40,
       minSize: 40,
       maxSize: 40,
-      meta: { exportable: false },
+      meta: { exportable: false, pinned: true, stickyLeft: 0 },
       enableSorting: false,
       enableHiding: false,
       enableResizing: false,
@@ -149,6 +146,7 @@ export function createColumns({ onToggleRow }) {
       header: "Patient ID",
       size: 200,
       minSize: 130,
+      meta: { pinned: true, stickyLeft: 40 },
       cell: ({ getValue }) => {
         const value = String(getValue() || "");
         return (
@@ -176,11 +174,10 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "docCount",
       id: "docCount",
       header: "Document Count",
-      size: 115,
-      minSize: 105,
+      size: 160,
+      minSize: 130,
       sortingFn: (rowA, rowB, columnId) =>
-        getDocumentCountValue(rowA.getValue(columnId)) -
-        getDocumentCountValue(rowB.getValue(columnId)),
+        getDocumentCountValue(rowA.getValue(columnId)) - getDocumentCountValue(rowB.getValue(columnId)),
       cell: ({ getValue }) => {
         const documentCount = getDocumentCountValue(getValue());
         return renderTruncatedCell({
@@ -194,8 +191,8 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "ageAtDx",
       id: "ageAtDx",
       header: "Age at Dx",
-      size: 65,
-      minSize: 65,
+      size: 90,
+      minSize: 85,
       sortingFn: (rowA, rowB, columnId) =>
         getAgeSortValue(rowA.getValue(columnId)) - getAgeSortValue(rowB.getValue(columnId)),
       cell: ({ getValue }) => {
@@ -212,8 +209,8 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "gender",
       id: "gender",
       header: "Gender",
-      size: 65,
-      minSize: 65,
+      size: 85,
+      minSize: 80,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
@@ -236,8 +233,8 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "ethnicity",
       id: "ethnicity",
       header: "Ethnicity",
-      size: 115,
-      minSize: 105,
+      size: 125,
+      minSize: 110,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
@@ -248,8 +245,8 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "cancerType",
       id: "cancerType",
       header: "Cancer Type",
-      size: 100,
-      minSize: 90,
+      size: 110,
+      minSize: 100,
       cell: ({ getValue }) =>
         renderTruncatedCell({
           displayValue: String(getValue() || "—"),
@@ -260,8 +257,8 @@ export function createColumns({ onToggleRow }) {
       accessorKey: "stage",
       id: "stage",
       header: "Stage",
-      size: 90,
-      minSize: 90,
+      size: 110,
+      minSize: 100,
       sortingFn: (rowA, rowB) =>
         Number(rowA.original?.stageSortRank ?? Number.NEGATIVE_INFINITY) -
         Number(rowB.original?.stageSortRank ?? Number.NEGATIVE_INFINITY),
@@ -353,20 +350,3 @@ export function createColumns({ onToggleRow }) {
     },
   ];
 }
-
-export function SortIndicator({ column }) {
-  const sort = column.getIsSorted();
-  if (!sort) {
-    return null;
-  }
-
-  if (sort === "asc") {
-    return <ArrowUpwardIcon sx={{ fontSize: 14, ml: 0.5, verticalAlign: "middle" }} />;
-  }
-
-  return <ArrowDownwardIcon sx={{ fontSize: 14, ml: 0.5, verticalAlign: "middle" }} />;
-}
-
-SortIndicator.propTypes = {
-  column: PropTypes.object.isRequired,
-};

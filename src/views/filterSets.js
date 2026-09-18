@@ -195,7 +195,6 @@ const FILTER_SET_CONFIG = [
       {
         key: "Stage",
         type: "attributes",
-        maxHeightPx: 150,
         hasRollup: true,
         displayMode: "distribution",
         defaultSortMode: "alpha-asc",
@@ -238,15 +237,14 @@ const FILTER_SET_CONFIG = [
       },
       { key: "Generic TNM Finding", type: "concepts", enabled: true },
       { key: "Pathologic TNM Finding", type: "concepts", enabled: true },
-      { key: "Lymph Involvement", type: "attributes", maxHeightPx: 300 },
+      { key: "Lymph Involvement", type: "attributes" },
       { key: "Lymph Node", type: "concepts", enabled: true },
-      { key: "Metastatic Site", type: "attributes", maxHeightPx: 220 },
+      { key: "Metastatic Site", type: "attributes" },
       {
         key: "Behavior",
         type: "attributes",
         displayName: "Metastatic Behavior",
         displayMode: "compact",
-        maxHeightPx: 220,
         defaultSortMode: "value-desc",
         customSortOrder: [
           "Metastatic",

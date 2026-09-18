@@ -58,11 +58,32 @@ const CONCEPT_FIXTURES = [
   mentionIds: [`mention-${suffix}`],
 }));
 
+// TSV dates are calendar dates at local midnight, like the document timeline's.
+function localMidnight(isoDate) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day).getTime();
+}
+
 function getSpanCountsByLaneGroup(model) {
   return model.spans.reduce((counts, span) => {
     counts[span.laneGroup] = (counts[span.laneGroup] || 0) + 1;
     return counts;
   }, {});
+}
+
+function relationFixture(conceptId, relation1, relation2, start, end) {
+  return {
+    sourceRowNumber: 2,
+    patientId: "fake_patient1",
+    conceptId,
+    relation1,
+    relation2,
+    relationKey: `${relation1}/${relation2}`,
+    date1Label: start,
+    date2Label: end,
+    date1Time: localMidnight(start),
+    date2Time: localMidnight(end),
+  };
 }
 
 describe("event relation timeline controller", () => {
@@ -129,8 +150,8 @@ describe("event relation timeline controller", () => {
         laneGroup: "Treatment",
         date1Label: "2010-01-31",
         date2Label: "2010-05-31",
-        date1Time: Date.UTC(2010, 0, 31),
-        date2Time: Date.UTC(2010, 4, 31),
+        date1Time: new Date(2010, 0, 31).getTime(),
+        date2Time: new Date(2010, 4, 31).getTime(),
         relation1: "On",
         relation2: "Before",
         relationKey: "On/Before",
@@ -146,8 +167,8 @@ describe("event relation timeline controller", () => {
         laneGroup: "Treatment",
         date1Label: "2010-01-31",
         date2Label: "2010-05-31",
-        date1Time: Date.UTC(2010, 0, 31),
-        date2Time: Date.UTC(2010, 4, 31),
+        date1Time: new Date(2010, 0, 31).getTime(),
+        date2Time: new Date(2010, 4, 31).getTime(),
         relation1: "After",
         relation2: "Before",
         relationKey: "After/Before",
@@ -194,6 +215,31 @@ describe("event relation timeline controller", () => {
       Finding: 3,
       Treatment: 2,
     });
+  });
+
+  it("orders legend relations from data start relations, then end relations", () => {
+    const model = buildEventRelationTimelineModel({
+      relations: [
+        relationFixture("c-finding", "After", "Before", "2010-01-01", "2010-02-01"),
+        relationFixture("c-treatment", "On", "Overlaps", "2010-03-01", "2010-04-01"),
+      ],
+      concepts: [
+        {
+          id: "c-finding",
+          name: "Finding",
+          dpheGroup: "Clinical Test Result",
+          mentionIds: ["m-finding"],
+        },
+        {
+          id: "c-treatment",
+          name: "Treatment",
+          dpheGroup: "Intervention or Procedure",
+          mentionIds: ["m-treatment"],
+        },
+      ],
+    });
+
+    expect(model.presentRelations).toEqual(["After", "On", "Before", "Overlaps"]);
   });
 
   it("limits timeline availability to the canonical fake patient id", () => {
