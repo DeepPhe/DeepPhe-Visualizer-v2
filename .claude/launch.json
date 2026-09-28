@@ -13,6 +13,14 @@
       "autoPort": true
     },
     {
+      "name": "viz2-mock-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "/Volumes/Samsung-Ext/dev/deep/DeepPhe-Visualizer-v2/mock-api/server.js"
+      ],
+      "port": 3333
+    },
+    {
       "name": "viz2-docs",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

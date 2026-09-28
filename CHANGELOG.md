@@ -10,9 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Event Timeline** panel on the patient view: temporal relations packed into
   overlap-free lanes by Finding, Disease, Stage/Grade, and Treatment, with
-  relation-specific end caps (On / Overlaps / After / Before), scroll-to-zoom
-  and a draggable overview band, a per-lane density strip when a lane is
-  collapsed, and a Patient Age axis derived from the patient's date of birth
+  relation-specific end caps (On / Overlaps / After / Before), a per-lane
+  density strip when a lane is collapsed, and a Patient Age axis derived from
+  the patient's date of birth
+- **Overview + detail date range** on both the **Patient Document Timeline** and
+  the **Event Timeline**, from one shared implementation. An overview strip under
+  each chart shows every document or event across the full date range with fixed
+  end dates, and its two handles select the range the chart shows. Each handle
+  labels its date while zoomed, handles can't cross, and range changes are
+  announced to screen readers. Both timelines share the same controls: zoom %,
+  zoom in and out, pan earlier and later, reset, and the `+` / `-` / `0` /
+  `←` / `→` keys
+- The Patient Document Timeline and the Event Timeline are **linked**: they
+  share one date range covering every document and event, a slider, button or
+  key in either moves both, and their strips, handles and date axes line up
+  vertically on screens 620px and wider. A handle released within a few pixels
+  of either end snaps to it
 - Selecting a mark in the Event Timeline highlights its concepts in the
   Document Viewer, and clearing the concept there clears the mark
 - Patient demographics (gender, race, birth date) are filled from a bundled
@@ -26,8 +39,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collapsible concept column inside the Document Viewer
 - Clickable **Patient Summary** findings that open their source note in the
   Document Viewer
+- A **View** control on the patient view switches between the **Improved**
+  presentation (default) and the **Alpha** one, and remembers the choice. The
+  improved view compares the cancers in one matrix with tumors nested and
+  undocumented fields shown as a dash, drops a level of nested borders, uses
+  four text sizes, bands alternate event lanes, marks negated events with a
+  dashed line as well as red, names the visible date range against the whole
+  range, and replaces the two magnifier icons with + and −
+- The improved Cancer and Tumor Detail keeps its height down: TNM reads as one
+  row ("T1 M0") rather than three, rows with nothing to compare (nothing
+  documented, or a tumor only repeating its cancer) fold behind a count, and in
+  the patient drawer the panel opens folded to its header, which reports how
+  many attributes differ. Nothing is dropped: the completeness count still
+  counts every field, and one click shows the folded rows
 
 ### Changed
+- The Patient Document Timeline's date range slider was drawn against the full
+  date range but sat under the zoomed axis, so its handle positions were easy to
+  misread by months. Its handles now sit on the overview strip's own fixed axis
+- The Event Timeline no longer zooms on mouse-wheel scroll (the page scrolls,
+  as on the document timeline), zooms up to 1600% rather than without limit, and
+  labels its axes with evenly spaced dates. Event and birth dates are now built
+  at local midnight, like document dates, so linked timelines print the same
+  calendar date for the same position in every time zone. Its pan buttons
+  move a fifth of the visible range; they previously moved a fifth of the whole
+  range, which skipped past events at high zoom
+- `d3-zoom`, `d3-brush`, `d3-selection`, and `d3-axis` are no longer
+  dependencies. `d3-scale` and `d3-interpolate`, which the Event Timeline
+  imports directly, are now declared rather than resolved through `@mui/x-charts`
 - **Patient Details** and **Cancer and Tumor Detail** now flow across the full
   panel width instead of stacking in a single column, reclaiming roughly 300px
   of vertical space above the fold on a wide screen

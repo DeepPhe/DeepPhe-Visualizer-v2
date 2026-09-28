@@ -188,7 +188,7 @@ function findPatientGridDrawer(container) {
 }
 
 function findPatientGridDrawerToggle(container) {
-  return container.querySelector('[data-testid="patient-grid-drawer-toggle"]');
+  return container.querySelector('[data-testid="patient-grid-drawer-minimize"]');
 }
 
 function findFilterLayoutModeToggle(container) {
@@ -979,8 +979,7 @@ describe("FiltersView", () => {
   });
 
   it("caps shared filter-card heights at the default card height cap", async () => {
-    // Default per-card height cap; configured maxHeightPx values below it
-    // (e.g. Stage 150) still win.
+    // Every configured filter now shares the density-level height policy.
     const DEFAULT_CARD_HEIGHT_CAP = 300;
     const originalMatchMedia = window.matchMedia;
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
@@ -1171,6 +1170,57 @@ describe("FiltersView", () => {
     }
   });
 
+  it("keeps short standard-density cards natural when a long sibling activates wrapper packing", async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.localStorage.setItem("filterPageCompactMode", "standard");
+
+    getAttributeSummary.mockResolvedValue({
+      classes: ["M Stage", "Disease Stage Qualifier"],
+      instancesByClass: {
+        "M Stage": [
+          { value: "M0", count: 10 },
+          { value: "M1", count: 2 },
+        ],
+        "Disease Stage Qualifier": Array.from({ length: 25 }, (_, index) => ({
+          value: `Qualifier ${index + 1}`,
+          count: 25 - index,
+        })),
+      },
+    });
+
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: createMinWidthMatchMedia(1280),
+    });
+
+    const { unmount } = renderComponent(<FiltersView />);
+
+    try {
+      await waitFor(() => {
+        expect(findOpenFilterButton("M Stage")).not.toBeUndefined();
+        expect(findOpenFilterButton("Disease Stage Qualifier")).not.toBeUndefined();
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const mStageCard = findFilterCardByTitle("M Stage");
+      expect(mStageCard).not.toBeNull();
+      expect(mStageCard.hasAttribute("data-card-height-override")).toBe(false);
+      expect(Number.parseFloat(String(mStageCard.style.minHeight || "0"))).toBe(0);
+      expect(Number(mStageCard.getAttribute("data-card-height-cap"))).toBe(212);
+    } finally {
+      unmount();
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: originalMatchMedia,
+      });
+    }
+  });
+
   it("does not measure pre-stretched card overrides during initial card measurement", async () => {
     const originalMatchMedia = window.matchMedia;
     const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
@@ -1254,10 +1304,12 @@ describe("FiltersView", () => {
     await clickAsync(findPatientGridDrawerToggle(container));
 
     await waitFor(() => {
-      const collapsedSummary = container.querySelector('[data-testid="patient-grid-collapsed-summary"]');
-      expect(String(collapsedSummary?.textContent || "")).toContain(
-        "4 40-49 year old white female with breast cancer, and T stage T2."
-      );
+      const patientGridDrawer = findPatientGridDrawer(container);
+      const selectedPatientsTab = container.querySelector("#drawer-tab-0");
+      const drawerPanel = container.querySelector("#drawer-tabpanel-0");
+      expect(drawerPanel?.hidden).toBe(true);
+      expect(String(selectedPatientsTab?.textContent || "")).toContain("Selected Patients (4)");
+      expect(String(patientGridDrawer?.textContent || "")).toContain("Gender (Female)");
     });
 
     unmount();
@@ -1609,14 +1661,13 @@ describe("FiltersView", () => {
         expect(identifiedPanel).not.toBeNull();
         expect(patientGridDrawer).not.toBeNull();
 
-        const searchInput = patientGridDrawer.querySelector(
-          'input[placeholder="Search patient details..."]'
-        );
+        const searchInput = patientGridDrawer.querySelector('input[placeholder="Search current page…"]');
         expect(searchInput).not.toBeNull();
-        expect(searchInput?.getAttribute("aria-label")).toBe("Search patient details");
+        expect(searchInput?.getAttribute("aria-label")).toBe("Search loaded patient page");
 
-        const patientGridHeading = patientGridDrawer.querySelector("h2");
-        expect(String(patientGridHeading?.textContent || "")).toContain("Selected Patients (12)");
+        const selectedPatientsTab = patientGridDrawer.querySelector("#drawer-tab-0");
+        expect(String(selectedPatientsTab?.textContent || "")).toContain("Selected Patients (12)");
+        expect(selectedPatientsTab?.getAttribute("aria-label")).toContain("Filters: Gender (Female)");
 
         const headerCells = Array.from(patientGridDrawer.querySelectorAll("thead th"));
         expect(headerCells.length).toBeGreaterThan(0);
@@ -1642,20 +1693,20 @@ describe("FiltersView", () => {
 
       await waitFor(() => {
         const drawerToggle = findPatientGridDrawerToggle(container);
-        const drawerPanel = container.querySelector("#patient-grid-drawer-panel");
-        const collapsedSummary = container.querySelector('[data-testid="patient-grid-collapsed-summary"]');
+        const drawerPanel = container.querySelector("#drawer-tabpanel-0");
+        const selectedPatientsTab = container.querySelector("#drawer-tab-0");
         expect(drawerToggle?.getAttribute("aria-expanded")).toBe("false");
         expect(drawerPanel?.hidden).toBe(true);
-        const collapsedSummaryText = String(collapsedSummary?.textContent || "").replace(/\s+/g, " ");
-        expect(collapsedSummaryText).toContain("Gender (Female)");
-        expect(collapsedSummaryText).toContain("12");
+        const collapsedTabText = String(selectedPatientsTab?.textContent || "").replace(/\s+/g, " ");
+        expect(collapsedTabText).toContain("Gender (Female)");
+        expect(collapsedTabText).toContain("12");
       });
 
       await clickAsync(findPatientGridDrawerToggle(container));
 
       await waitFor(() => {
         const drawerToggle = findPatientGridDrawerToggle(container);
-        const drawerPanel = container.querySelector("#patient-grid-drawer-panel");
+        const drawerPanel = container.querySelector("#drawer-tabpanel-0");
         expect(drawerToggle?.getAttribute("aria-expanded")).toBe("true");
         expect(drawerPanel?.hidden).toBe(false);
       });

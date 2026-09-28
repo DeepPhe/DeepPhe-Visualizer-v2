@@ -47,6 +47,7 @@ import {
   FILTER_SECTION_LABEL_SX,
   FILTER_SECTION_LANE_MIN_WIDTH_PX,
   FILTER_SECTION_LAYOUT_COLUMNS,
+  buildBalancedMasonryLayout,
   capColumnsByWidth,
   getFilterSetCardColumnsByBreakpoint,
   getFilterSetPriorityIndex,
@@ -78,14 +79,13 @@ import {
   isAttributeRollupClass,
   normalizeChartSortMode,
   normalizeInstanceValues,
-  prettifyClassName,
   toChartData,
   toDisplayInstanceValue,
   toSortMode,
   withCompactCustomSortOrder,
   withCompactFilterLabels,
 } from "./filters/filterDefinitions";
-import { buildIdentifiedSummary, formatSelectionText } from "./filters/cohortNarrative";
+import { formatSelectionText } from "./filters/cohortNarrative";
 import { buildPatientIdIndex, computeFilterPatientSet } from "./filters/clientFilterMath";
 import {
   buildActiveFilters,
@@ -99,8 +99,6 @@ import {
 } from "./filters/filterRequest";
 import {
   buildPatientSummaryFromFilterSummary,
-  formatItemCount,
-  formatMs,
   getZeroResultHint,
   normalizeCountResponse,
   normalizePatientIds,
@@ -119,7 +117,6 @@ import {
 // identity every render, defeating React.memo on HorizontalBarFilter.
 const EMPTY_SELECTION = Object.freeze([]);
 
-const SLOW_QUERY_THRESHOLD_MS = 100;
 const PATIENT_GRID_DEFAULT_PAGE_SIZE = 10;
 const PATIENT_GRID_MAXIMIZED_PAGE_SIZE = 40;
 const INLINE_PATIENT_IDS_THRESHOLD = 20;
@@ -478,6 +475,11 @@ function FiltersView() {
   // the resize-quiet detector below (markFirstLayoutSettled).
   const [hasSettledFirstLayout, setHasSettledFirstLayout] = useState(false);
   const hasSettledFirstLayoutRef = useRef(false);
+  const outerMasonryRef = useRef(null);
+  const [balancedOuterLayout, setBalancedOuterLayout] = useState({
+    columnById: {},
+    height: 0,
+  });
   const cardMeasureRefs = useRef({});
   const patientSummaryCacheRef = useRef(new Map());
   const rowCountResultCacheRef = useRef(new Map());
@@ -1482,6 +1484,91 @@ function FiltersView() {
     omopFilterSets,
   ]);
 
+  // MUI Masonry's default algorithm is greedy: every new section goes into the
+  // column that happens to be shortest at that moment. That leaves a large
+  // final imbalance for this page's mix of short and tall clinical domains.
+  // Measure the finished section heights and choose the best complete
+  // assignment instead. CSS order changes only visual columns; DOM and keyboard
+  // order remain the configured clinical priority order.
+  useEffect(() => {
+    // SSR, jsdom, and older browsers cannot provide the live child-size signal
+    // this enhancement needs. In those environments the sequential Masonry
+    // fallback remains fully usable and avoids scheduling stray state updates.
+    if (!canRenderFilterSections || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const node = outerMasonryRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const spacingPx = isCompactPlusDensity ? stackGapPx : isCompactDensity ? 8 : 16;
+    const canScheduleFrame =
+      typeof requestAnimationFrame === "function" &&
+      typeof cancelAnimationFrame === "function";
+    let frameId = null;
+    let observer = null;
+
+    const measure = () => {
+      frameId = null;
+      const items = Array.from(node.children)
+        .filter((child) => child.classList?.contains("filter-set-layout-item"))
+        .map((child) => ({
+          id: child.getAttribute("data-filter-set-id"),
+          height: child.getBoundingClientRect().height,
+        }));
+      const nextLayout = buildBalancedMasonryLayout(
+        items,
+        resolvedFilterSectionLayoutColumns,
+        spacingPx
+      );
+      setBalancedOuterLayout((previous) => {
+        const previousEntries = Object.entries(previous.columnById);
+        const nextEntries = Object.entries(nextLayout.columnById);
+        const sameColumns =
+          previousEntries.length === nextEntries.length &&
+          nextEntries.every(([id, column]) => previous.columnById[id] === column);
+        return sameColumns && Math.abs(previous.height - nextLayout.height) <= 1
+          ? previous
+          : nextLayout;
+      });
+    };
+
+    const scheduleMeasure = () => {
+      if (!canScheduleFrame) {
+        measure();
+        return;
+      }
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      frameId = requestAnimationFrame(measure);
+    };
+
+    observer = new ResizeObserver(scheduleMeasure);
+    Array.from(node.children).forEach((child) => {
+      if (child.classList?.contains("filter-set-layout-item")) {
+        observer.observe(child);
+      }
+    });
+    scheduleMeasure();
+
+    return () => {
+      if (frameId !== null && canScheduleFrame) {
+        cancelAnimationFrame(frameId);
+      }
+      observer?.disconnect();
+    };
+  }, [
+    canRenderFilterSections,
+    filterSectionsForDisplay,
+    isCompactDensity,
+    isCompactPlusDensity,
+    resolvedFilterSectionLayoutColumns,
+    stackGapPx,
+  ]);
+
   // Reveal the filter grid only once its layout has stopped moving. The three
   // nested MUI Masonry grids (section lanes + the cards inside each section)
   // each measure their children with a POST-paint ResizeObserver and then
@@ -1837,13 +1924,6 @@ function FiltersView() {
     };
   }, [totalPatientCount]);
 
-  const timing = useMemo(() => countResult?.timing || {}, [countResult?.timing]);
-  const isSlowQuery = Number(timing.totalMs || 0) > SLOW_QUERY_THRESHOLD_MS;
-  const zeroResultHint = countResult?.count === 0 ? getZeroResultHint(activeFilters, timing.itemCounts) : "";
-  const identifiedSummary = useMemo(
-    () => buildIdentifiedSummary(activeFilters, countResult?.count),
-    [activeFilters, countResult?.count]
-  );
   const cohortSize = Number(countResult?.count || 0);
   const patientGridPageSize = isPatientGridDockMaximized
     ? PATIENT_GRID_MAXIMIZED_PAGE_SIZE
@@ -1893,11 +1973,15 @@ function FiltersView() {
   const patientGridDrawerStatusText = isPatientGridPageLoading
     ? "Updating matched patients…"
     : cohortSize > 0
-    ? `Showing page ${(currentPatientGridPage + 1).toLocaleString()} of ${Math.max(
+    ? `Page ${(currentPatientGridPage + 1).toLocaleString()} of ${Math.max(
         1,
         totalPatientGridPages
       ).toLocaleString()} · ${cohortSize.toLocaleString()} matched patient${cohortSize === 1 ? "" : "s"}.`
-    : "No matched patients.";
+    : "No patients matched these criteria.";
+  const patientGridDrawerEmptyStateHint =
+    countResult?.count === 0
+      ? getZeroResultHint(activeFilters, countResult?.timing?.itemCounts)
+      : "";
   const patientGridDrawerFilterSummaryText = useMemo(() => {
     if (activeFilters.length === 0) {
       return "";
@@ -1913,126 +1997,14 @@ function FiltersView() {
       })
       .join(", ");
   }, [activeFilters]);
-  const patientGridCollapsedHeaderSummary = useMemo(() => {
-    const hasFilterSummaries = activeFilters.length > 0;
-    const hasPerfSummary = SHOULD_LOG_FILTERS_PERF && Boolean(countResult);
-    const showSlowWarning = false;
-    const hasSlowWarning = Boolean(countResult) && isSlowQuery;
-    const shouldShowSlowWarning = hasSlowWarning && showSlowWarning;
-    const hasZeroHint = Boolean(countResult) && Boolean(zeroResultHint);
-    const hasIdentifiedSummary = Boolean(countResult && identifiedSummary);
-    const hasStatusCopy =
-      isCountLoading ||
-      Boolean(countError) ||
-      hasIdentifiedSummary ||
-      hasFilterSummaries ||
-      shouldShowSlowWarning ||
-      hasZeroHint ||
-      hasPerfSummary;
-
-    if (!hasStatusCopy) {
-      return null;
-    }
-
-    return (
-      <Stack spacing={0.75}>
-        {isCountLoading ? (
-          <Typography variant="body2" color="text.secondary">
-            Querying patient count...
-          </Typography>
-        ) : null}
-        {countError ? <Alert severity="error">{countError}</Alert> : null}
-        {hasIdentifiedSummary ? (
-          <Typography variant="body2" color="text.secondary">
-            {identifiedSummary}
-          </Typography>
-        ) : null}
-        {hasFilterSummaries ? (
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-            {activeFilters.map((filter, index) => (
-              <Box
-                key={`${filter.class}-${index}`}
-                sx={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 0.75,
-                  px: 0.75,
-                  py: 0.3,
-                  border: custom.chipInactiveBorder || "1px solid",
-                  borderColor: custom.chipInactiveBorder ? undefined : "divider",
-                  borderRadius: custom.chipRadius || "4px",
-                  bgcolor: custom.chipActiveBg || "grey.50",
-                  color: custom.chipActiveText || "text.primary",
-                  boxShadow: custom.chipActiveGlow || "none",
-                  maxWidth: "100%",
-                  transition: "background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
-                }}
-              >
-                <Typography variant="body2" sx={{ color: "inherit", opacity: 0.9 }}>
-                  {prettifyClassName(filter.class, filter.type)} (
-                  {formatSelectionText(
-                    filter.instances.map((value) => toDisplayInstanceValue(filter.type, filter.class, value))
-                  )}
-                  )
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    whiteSpace: "nowrap",
-                    fontVariantNumeric: "tabular-nums",
-                    fontWeight: 700,
-                    color: "inherit",
-                    fontFamily: custom.countFontFamily || "inherit",
-                  }}
-                >
-                  {formatItemCount(timing.itemCounts?.[index])}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        ) : null}
-        {shouldShowSlowWarning ? (
-          <Alert severity="warning">
-            Query took {formatMs(timing.totalMs)} ms. Consider narrowing selections for faster response.
-          </Alert>
-        ) : null}
-        {hasZeroHint ? <Alert severity="info">{zeroResultHint}</Alert> : null}
-        {hasPerfSummary ? (
-          <Typography
-            variant="caption"
-            sx={{
-              textAlign: "right",
-              fontVariantNumeric: "tabular-nums",
-              color: custom.statsColor || "text.secondary",
-              fontFamily: custom.countFontFamily || "inherit",
-              pt: 0.25,
-            }}
-          >
-            Query {formatMs(timing.queryMs)} ms | Bitmap {formatMs(timing.bitmapMs)} ms | Resolve{" "}
-            {formatMs(timing.resolveMs)} ms | Total {formatMs(timing.totalMs)} ms
-          </Typography>
-        ) : null}
-      </Stack>
-    );
-  }, [
-    activeFilters,
-    countError,
-    countResult,
-    custom,
-    identifiedSummary,
-    isCountLoading,
-    isSlowQuery,
-    timing,
-    zeroResultHint,
-  ]);
   const patientGridDrawerBottomPadding = isPatientGridDockVisible
     ? {
-        xs: isPatientGridDockMaximized ? "calc(100vh - 96px)" : isPatientGridDockExpanded ? "68vh" : "104px",
+        xs: isPatientGridDockMaximized ? "calc(100vh - 96px)" : isPatientGridDockExpanded ? "68vh" : "64px",
         md: isPatientGridDockMaximized
           ? "calc(100vh - 124px)"
           : isPatientGridDockExpanded
           ? "min(78vh, 820px)"
-          : "116px",
+          : "72px",
       }
     : 0;
   // Drive the table's loading from the patient-set page fetch only, not the
@@ -2604,16 +2576,24 @@ function FiltersView() {
     Boolean(String(activeFilterSearchQuery || "").trim());
   const FILTER_PANEL_SPACING_PX = isCompactPlusDensity ? stackGapPx : isCompactDensity ? 8 : 16;
   const FILTER_PANEL_SPACING_UNITS = FILTER_PANEL_SPACING_PX / 8;
-  // Hard cap every filter card. Anything taller scrolls inside the
-  // chart viewport (overflowY: auto on .horizontal-bar-filter-chart-viewport)
-  // so the page stays scannable even for cards with hundreds of values.
-  const FILTER_CARD_MAX_HEIGHT_PX = isCompactPlusDensity ? 300 : 200;
+  // Keep first-paint estimates aligned with HorizontalBarFilter's real row and
+  // chrome dimensions. The previous 36px/120px estimate made short cards look
+  // scrollable before measurement and fed false height pressure into packing.
+  const ROW_HEIGHT_ESTIMATE = isCompactDensity ? 20 : 30;
+  const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 32 : 54;
+  const FILTER_CARD_VISIBLE_ROW_TARGET = isCompactDensity ? 7 : 5;
+  const FILTER_CARD_HEIGHT_TOLERANCE_PX = 8;
+  // Short and medium cards remain content-sized. Long cards show a useful
+  // density-specific number of complete rows, then scroll inside the chart.
+  // Compact+ deliberately keeps its roomier exploration cap.
+  const FILTER_CARD_MAX_HEIGHT_PX = isCompactPlusDensity
+    ? 300
+    : CARD_OVERHEAD_ESTIMATE +
+      FILTER_CARD_VISIBLE_ROW_TARGET * ROW_HEIGHT_ESTIMATE +
+      FILTER_CARD_HEIGHT_TOLERANCE_PX;
   const FILTER_SECTION_HEIGHT_CAP_PX = 700;
   const FILTER_CARD_CHART_HEIGHT_OFFSET_PX = 150;
   const PER_CARD_COLUMN_CHART_HEIGHT_CAP_PX = 340;
-  const ROW_HEIGHT_ESTIMATE = isCompactDensity ? 24 : 36;
-  const CARD_OVERHEAD_ESTIMATE = isCompactDensity ? 60 : 120;
-  const NATURAL_STACK_GAP_PX = isCompactDensity ? 8 : 24;
   const CARD_BOTTOM_MARGIN = isCompactDensity ? 12 : 24;
   // A filter card with enough charted values claims its own dedicated column
   // before LPT packs the rest — the point where a value list reads as its own
@@ -2759,7 +2739,10 @@ function FiltersView() {
       rowCountByClass,
       measuredCardHeightByClass,
       desiredCardHeightByClass,
-      naturalGapPx: isCompactPlusDensity ? stackGapPx : NATURAL_STACK_GAP_PX,
+      // Use the same gap for layout math and rendering. A larger invisible
+      // "natural" gap used to distort section-height estimates in standard
+      // density even though Masonry rendered only FILTER_PANEL_SPACING_PX.
+      naturalGapPx: FILTER_PANEL_SPACING_PX,
       maxColumns: resolvedSectionMaxColumns,
       categoryMaxHeight: sectionHeightCap,
       cardBottomMargin: CARD_BOTTOM_MARGIN,
@@ -2856,13 +2839,29 @@ function FiltersView() {
       isPerCardColumnLayout && !isCompactPlusDensity
         ? sectionColumnCaps
         : Math.min(sectionColumnCaps, Math.max(1, Number(resolvedSectionColumnCap) || 1));
-    // Each section lane gets roughly an equal slice of the filter area, so cap
-    // card columns to keep each card at least FILTER_CARD_MIN_WIDTH_PX wide.
-    const approxLaneWidth =
+    // Each section lane gets roughly an equal slice of the filter area. MUI
+    // Masonry then subtracts one full spacing value from EVERY child column
+    // (`width: calc(100% / columns - spacing)`), while the outer Masonry and
+    // the lane rule/padding consume more of that slice. Account for all three
+    // costs before deciding that another card column fits. The previous
+    // filterAreaWidth / laneCount estimate switched to two 209px cards at the
+    // 1024px breakpoint even though our declared minimum is 240px.
+    const approxLaneContentWidth =
       filterAreaWidth > 0
-        ? filterAreaWidth / Math.max(1, resolvedFilterSectionLayoutColumns)
+        ? Math.max(
+            0,
+            filterAreaWidth / Math.max(1, resolvedFilterSectionLayoutColumns) -
+              FILTER_PANEL_SPACING_PX -
+              (isCompactDensity ? 10 : 14)
+          )
         : 0;
-    return capColumnsByWidth(breakpointCap, approxLaneWidth, FILTER_CARD_MIN_WIDTH_PX);
+    const minimumMasonryColumnFootprint =
+      FILTER_CARD_MIN_WIDTH_PX + FILTER_PANEL_SPACING_PX;
+    return capColumnsByWidth(
+      breakpointCap,
+      approxLaneContentWidth,
+      minimumMasonryColumnFootprint
+    );
   };
   const getFilterSectionColumnSx = (span = null) => {
     void span;
@@ -3023,8 +3022,22 @@ function FiltersView() {
       const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
       const cardMarginBottom = Math.max(0, Number(cardMarginBottomByClass[className]) || 0);
       const rowCount = classChartData.length;
-      const estimatedCardHeight = estimateCardHeight(rowCount, ROW_HEIGHT_ESTIMATE, CARD_OVERHEAD_ESTIMATE);
-      const shouldStretchScrollableCard = isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
+      const estimatedCardHeight = estimateCardHeight(
+        rowCount,
+        ROW_HEIGHT_ESTIMATE,
+        CARD_OVERHEAD_ESTIMATE
+      );
+      const desiredCardHeight = Math.max(
+        0,
+        Number(
+          cardDesiredHeightByKey[
+            getCardMeasureKey(filterType, className)
+          ]
+        ) || estimatedCardHeight
+      );
+      const shouldStretchScrollableCard =
+        isCompactPlusDensity &&
+        desiredCardHeight > resolvedCardHeightCapPx + 0.5;
       // Stretched cards grow to natural desired height — see renderOmopFilterCard
       // for the equivalent reasoning. Pre-measurement (measuredCardHeight === 0)
       // we still gate via the measured>0 ternary below to avoid oscillation.
@@ -3158,18 +3171,11 @@ function FiltersView() {
     });
     const filterByClassName = Object.fromEntries(renderedFilters.map((filter) => [filter.key, filter]));
     const orderedClassNames = renderedFilters.map((filter) => filter.key);
-    const shouldStackEthnicityUnderGender =
-      !isCompactPlusDensity &&
-      filterSet.id === "demographics" &&
-      orderedClassNames.includes("GENDER") &&
-      orderedClassNames.includes("ETHNICITY");
     const injectedAttributeCardCount = inlineAttributeFilterSets.reduce(
       (sum, attributeFilterSet) => sum + (attributeFilterSet.filters?.length || 0),
       0
     );
-    const omopGridItemCount = shouldStackEthnicityUnderGender
-      ? Math.max(1, renderedFilters.length - 1)
-      : Math.max(1, renderedFilters.length);
+    const omopGridItemCount = Math.max(1, renderedFilters.length);
     const compactPlusOmopGridItemCount = useColumnWrappers ? Math.max(1, columnGroups.length) : omopGridItemCount;
     const totalGridItemCount = Math.max(1, compactPlusOmopGridItemCount + injectedAttributeCardCount);
 
@@ -3200,8 +3206,20 @@ function FiltersView() {
       const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
       const cardMarginBottom = Math.max(0, Number(cardMarginBottomByClass[className]) || 0);
       const rowCount = classChartData.length;
-      const estimatedCardHeight = estimateCardHeight(rowCount, ROW_HEIGHT_ESTIMATE, CARD_OVERHEAD_ESTIMATE);
-      const shouldStretchScrollableCard = isCompactPlusDensity && estimatedCardHeight > resolvedCardHeightCapPx;
+      const estimatedCardHeight = estimateCardHeight(
+        rowCount,
+        ROW_HEIGHT_ESTIMATE,
+        CARD_OVERHEAD_ESTIMATE
+      );
+      const desiredCardHeight = Math.max(
+        0,
+        Number(
+          cardDesiredHeightByKey[getCardMeasureKey("omop", className)]
+        ) || estimatedCardHeight
+      );
+      const shouldStretchScrollableCard =
+        isCompactPlusDensity &&
+        desiredCardHeight > resolvedCardHeightCapPx + 0.5;
       // Stretched cards grow to their natural desired height (requestedCardHeightOverride
       // is already capped at the chart's natural content height by distributeSlack).
       // Deliberately no longer bound by resolvedSectionHeightCapPx — oversized
@@ -3318,23 +3336,13 @@ function FiltersView() {
         >
           {compactPlusOmopColumns ||
             orderedClassNames.map((className, classIndex) => {
-              if (shouldStackEthnicityUnderGender && className === "ETHNICITY") {
-                return null;
-              }
-              const stackedEthnicityCard = shouldStackEthnicityUnderGender && className === "GENDER";
               return (
                 <Box
                   key={`${keyPrefix}:${filterSet.id}:${className}`}
                   className="filter-section-column"
-                  sx={{
-                    ...getFilterSectionColumnSx(1),
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: stackedEthnicityCard ? FILTER_PANEL_SPACING_UNITS : 0,
-                  }}
+                  sx={getFilterSectionColumnSx(1)}
                 >
                   {renderOmopFilterCard(className, classIndex)}
-                  {stackedEthnicityCard ? renderOmopFilterCard("ETHNICITY", classIndex + 0.25, "stacked:") : null}
                 </Box>
               );
             })}
@@ -3505,6 +3513,7 @@ function FiltersView() {
             {canRenderFilterSections ? (
               filterSectionsForDisplay.length > 0 ? (
                 <Masonry
+                  ref={outerMasonryRef}
                   className="filter-set-layout-masonry"
                   columns={resolvedFilterSectionLayoutColumns}
                   spacing={FILTER_PANEL_SPACING_UNITS}
@@ -3520,6 +3529,9 @@ function FiltersView() {
                     m: 0,
                     width: "100%",
                     maxWidth: "100%",
+                    height: balancedOuterLayout.height
+                      ? `${balancedOuterLayout.height}px !important`
+                      : undefined,
                     alignContent: "flex-start",
                     // Mounted-but-hidden until the first measurement pass settles
                     // (see hasSettledFirstLayout). visibility (not display) keeps
@@ -3542,7 +3554,12 @@ function FiltersView() {
                         className="filter-set-layout-item filter-domain-lane"
                         data-filter-set-id={id}
                         data-filter-set-kind={kind}
-                        sx={getFilterSetLaneSx(kind)}
+                        sx={{
+                          ...getFilterSetLaneSx(kind),
+                          order: balancedOuterLayout.columnById[id]
+                            ? `${balancedOuterLayout.columnById[id]} !important`
+                            : undefined,
+                        }}
                       >
                         {kind === "omop"
                           ? renderOmopFilterSet(filterSet, "omop", {
@@ -3582,7 +3599,7 @@ function FiltersView() {
               pageError={patientGridPageError}
               onRetryPatientSummary={handleRetryPatientSummary}
               statusText={patientGridDrawerStatusText}
-              collapsedHeaderSummary={patientGridCollapsedHeaderSummary}
+              emptyStateHint={patientGridDrawerEmptyStateHint}
               onOpenPatientTab={handleOpenPatientTab}
               setIsExpanded={setIsPatientGridDockExpanded}
               setIsMaximized={setIsPatientGridDockMaximized}

@@ -81,11 +81,19 @@ export const TIMESPAN = Object.freeze({ padding: 8 });
 
 export const LANE = Object.freeze({ height: 15, GROUP_TOP_PADDING: 10 });
 
-export const OVERVIEW = Object.freeze({ height: 10 });
+// The overview strip's own height comes from computeOverviewStripLayout in
+// utils/patientView/timelineViewport.js, shared with the document timeline.
+// This is only the space above it, clear of the age axis's guidelines.
+export const OVERVIEW_TOP_GAP = 8;
 
 export const AGE_AREA = Object.freeze({ height: 10, bottomPad: 10 });
 
 export const GAPS = Object.freeze({ legendToMain: 5, pad: 25 });
+
+// Chart coordinates still reserve MARGINS.top and LEGEND.height for the alpha's
+// in-SVG legend, which is now HTML above the chart. The viewBox starts this far
+// down to trim most of that empty band.
+export const VIEWBOX_TOP = 20;
 
 export const TIMELINE_PADDING_DAYS = 50;
 

@@ -3,6 +3,14 @@ import React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import CancerTumorSummaryCard from "../CancerTumorSummaryCard";
+import PatientViewPresentationProvider from "../PatientViewPresentationProvider";
+import { PATIENT_VIEW_PRESENTATION_STORAGE_KEY } from "../../../constants/patientViewPresentation";
+
+/** The per-cancer cards are the alpha reading; the matrix is the default. */
+function renderAlpha(element) {
+  localStorage.setItem(PATIENT_VIEW_PRESENTATION_STORAGE_KEY, "alpha");
+  return renderComponent(<PatientViewPresentationProvider>{element}</PatientViewPresentationProvider>);
+}
 
 function renderComponent(element) {
   const container = document.createElement("div");
@@ -59,9 +67,13 @@ const cancers = [
 ];
 
 describe("CancerTumorSummaryCard", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("uses a content-height grid while preserving every fact and click behavior", () => {
     const onFactSelect = jest.fn();
-    const { container, unmount } = renderComponent(
+    const { container, unmount } = renderAlpha(
       <CancerTumorSummaryCard
         cancers={cancers}
         contentAutoHeight
@@ -100,7 +112,7 @@ describe("CancerTumorSummaryCard", () => {
 
   it("exposes an accessible collapse toggle and hides the body when collapsed", () => {
     const onToggleExpanded = jest.fn();
-    const { container, unmount } = renderComponent(
+    const { container, unmount } = renderAlpha(
       <CancerTumorSummaryCard
         cancers={cancers}
         contentAutoHeight
@@ -127,6 +139,119 @@ describe("CancerTumorSummaryCard", () => {
     unmount();
   });
 
+
+  describe("improved view", () => {
+    const twoCancers = [
+      cancers[0],
+      {
+        cancerId: "cancer-2",
+        title: "cancer-2",
+        collatedCancerFacts: [
+          {
+            categoryName: "Location",
+            facts: [fact("c2-location", "Upper-Outer Quadrant of the Breast")],
+          },
+          { categoryName: "Grade", facts: [fact("c2-grade", "1")] },
+        ],
+        tnm: [{ data: { T: [fact("c2-t", "1")], N: [], M: [] } }],
+        tumors: {
+          listViewData: [
+            {
+              id: "tumor-2",
+              data: [{ category: "Location", facts: [fact("t2-location", "Nipple")] }],
+            },
+          ],
+        },
+      },
+    ];
+
+
+    it("folds away rows with nothing documented, and can show them", () => {
+      // Neither cancer stages N or M, so those rows carry nothing to compare.
+      const sparseCancers = twoCancers.map((cancer) => ({
+        ...cancer,
+        tnm: [{ data: { T: [], N: [], M: [] } }],
+      }));
+      const { container, unmount } = renderComponent(
+        <CancerTumorSummaryCard cancers={sparseCancers} />
+      );
+
+      try {
+        const rowLabels = () =>
+          [...container.querySelectorAll("th[scope='row']")].map((n) => n.textContent);
+        const toggle = () =>
+          container.querySelector("[data-testid='cancer-comparison-undocumented-toggle']");
+
+        // Neither cancer is staged, so the TNM row is folded away by default.
+        expect(rowLabels().some((label) => label.startsWith("TNM"))).toBe(false);
+        expect(toggle().textContent).toMatch(/^Show \d+ undocumented or repeated fields?$/);
+        expect(toggle().getAttribute("aria-expanded")).toBe("false");
+        const foldedCount = rowLabels().length;
+
+        act(() => {
+          toggle().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+
+        expect(rowLabels().some((label) => label.startsWith("TNM"))).toBe(true);
+        expect(rowLabels().length).toBeGreaterThan(foldedCount);
+        expect(toggle().textContent).toMatch(/^Hide \d+ undocumented or repeated fields?$/);
+        // The completeness count still counts every field, folded or not.
+        expect(container.textContent).toMatch(/\d+\/\d+ documented/);
+      } finally {
+        unmount();
+      }
+    });
+
+    it("compares the cancers in one matrix instead of separate cards", () => {
+      const onFactSelect = jest.fn();
+      const { container, unmount } = renderComponent(
+        <CancerTumorSummaryCard cancers={twoCancers} onFactSelect={onFactSelect} />
+      );
+
+      try {
+        const matrix = container.querySelector("[data-testid='cancer-comparison-matrix']");
+        expect(matrix).not.toBeNull();
+        expect(container.querySelectorAll("[data-testid='cancer-summary-record']")).toHaveLength(0);
+
+        const headers = [...matrix.querySelectorAll("th[scope='col']")].map((n) => n.textContent);
+        expect(headers[1]).toContain("Cancer 1");
+        expect(headers[2]).toContain("Cancer 2");
+        // Sparse records read as sparse.
+        expect(headers[1]).toMatch(/\d+\/\d+ documented/);
+
+        // The differences are what the reader came for.
+        const gradeRow = [...matrix.querySelectorAll("th[scope='row']")].find((n) =>
+          n.textContent.startsWith("Grade")
+        );
+        expect(gradeRow.getAttribute("data-differs")).toBe("true");
+        expect(gradeRow.textContent).toContain("differs");
+        const locationRow = [...matrix.querySelectorAll("th[scope='row']")].find((n) =>
+          n.textContent.startsWith("Location")
+        );
+        expect(locationRow.getAttribute("data-differs")).toBe("false");
+
+        // Undocumented values are demoted, not hidden.
+        expect(matrix.textContent).toContain("—");
+        expect(matrix.querySelector("[aria-label='Not documented']")).not.toBeNull();
+
+        // A tumor repeating its cancer's location says so once.
+        expect(matrix.textContent).toContain("Same as cancer");
+        expect(matrix.textContent).toContain("Tumor 1");
+
+        // Values stay clickable, and link to their documents.
+        const gradeValue = [...matrix.querySelectorAll("button")].find(
+          (button) => button.textContent === "3"
+        );
+        act(() => {
+          gradeValue.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        expect(onFactSelect).toHaveBeenCalledWith("c-grade");
+      } finally {
+        unmount();
+      }
+    });
+  });
+
   it("renders only the header when collapsed", () => {
     const { container, unmount } = renderComponent(
       <CancerTumorSummaryCard
@@ -151,7 +276,7 @@ describe("CancerTumorSummaryCard", () => {
 
   it("lays cancer records out in a multi-column grid, with fact details spanning it", () => {
     const twoCancers = [cancers[0], { ...cancers[0], cancerId: "cancer-2", title: "cancer-2" }];
-    const { container, unmount } = renderComponent(
+    const { container, unmount } = renderAlpha(
       <CancerTumorSummaryCard
         cancers={twoCancers}
         factSelection={{ factId: "c-grade", categoryName: "Grade", prettyName: "Grade 3" }}

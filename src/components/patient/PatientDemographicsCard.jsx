@@ -1,29 +1,46 @@
 import React from "react";
 import PropTypes from "prop-types";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
 import {
   Box,
   Card,
   CardContent,
-  CardHeader,
   Typography,
 } from "@mui/material";
 
-function DemographicItem({ label, value = "", capitalize = false }) {
+function DemographicItem({ label, value = "", capitalize = false, typeSteps = false }) {
   return (
-    <Box sx={{ minWidth: 0 }}>
+    <Box
+      sx={{
+        minWidth: 0,
+        display: "inline-flex",
+        alignItems: "baseline",
+        gap: 0.55,
+      }}
+    >
       <Typography
+        component="span"
         variant="caption"
         color="text.secondary"
-        sx={{ letterSpacing: 0.2, display: "block" }}
+        sx={{
+          letterSpacing: 0.2,
+          whiteSpace: "nowrap",
+          flex: "0 0 auto",
+          ...(typeSteps ? PATIENT_VIEW_TYPE.fieldLabel : {}),
+        }}
       >
         {label}
       </Typography>
       <Typography
+        component="span"
         variant="body2"
         sx={{
           fontWeight: 600,
-          lineHeight: 1.25,
+          lineHeight: 1.12,
+          ...(typeSteps ? PATIENT_VIEW_TYPE.value : {}),
           overflowWrap: "anywhere",
+          minWidth: 0,
           ...(capitalize ? { textTransform: "capitalize" } : {}),
         }}
       >
@@ -35,6 +52,7 @@ function DemographicItem({ label, value = "", capitalize = false }) {
 
 DemographicItem.propTypes = {
   label: PropTypes.string.isRequired,
+  typeSteps: PropTypes.bool,
   value: PropTypes.string,
   capitalize: PropTypes.bool,
 };
@@ -48,47 +66,63 @@ function getRaceEthnicity(demographics = {}) {
 
 export default function PatientDemographicsCard({ patientData = null }) {
   const demographics = patientData?.demographics || {};
+  const { isImproved } = usePatientViewPresentation();
 
   return (
     <Card
+      data-testid="patient-details-card"
       elevation={0}
       sx={{
         border: 0,
         borderRadius: 0,
       }}
     >
-      <CardHeader
-        title="Patient Details"
-        sx={{ py: 1, px: 1.5 }}
-        titleTypographyProps={{
-          variant: "h6",
-          sx: { fontWeight: 700, fontSize: "1rem", letterSpacing: 0 },
+      <CardContent
+        sx={{
+          px: 1.1,
+          py: 0.55,
+          "&:last-child": { pb: 0.55 },
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "auto 1fr" },
+          alignItems: "center",
+          columnGap: 1.35,
+          rowGap: 0.45,
         }}
-      />
-      <CardContent sx={{ px: 1.5, py: 0.5, "&:last-child": { pb: 1.5 } }}>
-        {/* Fields flow across the full panel width and reflow to fewer columns
-            as it narrows, rather than stacking in one column and leaving the
-            rest of the row empty. */}
+      >
+        <Typography
+          variant="subtitle1"
+          component="h2"
+          sx={{
+            fontWeight: 800,
+            ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}),
+            fontSize: "0.95rem",
+            letterSpacing: 0,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Patient Details
+        </Typography>
         <Box
           data-testid="patient-demographics-grid"
           sx={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 160px), 1fr))",
-            columnGap: 2,
-            rowGap: 1.1,
-            alignItems: "start",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 172px), 1fr))",
+            columnGap: 2.2,
+            rowGap: 0.35,
+            alignItems: "center",
           }}
         >
-          <DemographicItem label="Patient ID" value={patientData?.patientId} />
-          <DemographicItem label="Gender" value={demographics?.gender} capitalize />
+          <DemographicItem typeSteps={isImproved} label="Patient ID" value={patientData?.patientId} />
+          <DemographicItem typeSteps={isImproved} label="Gender" value={demographics?.gender} capitalize />
           <DemographicItem
+            typeSteps={isImproved}
             label="Race/Ethnicity"
             value={getRaceEthnicity(demographics)}
             capitalize
           />
-          <DemographicItem label="Birth Date" value={demographics?.birthDate} />
-          <DemographicItem label="First Encounter" value={demographics?.firstEncounterDate} />
-          <DemographicItem label="Last Encounter" value={demographics?.lastEncounterDate} />
+          <DemographicItem typeSteps={isImproved} label="Birth Date" value={demographics?.birthDate} />
+          <DemographicItem typeSteps={isImproved} label="First Encounter" value={demographics?.firstEncounterDate} />
+          <DemographicItem typeSteps={isImproved} label="Last Encounter" value={demographics?.lastEncounterDate} />
         </Box>
       </CardContent>
     </Card>

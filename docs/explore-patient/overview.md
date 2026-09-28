@@ -20,6 +20,22 @@ The patient opens as a tab in the drawer.
 
 **Standalone Patient View (from Home).** A separate page where you look a patient up by ID. It shows demographics, cancer and tumor detail, the document timeline, the Event Timeline, and the Document Viewer, but **not** the structured Patient Summary. See [Standalone Patient View](standalone-patient-view.md).
 
+## Choose how the patient view reads
+
+The **View** control at the top of the patient view switches between two presentations. Your choice is remembered, and it applies to both the embedded and the standalone view.
+
+**Improved** (the default) is laid out for scanning:
+
+- The cancers are compared in **one matrix** — attributes down the side, one column per cancer, tumors nested underneath — so differences like a grade of 3 against 1 sit in a single column. Values a tumor shares with its cancer read "Same as cancer" rather than repeating.
+- **Undocumented values are shown as a dash**, never hidden, and each cancer says how many of its fields are documented.
+- Panels use one level of containment, and one set of text sizes for panel titles, field labels, values and axis ticks.
+- The timelines say which range they are showing, band alternate event lanes, and mark negated events with a **dashed** line as well as red.
+- Zoom in and out read as **+** and **−** rather than two similar magnifiers.
+
+**Alpha** keeps the original reading, faithful to the DeepPhe-Viz-v2-alpha code the Event Timeline was ported from: per-cancer cards, solid marks that carry negation in color alone, and the alpha's wording and controls.
+
+Both show the same data. Only the presentation changes.
+
 ## What the embedded view contains
 
 Depending on the available data, the embedded view can include:

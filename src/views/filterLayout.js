@@ -420,32 +420,20 @@ export function buildTallestAlignedLayout(
       0
     );
     const slack = alignmentTargetHeight - naturalHeight;
+    // Only scrollable cards may consume column slack, and only up to their
+    // measured uncapped content height. The renderer uses this separate map in
+    // Compact+ mode. It must never leak into the general card-height map:
+    // doing so made one- and two-row cards expand to the height of a long
+    // sibling, leaving large empty panels throughout the page.
     distributeSlack(group, slack);
-  });
 
-  activeColumnGroups.forEach((group) => {
-    if (group.length === 1) {
-      const className = group[0];
-      const cardHeight = getEffectiveHeight(className);
-      const shouldStretchSoloCard =
-        cardHeight > 0 && cardHeight + 0.5 < alignmentTargetHeight;
-      if (shouldStretchSoloCard) {
-        cardHeightOverrideByClass[className] = alignmentTargetHeight;
-      }
-      cardMarginBottomByClass[className] = 0;
-      return;
-    }
-
-    const groupHeight = group.reduce(
-      (sum, className) => sum + getEffectiveHeight(className),
-      0
-    );
-    const gapCount = Math.max(1, group.length - 1);
-    const gapPx = Math.max(0, (alignmentTargetHeight - groupHeight) / gapCount);
-
+    // Column balancing controls placement, not card size. Record only the
+    // actual rendered gap between naturally sized cards. Uneven column bottoms
+    // are preferable to padding a card or a gap with meaningless whitespace;
+    // the outer masonry can use the resulting real heights for its own balance.
     group.forEach((className, index) => {
       cardMarginBottomByClass[className] =
-        index < group.length - 1 ? gapPx : 0;
+        index < group.length - 1 ? resolvedNaturalGap : 0;
     });
   });
 
@@ -493,10 +481,6 @@ export function buildFilterSectionLayout({
     );
 
     measuredCardHeightByClass[className] = measuredHeight;
-    scrollableCardByClass[className] =
-      measuredHeight > 0 && measuredHeight < stackableCardMaxHeight - LAYOUT_EPSILON
-        ? false
-        : estimatedHeight > stackableCardMaxHeight + LAYOUT_EPSILON;
     baseCardHeightByClass[className] =
       measuredHeight > 0
         ? measuredHeight
@@ -511,6 +495,15 @@ export function buildFilterSectionLayout({
     const observedDesired = toPositiveNumber(inputDesiredCardHeightByClass[className]);
     desiredCardHeightByClass[className] =
       observedDesired > 0 ? observedDesired : estimatedHeight;
+    // Scrollability is a property of the card's uncapped content, not of its
+    // current DOM box. A short card may temporarily measure at the shared cap
+    // after an earlier layout pass; treating that forced measurement as proof
+    // of scrollability is what allowed empty cards to keep stretching. Once a
+    // desired DOM measurement exists it is authoritative, with the row-count
+    // estimate serving only as the first-paint fallback.
+    scrollableCardByClass[className] =
+      desiredCardHeightByClass[className] >
+      stackableCardMaxHeight + LAYOUT_EPSILON;
   });
 
   const {

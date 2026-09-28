@@ -7,48 +7,44 @@ import {
   CardHeader,
   Divider,
   FormControl,
-  IconButton,
   InputLabel,
   Select,
   Stack,
   Tooltip,
   Typography,
 } from "@mui/material";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
+  buildDocumentOverviewRows,
   buildTimelineChartModel,
+  resolveResponsiveTickCount,
   resolveTicks,
+  resolveTimelineDateDomain,
 } from "../../utils/patientView/timelineChartLayout";
+import {
+  computeOverviewStripLayout,
+  describeViewportRange,
+  formatHandleDate,
+  getMinimumWindowRatio,
+  viewportToDateWindow,
+} from "../../utils/patientView/timelineViewport";
+import { clientXToSvgX } from "../../hooks/useTimelineViewport";
+import useLinkedTimelineViewport from "../../hooks/useLinkedTimelineViewport";
+import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
+import {
+  COMPACT_TIMELINE_WIDTH,
+  DOCUMENT_CHART_BORDER_WIDTH,
+  TIMELINE_CONTENT_PADDING_X,
+  TIMELINE_PLOT_INSET,
+} from "../../constants/timelineFrame";
 import { getReadableTextColor } from "../../utils/colorContrast";
+import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
+import TimelineAxis from "./timeline/TimelineAxis";
+import TimelineOverviewStrip from "./timeline/TimelineOverviewStrip";
+import TimelineZoomControls from "./timeline/TimelineZoomControls";
 
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 16;
-const ZOOM_STEP = 1.5;
-// Pointer travel (in viewBox units) beyond which a press is treated as a pan
-// drag rather than a document click.
-const DRAG_THRESHOLD = 5;
-
-function clampZoom(zoom) {
-  if (!Number.isFinite(zoom)) {
-    return MIN_ZOOM;
-  }
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
-}
-
-// panRatio is the visible window's left edge expressed as a fraction of the full
-// date domain. At a given zoom the window is 1/zoom wide, so the furthest the
-// left edge can travel is 1 - 1/zoom.
-function clampPanRatio(panRatio, zoom) {
-  const maxPan = Math.max(0, 1 - 1 / zoom);
-  if (!Number.isFinite(panRatio)) {
-    return 0;
-  }
-  return Math.min(maxPan, Math.max(0, panRatio));
-}
+export { resolveResponsiveTickCount };
 
 const EPISODE_SELECT_ALL = "__all__";
 const EPISODE_SELECT_HIDDEN = "__hidden__";
@@ -56,23 +52,42 @@ const EPISODE_SELECT_HIDDEN = "__hidden__";
 // Below this rendered width the left label gutter would swallow the plot, so we
 // switch to a "compact" layout: report-type labels sit above each lane, fonts
 // and dots grow, and fewer date ticks are drawn.
-const COMPACT_WIDTH_BREAKPOINT = 620;
-const MIN_TICK_SPACING = 150;
+const COMPACT_WIDTH_BREAKPOINT = COMPACT_TIMELINE_WIDTH;
+// Space between the detail axis's labels and the top of the overview strip.
+const OVERVIEW_STRIP_GAP = 6;
 
-export function resolveResponsiveTickCount(plotWidth, maxTickCount = 7) {
-  const numericPlotWidth = Math.max(0, Number(plotWidth) || 0);
-  const numericMaxTickCount = Math.max(2, Number(maxTickCount) || 7);
-  return Math.min(
-    numericMaxTickCount,
-    Math.max(2, Math.floor(numericPlotWidth / MIN_TICK_SPACING) + 1)
-  );
-}
+const ZOOM_CONTROL_LABELS = {
+  group: "Document timeline zoom controls",
+  zoomIn: "Zoom in timeline",
+  zoomOut: "Zoom out timeline",
+  panEarlier: "Pan timeline earlier",
+  panLater: "Pan timeline later",
+  reset: "Reset timeline zoom",
+};
+
+const OVERVIEW_STRIP_LABELS = {
+  group: "Document timeline date range",
+  window: "Pan document timeline date range",
+  start: "Start of document timeline date range",
+  end: "End of document timeline date range",
+};
+
+const visuallyHiddenSx = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  overflow: "hidden",
+  clip: "rect(0,0,0,0)",
+  whiteSpace: "nowrap",
+};
 
 export function getTimelineSvgColors(theme) {
   const textColor = theme?.palette?.text?.secondary || "#505A5F";
   const axisColor = theme?.palette?.text?.disabled || textColor;
   const selectedMarkerColor = theme?.palette?.text?.primary || textColor;
   const relatedStrokeColor = theme?.palette?.primary?.main || textColor;
+  const eventRelatedStrokeColor =
+    theme?.palette?.mode === "dark" ? "#F6C744" : "#8A6400";
   const pointStrokeColor =
     theme?.palette?.mode === "dark"
       ? theme?.palette?.background?.default || "#0B1220"
@@ -82,10 +97,13 @@ export function getTimelineSvgColors(theme) {
     candidates: [theme?.palette?.info?.contrastText],
   });
 
+  // The overview strip's colors are shared with the Event Timeline; see
+  // getOverviewStripColors in timeline/TimelineOverviewStrip.jsx.
   return {
     axisColor,
     docCountBadgeBackground,
     docCountBadgeText,
+    eventRelatedStrokeColor,
     pointStrokeColor,
     relatedStrokeColor,
     selectedMarkerColor,
@@ -100,15 +118,18 @@ export function getTimelineSvgColors(theme) {
 function computeChartLayout({ width }) {
   const compact = width < COMPACT_WIDTH_BREAKPOINT;
 
-  const plotTop = compact ? 12 : 10;
-  // Footer holds the date axis line, tick marks, tick labels (~baselineY+28) and
-  // the "Date" title (~baselineY+30); trimmed to just clear the label descenders.
-  const footerHeight = compact ? 40 : 38;
-  const plotLeft = compact ? 16 : 236;
-  const plotRight = compact ? 16 : 20;
+  const plotTop = compact ? 10 : 8;
+  // Footer holds the detail date axis and its labels. The overview strip below
+  // it grows with the report-type count, so the card adds its height.
+  const tickLabelOffset = compact ? 20 : 19;
+  const footerHeight = 5 + tickLabelOffset + 4;
+  // Wide layouts share their plot edges with the Event Timeline so the two line
+  // up (constants/timelineFrame.js). The chart's own border is inside the frame.
+  const plotLeft = compact ? 16 : TIMELINE_PLOT_INSET.left - DOCUMENT_CHART_BORDER_WIDTH;
+  const plotRight = compact ? 16 : TIMELINE_PLOT_INSET.right - DOCUMENT_CHART_BORDER_WIDTH;
   // Vertical distance between report-type lanes. Kept just above the selected
   // ring diameter so lanes stay tight without dots colliding across rows.
-  const rowHeight = compact ? 52 : 40;
+  const rowHeight = compact ? 42 : 30;
 
   const dimensions = {
     // Keep the viewBox at the rendered width so preserveAspectRatio never
@@ -127,26 +148,34 @@ function computeChartLayout({ width }) {
   const typeScale = {
     compact,
     labelMode: compact ? "top" : "left",
-    rowLabelFont: compact ? 15 : 13,
-    tickFont: compact ? 14 : 13.5,
-    axisTitleFont: compact ? 13 : 12,
+    rowLabelFont: compact ? 13 : 12,
+    tickFont: 12,
+    tickLabelOffset,
+    axisTitleFont: compact ? 12 : 11,
     tickCount: resolveResponsiveTickCount(plotWidth, maxTickCount),
-    pointRadius: compact ? 6 : 4.5,
-    selectedRadius: compact ? 9 : 7,
-    selectedRingRadius: compact ? 17 : 14,
-    relatedRingRadius: compact ? 9 : 7,
+    pointRadius: compact ? 5 : 4,
+    selectedRadius: compact ? 7 : 5.5,
+    selectedRingRadius: compact ? 13 : 10,
+    relatedRingRadius: compact ? 8 : 6.5,
+    eventRelatedRingRadius: compact ? 11 : 8.5,
   };
 
   return { dimensions, typeScale };
 }
 
-function getPointAriaLabel(point) {
+function getPointAriaLabel(point, { isRelated = false, isEventRelated = false } = {}) {
+  const states = [
+    isRelated ? "Linked to selected cancer or tumor fact" : "",
+    isEventRelated ? "Linked to selected event timeline concept" : "",
+  ].filter(Boolean);
+
   return [
     `Document ${point.name || point.id}`,
     `ID ${point.id}`,
     `Type ${point.type}`,
     `Episode ${point.episodeLabel}`,
     `Date ${point.dateLabel}`,
+    ...states,
   ].join(". ");
 }
 
@@ -213,6 +242,7 @@ export default function PatientDocumentsCard({
   timelineData = null,
   selectedDocumentId = "",
   relatedDocumentIds = [],
+  eventRelatedDocumentIds = [],
   onSelectDocument = undefined,
   embedded = false,
   expanded = true,
@@ -221,6 +251,7 @@ export default function PatientDocumentsCard({
   sectionLabel = "Patient Document Timeline",
 }) {
   const theme = useTheme();
+  const { isImproved } = usePatientViewPresentation();
   const timelineColors = getTimelineSvgColors(theme);
   // High-contrast foreground for the "currently viewed" marker so its ring stays
   // visible on every theme (near-black on light themes, near-white on dark ones).
@@ -228,14 +259,7 @@ export default function PatientDocumentsCard({
   const selectedMarkerColor = timelineColors.selectedMarkerColor;
   const [hiddenEpisodes, setHiddenEpisodes] = useState(() => new Set());
   const [episodeSelections, setEpisodeSelections] = useState({});
-  // Horizontal (time-axis) zoom + pan. zoom === 1 shows the full date domain;
-  // panRatio is the visible window's left edge as a fraction of that domain.
-  const [viewport, setViewport] = useState({ zoom: MIN_ZOOM, panRatio: 0 });
   const svgRef = useRef(null);
-  const dragStateRef = useRef(null);
-  // True while a click-drag pan is in progress, so the cursor can switch to
-  // "grabbing" for immediate feedback.
-  const [isDragging, setIsDragging] = useState(false);
   // Rendered width of the chart container, tracked so labels and ticks can
   // respond without coupling the chart to an arbitrary panel height.
   const [chartWidth, setChartWidth] = useState(1200);
@@ -248,7 +272,17 @@ export default function PatientDocumentsCard({
       resizeObserverRef.current.disconnect();
       resizeObserverRef.current = null;
     }
-    if (!node || typeof ResizeObserver === "undefined") {
+    if (!node) {
+      return;
+    }
+    // Measure now rather than waiting for the observer's first callback, so the
+    // first paint is already at the real width and lines up with the Event
+    // Timeline (which measures the same way).
+    const initialWidth = node.clientWidth;
+    if (initialWidth > 0) {
+      setChartWidth((previous) => (Math.abs(previous - initialWidth) < 2 ? previous : initialWidth));
+    }
+    if (typeof ResizeObserver === "undefined") {
       return;
     }
     const observer = new ResizeObserver((entries) => {
@@ -278,6 +312,15 @@ export default function PatientDocumentsCard({
       ),
     [relatedDocumentIds]
   );
+  const eventRelatedIdSet = useMemo(
+    () =>
+      new Set(
+        (Array.isArray(eventRelatedDocumentIds) ? eventRelatedDocumentIds : [])
+          .map((documentId) => String(documentId || "").trim())
+          .filter(Boolean)
+      ),
+    [eventRelatedDocumentIds]
+  );
 
   // The model applies the measured width and derives height directly from its
   // report-type row count.
@@ -288,20 +331,66 @@ export default function PatientDocumentsCard({
       }),
     [chartWidth]
   );
-  const chartModel = useMemo(
-    () => buildTimelineChartModel(timelineData || {}, layoutDimensions),
-    [timelineData, layoutDimensions]
-  );
   const timelineSignature = useMemo(
-    () => chartModel.points.map((point) => point.id).join("|"),
-    [chartModel.points]
+    () =>
+      (Array.isArray(timelineData?.reportData) ? timelineData.reportData : [])
+        .map((report) => String(report?.id || "").trim())
+        .filter(Boolean)
+        .join("|"),
+    [timelineData]
   );
 
   useEffect(() => {
     setHiddenEpisodes(new Set());
     setEpisodeSelections({});
-    setViewport({ zoom: MIN_ZOOM, panRatio: 0 });
   }, [timelineSignature]);
+
+  // Horizontal (time-axis) zoom and pan. Under a TimelineLinkProvider this is
+  // shared with the Event Timeline, over a date domain covering both; alone, it
+  // is this card's own and resets when the set of documents changes.
+  const ownDateDomain = useMemo(() => resolveTimelineDateDomain(timelineData || {}), [timelineData]);
+  const {
+    viewport,
+    setViewport,
+    zoomIn,
+    zoomOut,
+    panEarlier,
+    panLater,
+    reset: handleResetView,
+    handlePlotKeyDown,
+    handlePlotPointerDown,
+    consumeDragClick,
+    isDragging,
+    announcement: rangeAnnouncement,
+    isAnnouncer,
+    domain: sharedDateDomain,
+    isZoomed,
+    zoomPercent,
+    canZoomIn,
+    canZoomOut,
+    canPanEarlier,
+    canPanLater,
+    canReset,
+  } = useLinkedTimelineViewport({
+    id: "document-timeline",
+    priority: 0,
+    domain: ownDateDomain,
+    resetKey: timelineSignature,
+    describeRange: (nextViewport) =>
+      ownDateDomain
+        ? describeViewportRange(nextViewport, ownDateDomain.startDate, ownDateDomain.endDate)
+        : "",
+  });
+
+  const chartModel = useMemo(
+    () =>
+      buildTimelineChartModel(timelineData || {}, {
+        ...layoutDimensions,
+        dateDomain: sharedDateDomain,
+      }),
+    [timelineData, layoutDimensions, sharedDateDomain]
+  );
+  const { dateDomain } = chartModel;
 
   const visiblePoints = useMemo(
     () =>
@@ -368,13 +457,27 @@ export default function PatientDocumentsCard({
   };
 
   // --- Time-axis zoom + pan -------------------------------------------------
-  const { dimensions, dateDomain } = chartModel;
+  const { dimensions } = chartModel;
   const plotLeft = dimensions.plotLeft;
   const plotWidth = dimensions.plotWidth;
-  const domainStartMs = dateDomain.startDate.getTime();
-  const fullSpanMs = Math.max(1, dateDomain.endDate.getTime() - domainStartMs);
-  const isZoomed = viewport.zoom > MIN_ZOOM + 1e-6;
   const clipPathId = useId();
+  const axisY = dimensions.baselineY + 5;
+  const minWindowRatio = getMinimumWindowRatio(plotWidth);
+
+  // The overview strip sits under the detail axis and grows with the number of
+  // report-type rows it miniaturizes.
+  const overviewTop = dimensions.svgHeight + OVERVIEW_STRIP_GAP;
+  const chartHeight =
+    overviewTop +
+    computeOverviewStripLayout({ rowCount: chartModel.rows.length, compact: typeScale.compact })
+      .height;
+  const overviewRows = useMemo(
+    () =>
+      buildDocumentOverviewRows(chartModel.rows, visiblePoints, {
+        stroke: timelineColors.pointStrokeColor,
+      }),
+    [chartModel.rows, visiblePoints, timelineColors.pointStrokeColor]
+  );
 
   // Map a base (full-domain) x-coordinate into the current zoom/pan window.
   const transformX = useCallback(
@@ -385,171 +488,36 @@ export default function PatientDocumentsCard({
     [plotLeft, plotWidth, viewport.zoom, viewport.panRatio]
   );
 
-  // Re-derive axis ticks for the visible date window so labels stay meaningful
-  // (and pick finer granularity) as the user zooms in.
+  // The detail axis covers exactly the visible window, so its first and last
+  // labels are the selection's edges.
   const displayTicks = useMemo(() => {
-    const visibleSpanMs = fullSpanMs / viewport.zoom;
-    const visibleStartMs = domainStartMs + viewport.panRatio * fullSpanMs;
-    return resolveTicks(
-      new Date(visibleStartMs),
-      new Date(visibleStartMs + visibleSpanMs),
-      plotWidth,
-      plotLeft,
-      typeScale.tickCount
+    const { startDate, endDate } = viewportToDateWindow(
+      viewport,
+      dateDomain.startDate,
+      dateDomain.endDate
     );
-  }, [
-    fullSpanMs,
-    domainStartMs,
-    viewport.zoom,
-    viewport.panRatio,
-    plotWidth,
-    plotLeft,
-    typeScale.tickCount,
-  ]);
+    return resolveTicks(startDate, endDate, plotWidth, plotLeft, typeScale.tickCount);
+  }, [viewport, dateDomain, plotWidth, plotLeft, typeScale.tickCount]);
 
-  const clientToSvgX = useCallback((clientX) => {
-    const svg = svgRef.current;
-    if (
-      !svg ||
-      typeof svg.getScreenCTM !== "function" ||
-      typeof svg.createSVGPoint !== "function"
-    ) {
-      return null;
-    }
-    const ctm = svg.getScreenCTM();
-    if (!ctm) {
-      return null;
-    }
-    const svgPoint = svg.createSVGPoint();
-    svgPoint.x = clientX;
-    svgPoint.y = 0;
-    return svgPoint.matrixTransform(ctm.inverse()).x;
-  }, []);
+  const clientToSvgX = useCallback((clientX) => clientXToSvgX(svgRef.current, clientX), []);
 
-  // Zoom by a multiplicative factor while keeping the date under `anchorSvgX`
-  // pinned in place (defaults to the plot center when no anchor is given).
-  const applyZoomFactor = useCallback(
-    (factor, anchorSvgX) => {
-      setViewport((current) => {
-        const nextZoom = clampZoom(current.zoom * factor);
-        if (nextZoom === current.zoom) {
-          return current;
-        }
-        const anchor = Number.isFinite(anchorSvgX) ? anchorSvgX : plotLeft + plotWidth / 2;
-        const anchorRatioFull =
-          current.panRatio + (anchor - plotLeft) / (plotWidth * current.zoom);
-        const nextPanRatio = clampPanRatio(
-          anchorRatioFull - (anchor - plotLeft) / (plotWidth * nextZoom),
-          nextZoom
-        );
-        return { zoom: nextZoom, panRatio: nextPanRatio };
-      });
-    },
-    [plotLeft, plotWidth]
-  );
+  const formatRange = (startDate, endDate) =>
+    `${formatHandleDate(startDate, { includeYear: true })} – ${formatHandleDate(endDate, {
+      includeYear: true,
+    })}`;
+  const visibleWindow = viewportToDateWindow(viewport, dateDomain.startDate, dateDomain.endDate);
+  const visibleRangeLabel = formatRange(visibleWindow.startDate, visibleWindow.endDate);
+  const fullRangeLabel = formatRange(dateDomain.startDate, dateDomain.endDate);
 
-  const nudgePan = useCallback((direction) => {
-    setViewport((current) => ({
-      zoom: current.zoom,
-      panRatio: clampPanRatio(
-        current.panRatio + direction * (0.2 / current.zoom),
-        current.zoom
-      ),
-    }));
-  }, []);
-
-  const handleResetView = useCallback(() => {
-    setViewport({ zoom: MIN_ZOOM, panRatio: 0 });
-  }, []);
-
-  // Drag-to-pan. Window listeners (rather than pointer capture) keep child
-  // circle clicks working normally; a moved drag suppresses the trailing click.
-  const justDraggedRef = useRef(false);
   const handlePointerDown = (event) => {
-    if (event.button !== 0 || viewport.zoom <= MIN_ZOOM) {
-      return;
-    }
-    const startSvgX = clientToSvgX(event.clientX);
-    if (startSvgX == null) {
-      return;
-    }
-    // Suppress the browser's native text/element selection so a horizontal
-    // press-and-drag reads as a pan rather than a selection gesture.
-    event.preventDefault();
-    setIsDragging(true);
-    const drag = { startSvgX, startPanRatio: viewport.panRatio, moved: false };
-    dragStateRef.current = drag;
-
-    const handleMove = (moveEvent) => {
-      const svgX = clientToSvgX(moveEvent.clientX);
-      if (svgX == null) {
-        return;
-      }
-      const deltaSvgX = svgX - drag.startSvgX;
-      if (!drag.moved && Math.abs(deltaSvgX) < DRAG_THRESHOLD) {
-        return;
-      }
-      drag.moved = true;
-      setViewport((current) => ({
-        zoom: current.zoom,
-        panRatio: clampPanRatio(
-          drag.startPanRatio - deltaSvgX / (plotWidth * current.zoom),
-          current.zoom
-        ),
-      }));
-    };
-    const handleUp = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-      setIsDragging(false);
-      if (drag.moved) {
-        // Swallow the click synthesized from this pointerup, then clear.
-        justDraggedRef.current = true;
-        window.setTimeout(() => {
-          justDraggedRef.current = false;
-        }, 0);
-      }
-      dragStateRef.current = null;
-    };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
+    handlePlotPointerDown(event, { clientToX: clientToSvgX, plotWidth });
   };
 
   const handleSelectPoint = (documentId) => {
-    if (justDraggedRef.current) {
-      justDraggedRef.current = false;
+    if (consumeDragClick()) {
       return;
     }
     onSelectDocument?.(documentId);
-  };
-
-  const handleChartKeyDown = (event) => {
-    switch (event.key) {
-      case "+":
-      case "=":
-        event.preventDefault();
-        applyZoomFactor(ZOOM_STEP);
-        break;
-      case "-":
-      case "_":
-        event.preventDefault();
-        applyZoomFactor(1 / ZOOM_STEP);
-        break;
-      case "0":
-        event.preventDefault();
-        handleResetView();
-        break;
-      case "ArrowLeft":
-        event.preventDefault();
-        nudgePan(-1);
-        break;
-      case "ArrowRight":
-        event.preventDefault();
-        nudgePan(1);
-        break;
-      default:
-        break;
-    }
   };
 
   // Zoom/pan controls live in the card header, on the same line as the title.
@@ -558,52 +526,20 @@ export default function PatientDocumentsCard({
   const showZoomControls =
     expanded && !isCollapsedTimestampMode && chartModel.totalReports > 0;
   const zoomControls = (
-    <Stack direction="row" spacing={0.25} alignItems="center">
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        aria-live="polite"
-        sx={{ mr: 0.25, fontVariantNumeric: "tabular-nums" }}
-      >
-        {`${Math.round(viewport.zoom * 100)}%`}
-      </Typography>
-      <Tooltip title="Zoom out (−)">
-        <span>
-          <IconButton
-            size="small"
-            aria-label="Zoom out timeline"
-            onClick={() => applyZoomFactor(1 / ZOOM_STEP)}
-            disabled={viewport.zoom <= MIN_ZOOM + 1e-6}
-          >
-            <ZoomOutIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Zoom in (+)">
-        <span>
-          <IconButton
-            size="small"
-            aria-label="Zoom in timeline"
-            onClick={() => applyZoomFactor(ZOOM_STEP)}
-            disabled={viewport.zoom >= MAX_ZOOM - 1e-6}
-          >
-            <ZoomInIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Reset zoom (0)">
-        <span>
-          <IconButton
-            size="small"
-            aria-label="Reset timeline zoom"
-            onClick={handleResetView}
-            disabled={!isZoomed && viewport.panRatio === 0}
-          >
-            <RestartAltIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-    </Stack>
+    <TimelineZoomControls
+      zoomPercent={zoomPercent}
+      onZoomIn={() => zoomIn()}
+      onZoomOut={() => zoomOut()}
+      onPanEarlier={panEarlier}
+      onPanLater={panLater}
+      onReset={handleResetView}
+      canZoomIn={canZoomIn}
+      canZoomOut={canZoomOut}
+      canPanEarlier={canPanEarlier}
+      canPanLater={canPanLater}
+      canReset={canReset}
+      labels={ZOOM_CONTROL_LABELS}
+    />
   );
 
   return (
@@ -626,20 +562,30 @@ export default function PatientDocumentsCard({
     >
       <CardHeader
         title="Patient Document Timeline"
-        titleTypographyProps={{ variant: "subtitle1", sx: { fontWeight: 700 } }}
-        sx={{ py: 1, px: 1.5, "& .MuiCardHeader-action": { alignSelf: "center", m: 0 } }}
+        titleTypographyProps={{
+          variant: "subtitle1",
+          sx: { fontWeight: 700, lineHeight: 1.25, ...(isImproved ? PATIENT_VIEW_TYPE.panelTitle : {}) },
+        }}
+        sx={{
+          py: 0.5,
+          px: 1.25,
+          minHeight: 40,
+          "& .MuiCardHeader-content": { minWidth: 0 },
+          "& .MuiCardHeader-action": { alignSelf: "center", m: 0 },
+        }}
         action={
-          <Stack direction="row" spacing={0.5} alignItems="center">
+          <Stack direction="row" spacing={0.25} alignItems="center">
             {showZoomControls ? zoomControls : null}
             {chartModel.totalReports > 0 ? (
               <Typography
                 variant="caption"
                 sx={{
                   display: "inline-block",
-                  px: 1,
-                  py: 0.25,
-                  borderRadius: 999,
+                  px: 0.75,
+                  py: 0.2,
+                  borderRadius: 0.75,
                   fontWeight: 600,
+                  lineHeight: 1.35,
                   bgcolor: timelineColors.docCountBadgeBackground,
                   color: timelineColors.docCountBadgeText,
                 }}
@@ -658,15 +604,27 @@ export default function PatientDocumentsCard({
           </Stack>
         }
       />
+      {/* Outside the collapsible body, so linked range changes are still
+          announced while this section is collapsed. One linked timeline owns it. */}
+      {isAnnouncer ? (
+        <Typography
+          variant="caption"
+          aria-live="polite"
+          data-testid="document-timeline-range-status"
+          sx={visuallyHiddenSx}
+        >
+          {rangeAnnouncement}
+        </Typography>
+      ) : null}
       {expanded ? (
         <>
       <Divider />
       <CardContent
         id={collapsiblePanelId}
         sx={{
-          px: 1.5,
-          py: 1.25,
-          "&:last-child": { pb: 1.25 },
+          px: TIMELINE_CONTENT_PADDING_X,
+          py: 0.75,
+          "&:last-child": { pb: 0.75 },
           ...(embedded
             ? {
                 minHeight: 0,
@@ -682,7 +640,7 @@ export default function PatientDocumentsCard({
             No documents were returned for this patient.
           </Typography>
         ) : (
-          <Stack spacing={1} sx={embedded ? { minHeight: 0 } : undefined}>
+          <Stack spacing={0.5} sx={embedded ? { minHeight: 0 } : undefined}>
             {isCollapsedTimestampMode ? (
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ rowGap: 1 }}>
                 <Typography variant="caption" sx={{ fontWeight: 700 }}>
@@ -712,20 +670,20 @@ export default function PatientDocumentsCard({
                     overflow: "hidden",
                     bgcolor: "background.paper",
                     width: "100%",
-                    // The SVG model includes exactly one compact lane per report
-                    // type plus the date-axis footer—no viewport-sized filler.
+                    // The SVG holds exactly one compact lane per report type, the
+                    // date axis and the overview strip—no viewport-sized filler.
                     // Add the two border pixels outside the content-sized SVG.
-                    height: `calc(${chartModel.dimensions.svgHeight}px + 2px)`,
+                    height: `calc(${chartHeight}px + 2px)`,
                   }}
                 >
                   <svg
                     ref={svgRef}
                     role="img"
                     aria-label="Patient document timeline chart"
-                    viewBox={`0 0 ${chartModel.dimensions.svgWidth} ${chartModel.dimensions.svgHeight}`}
+                    viewBox={`0 0 ${chartModel.dimensions.svgWidth} ${chartHeight}`}
                     preserveAspectRatio="xMidYMid meet"
                     onPointerDown={handlePointerDown}
-                    onKeyDown={handleChartKeyDown}
+                    onKeyDown={handlePlotKeyDown}
                     style={{
                       position: "absolute",
                       inset: 0,
@@ -755,7 +713,8 @@ export default function PatientDocumentsCard({
                     <desc>
                       Timeline chart showing one row per report type with clickable document points
                       positioned by report date. Zoomable and pannable along the date axis using the
-                      zoom controls or keyboard, and pannable by drag or arrow keys.
+                      zoom controls, the keyboard, or the handles on the overview strip, which shows
+                      every document across the full date range.
                     </desc>
 
                     {chartModel.rows.map((row) => (
@@ -798,50 +757,26 @@ export default function PatientDocumentsCard({
                       </g>
                     ))}
 
-                    <line
+                    <TimelineAxis
+                      ticks={displayTicks}
                       x1={chartModel.dimensions.plotLeft}
-                      y1={chartModel.dimensions.baselineY + 8}
                       x2={chartModel.dimensions.plotLeft + chartModel.dimensions.plotWidth}
-                      y2={chartModel.dimensions.baselineY + 8}
-                      stroke={timelineColors.axisColor}
-                      strokeWidth={1.2}
+                      y={axisY}
+                      tickSize={5}
+                      labelOffset={typeScale.tickLabelOffset}
+                      lineColor={timelineColors.axisColor}
+                      textColor={timelineColors.textColor}
+                      lineWidth={1.2}
+                      fontSize={typeScale.tickFont}
+                      testId="document-timeline-detail-axis"
+                      labelClassName="patient-timeline-tick-label"
                     />
-
-                    {displayTicks.map((tick, tickIndex) => {
-                      const isFirstTick = tickIndex === 0;
-                      const isLastTick = tickIndex === displayTicks.length - 1;
-                      const tickLabelX = isFirstTick ? tick.x + 6 : isLastTick ? tick.x - 6 : tick.x;
-                      const tickTextAnchor = isFirstTick ? "start" : isLastTick ? "end" : "middle";
-
-                      return (
-                        <g key={`tick:${tick.date.toISOString()}`}>
-                          <line
-                            x1={tick.x}
-                            y1={chartModel.dimensions.baselineY + 8}
-                            x2={tick.x}
-                            y2={chartModel.dimensions.baselineY + 14}
-                            stroke={timelineColors.axisColor}
-                            strokeWidth={1}
-                          />
-                          <text
-                            className="patient-timeline-tick-label"
-                            x={tickLabelX}
-                            y={chartModel.dimensions.baselineY + 28}
-                            textAnchor={tickTextAnchor}
-                            fill={timelineColors.textColor}
-                            fontSize={typeScale.tickFont}
-                          >
-                            {tick.label}
-                          </text>
-                        </g>
-                      );
-                    })}
 
                     {typeScale.labelMode === "left" ? (
                       <text
                         className="patient-timeline-axis-title"
                         x={chartModel.dimensions.plotLeft - 38}
-                        y={chartModel.dimensions.baselineY + 30}
+                        y={axisY + typeScale.tickLabelOffset}
                         textAnchor="end"
                         fill={timelineColors.textColor}
                         fontSize={typeScale.axisTitleFont}
@@ -851,14 +786,58 @@ export default function PatientDocumentsCard({
                       </text>
                     ) : null}
 
+                    <TimelineOverviewStrip
+                      plotLeft={chartModel.dimensions.plotLeft}
+                      plotWidth={chartModel.dimensions.plotWidth}
+                      top={overviewTop}
+                      rows={overviewRows}
+                      viewport={viewport}
+                      onViewportChange={setViewport}
+                      minWindowRatio={minWindowRatio}
+                      domainStart={dateDomain.startDate}
+                      domainEnd={dateDomain.endDate}
+                      tickCount={typeScale.tickCount}
+                      compact={typeScale.compact}
+                      fontSize={typeScale.tickFont}
+                      clientToX={clientToSvgX}
+                      labels={OVERVIEW_STRIP_LABELS}
+                      testIdPrefix="document-timeline"
+                      className="patient-document-timeline-overview"
+                      labelClassName="patient-timeline-overview-label"
+                    />
+
                     <g clipPath={`url(#${clipPathId})`}>
                       {visiblePoints.map((point) => {
                         const isSelected = point.id === selectedDocumentId;
                         const isRelated = relatedIdSet.has(point.id);
+                        const isEventRelated = eventRelatedIdSet.has(point.id);
                         const pointX = transformX(point.x);
+                        const pointLabel = getPointAriaLabel(point, {
+                          isRelated,
+                          isEventRelated,
+                        });
 
                         return (
                           <g key={`point:${point.id}`}>
+                            {isEventRelated ? (
+                              <circle
+                                className="patient-timeline-event-related-ring"
+                                data-document-id={point.id}
+                                cx={pointX}
+                                cy={point.y}
+                                r={
+                                  isSelected
+                                    ? typeScale.selectedRingRadius + 4
+                                    : typeScale.eventRelatedRingRadius
+                                }
+                                fill="none"
+                                stroke={timelineColors.eventRelatedStrokeColor}
+                                strokeWidth={2}
+                                pointerEvents="none"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+
                             {isRelated && !isSelected ? (
                               <circle
                                 cx={pointX}
@@ -888,10 +867,23 @@ export default function PatientDocumentsCard({
                             ) : null}
 
                             <circle
+                              className="patient-timeline-point-hitbox"
+                              cx={pointX}
+                              cy={point.y}
+                              r={Math.max(12, typeScale.selectedRingRadius + 2)}
+                              fill="transparent"
+                              pointerEvents="all"
+                              aria-hidden="true"
+                              style={{ cursor: "pointer" }}
+                              onClick={() => handleSelectPoint(point.id)}
+                            />
+
+                            <circle
                               className="patient-timeline-point"
                               data-document-id={point.id}
                               data-episode={point.episodeLabel}
                               data-related={isRelated ? "true" : "false"}
+                              data-event-related={isEventRelated ? "true" : "false"}
                               data-selected={isSelected ? "true" : "false"}
                               cx={pointX}
                               cy={point.y}
@@ -901,14 +893,16 @@ export default function PatientDocumentsCard({
                               stroke={
                                 isSelected
                                   ? selectedMarkerColor
+                                  : isEventRelated
+                                  ? timelineColors.eventRelatedStrokeColor
                                   : isRelated
                                   ? timelineColors.relatedStrokeColor
                                   : timelineColors.pointStrokeColor
                               }
-                              strokeWidth={isSelected ? 2 : isRelated ? 1.4 : 1}
+                              strokeWidth={isSelected ? 2 : isEventRelated || isRelated ? 1.4 : 1}
                               tabIndex={0}
                               role="button"
-                              aria-label={getPointAriaLabel(point)}
+                              aria-label={pointLabel}
                               style={{ cursor: "pointer" }}
                               onClick={() => handleSelectPoint(point.id)}
                               onKeyDown={(event) => {
@@ -918,7 +912,7 @@ export default function PatientDocumentsCard({
                                 }
                               }}
                             >
-                              <title>{getPointAriaLabel(point)}</title>
+                              <title>{pointLabel}</title>
                             </circle>
                           </g>
                         );
@@ -927,10 +921,25 @@ export default function PatientDocumentsCard({
                   </svg>
                 </Box>
 
-                <Typography variant="caption" color="text.secondary">
+                {isImproved ? (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    data-testid="document-timeline-range-caption"
+                    sx={{ lineHeight: 1.35 }}
+                  >
+                    {isZoomed
+                      ? `Viewing ${visibleRangeLabel} of ${fullRangeLabel}`
+                      : `Showing the full range: ${fullRangeLabel}`}
+                  </Typography>
+                ) : null}
+
+                <Typography variant="caption" color="text.secondary" sx={visuallyHiddenSx}>
                   Click a point to load that document (Tab + Enter/Space for keyboard selection).
-                  Use the +/− buttons to zoom the date axis; drag or press ←/→ to pan. Scrolling
-                  moves through the patient view.
+                  Use the zoom buttons, the + and − keys, or the handles on the overview strip below
+                  the chart to choose the date range; drag the chart or press ←/→ to pan. The
+                  overview strip always shows the full date range, and its handles respond to ←/→,
+                  Home, and End. Scrolling moves through the patient view.
                 </Typography>
               </>
             ) : (
@@ -940,29 +949,43 @@ export default function PatientDocumentsCard({
               </Typography>
             )}
 
-            {selectedPoint ? (
-              <Tooltip title={selectedPoint.id} placement="top-start">
-                <Typography variant="body2" sx={{ cursor: "default" }}>
-                  <strong>Selected:</strong> {selectedPoint.name} • {selectedPoint.type} •{" "}
-                  {selectedPoint.dateLabel}
-                </Typography>
-              </Tooltip>
-            ) : null}
+            <Stack
+              direction="row"
+              spacing={1.25}
+              alignItems="center"
+              useFlexGap
+              sx={{ flexWrap: "wrap", rowGap: 0, minHeight: 20 }}
+            >
+              {selectedPoint ? (
+                <Tooltip title={selectedPoint.id} placement="top-start">
+                  <Typography
+                    variant="caption"
+                    sx={{ cursor: "default", color: "text.primary", lineHeight: 1.35 }}
+                  >
+                    <strong>Selected:</strong> {selectedPoint.name} • {selectedPoint.type} •{" "}
+                    {selectedPoint.dateLabel}
+                  </Typography>
+                </Tooltip>
+              ) : null}
 
-            {hiddenEpisodes.size > 0 ? (
-              <Typography variant="caption" color="text.secondary">
-                Hidden by episode filter: {chartModel.points.length - visiblePoints.length} document(s).
-              </Typography>
-            ) : null}
-
-            {relatedIdSet.size > 0 ? (
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Dashed-outline points are fact-linked documents derived from the selected cancer/tumor
-                  fact.
+              {hiddenEpisodes.size > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+                  Hidden: {chartModel.points.length - visiblePoints.length} doc(s)
                 </Typography>
-              </Box>
-            ) : null}
+              ) : null}
+
+              {relatedIdSet.size > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+                  Dashed outline: fact-linked documents
+                </Typography>
+              ) : null}
+
+              {eventRelatedIdSet.size > 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+                  Gold outline: event-linked documents
+                </Typography>
+              ) : null}
+            </Stack>
           </Stack>
         )}
       </CardContent>
@@ -980,6 +1003,7 @@ PatientDocumentsCard.propTypes = {
   }),
   selectedDocumentId: PropTypes.string,
   relatedDocumentIds: PropTypes.arrayOf(PropTypes.string),
+  eventRelatedDocumentIds: PropTypes.arrayOf(PropTypes.string),
   onSelectDocument: PropTypes.func,
   embedded: PropTypes.bool,
   expanded: PropTypes.bool,

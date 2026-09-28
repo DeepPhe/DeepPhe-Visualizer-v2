@@ -18,6 +18,8 @@ Events are grouped into four lanes, labelled on the left with the number of mark
 - **Stage, Grade**; and
 - **Treatment**.
 
+The Improved view bands alternate lanes, so a mark reads against its own lane rather than blending into the next.
+
 Within a lane, marks are packed onto as few rows as possible — two events share a row when their date ranges do not overlap. A row is not a single concept, so hover a mark to read which concepts it covers.
 
 Where several concepts in the same lane share exactly the same start and end date, they are drawn as **one mark**. The tooltip lists every concept it stands for, with a `(xN)` count when a name repeats.
@@ -35,7 +37,7 @@ The shape of each end tells you how precisely the date is known:
 
 The legend above the chart shows each of these.
 
-Marks are **green**. A **red** mark means the concept is **negated** — the note records its absence, not its presence. Colour is not the only cue: the tooltip and the screen-reader label both state the negation, and the relation and dates are given in words.
+Marks are **green**. A **red** mark means the concept is **negated** — the note records its absence, not its presence. In the **Improved** view (see [Choose how the patient view reads](overview.md#choose-how-the-patient-view-reads)) a negated mark is also **dashed**, so the distinction does not depend on telling red from green, and the legend includes a key for it. In either view the tooltip and the screen-reader label state the negation, and the relation and dates are given in words.
 
 Dashed vertical guidelines mark every date that carries an event, so you can line marks up across lanes.
 
@@ -51,12 +53,21 @@ The age axis only appears when the patient's date of birth is known. When it is 
 
 ## Change the date range
 
-The chart opens showing the full range of the patient's events, padded slightly at both ends.
+The chart opens showing the full range of the patient's events, padded by 50 days at both ends. It works the same way as the [Patient Document Timeline](document-timeline.md#zoom-into-a-date-range).
 
-- **Scroll** over the chart to zoom the date axis in and out.
-- **Drag** on the **Date** band beneath the chart to select a narrower window.
+The **Date** strip beneath the chart is an overview of the full range. It never moves: its left and right dates stay fixed, and it draws a small copy of every mark, one row per lane. Two handles on it select the range the chart above shows.
 
-The two stay in step: zooming moves the band, and dragging the band rescales the chart.
+- **Drag a handle** to move that end of the range. While zoomed in, each handle shows its date underneath. The handles cannot cross.
+- **Drag the shaded window** to move the range, or **press the strip outside the window** to center the range there.
+- Use the buttons above the chart to **zoom in**, **zoom out**, **pan earlier**, **pan later**, or **reset**. Each pan moves the range by a fifth of its length. Zoom goes up to 1600%.
+- When zoomed in, **drag the chart** sideways to pan.
+- With a mark focused, press `+` or `-` to zoom, `0` to reset, and `←` or `→` to pan. On a focused handle, `←` and `→` move it, and `Home` and `End` jump to either end.
+
+Scrolling the mouse wheel over the chart scrolls the page; it does not zoom. Collapsing a lane, or switching **Showing**, keeps the current range.
+
+The Event Timeline is **linked to the [Patient Document Timeline](document-timeline.md#linked-to-the-event-timeline)**. Both show the same date range, changing it in either one changes both, and their strips and date axes line up vertically, so an event sits directly below the documents written at the same time.
+
+All dates on this chart are calendar dates, shown the same in every time zone.
 
 ## Collapse a lane
 
@@ -82,7 +93,7 @@ The **Showing** control above the chart filters the timeline:
 - **All Patient Events** — every temporal relation for the patient.
 - **Filtered Patient Events** — only relations whose concepts appear in the report currently open in the Document Viewer.
 
-The count beside the panel title tells you how many relations are in view.
+The count beside the panel title tells you how many relations are in view. Below the chart, the Improved view spells out the difference between the two numbers: relations that share a lane and both dates are drawn as one span.
 The current report name appears above the chart. Filtering preserves the date
 range so that the remaining events stay in the same positions. If a report has
 no matching events, the Showing control remains available to return to all events.

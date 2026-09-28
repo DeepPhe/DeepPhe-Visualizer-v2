@@ -7,7 +7,7 @@ import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 
 // Responsive column counts for the detail Masonry. Kept as a named constant so
 // the SSR-fallback resolution below stays in sync with the `columns` prop.
-const DETAIL_PANEL_COLUMNS = { xs: 1, sm: 2, md: 3, lg: 4, xl: 5 };
+const DETAIL_PANEL_COLUMNS = { xs: 1, sm: 2, md: 2, lg: 3, xl: 4 };
 // Rough per-section height used only to seed Masonry's first-paint SSR layout.
 const DETAIL_PANEL_SECTION_HEIGHT_PX = 140;
 
@@ -88,14 +88,7 @@ function getDetailItemConfidence(item) {
 
 function renderDetailItemChips(item) {
   const chips = FLAG_CHIP_DEFINITIONS.filter((flag) => Boolean(item?.[flag.key])).map((flag) => (
-    <Chip
-      key={flag.key}
-      label={flag.label}
-      color={flag.color}
-      size="small"
-      variant="outlined"
-      sx={{ height: 20 }}
-    />
+    <Chip key={flag.key} label={flag.label} color={flag.color} size="small" variant="outlined" sx={{ height: 20 }} />
   ));
 
   if (item?.source) {
@@ -172,14 +165,8 @@ function DetailPanel({ row, onPatientOpen }) {
       }))
       .filter((section) => section.items.length > 0);
   }, [allDetails, thresholdFraction]);
-  const totalItemCount = allDetails.reduce(
-    (count, section) => count + section.items.length,
-    0
-  );
-  const visibleItemCount = details.reduce(
-    (count, section) => count + section.items.length,
-    0
-  );
+  const totalItemCount = allDetails.reduce((count, section) => count + section.items.length, 0);
+  const visibleItemCount = details.reduce((count, section) => count + section.items.length, 0);
   const hiddenItemCount = totalItemCount - visibleItemCount;
   const patientId = String(row?.original?.patientId || "").trim();
   const canShowDocumentViewerButton = typeof onPatientOpen === "function" && Boolean(patientId);
@@ -222,7 +209,7 @@ function DetailPanel({ row, onPatientOpen }) {
             <Typography component="span" sx={{ fontSize: "inherit", whiteSpace: "nowrap" }}>
               Confidence:{" "}
               <Box component="span" sx={{ color: "text.secondary", fontWeight: 600 }}>
-                {">=50%"}
+                {`>=${confidenceThreshold}%`}
               </Box>
             </Typography>
             <Slider
@@ -231,9 +218,7 @@ function DetailPanel({ row, onPatientOpen }) {
               min={50}
               max={100}
               step={5}
-              onChange={(_event, value) =>
-                setConfidenceThreshold(Array.isArray(value) ? value[0] : value)
-              }
+              onChange={(_event, value) => setConfidenceThreshold(Array.isArray(value) ? value[0] : value)}
               aria-label="Minimum patient drawer finding confidence percent"
               valueLabelDisplay="auto"
               valueLabelFormat={(value) => `${value}%`}
@@ -312,164 +297,159 @@ function DetailPanel({ row, onPatientOpen }) {
     >
       {detailPanelHeader}
       {hiddenItemCount > 0 ? (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          aria-live="polite"
-          sx={{ px: 0.25 }}
-        >
+        <Typography variant="caption" color="text.secondary" aria-live="polite" sx={{ px: 0.25 }}>
           {hiddenItemCount} finding{hiddenItemCount === 1 ? "" : "s"} hidden below {confidenceThreshold}% confidence.
         </Typography>
       ) : null}
       {details.length > 0 ? (
         <Masonry
-        columns={DETAIL_PANEL_COLUMNS}
-        spacing={1}
-        defaultColumns={Math.max(1, Math.min(resolvedDetailColumns, details.length))}
-        defaultSpacing={1}
-        defaultHeight={
-          Math.ceil(details.length / Math.max(1, Math.min(resolvedDetailColumns, details.length))) *
-          DETAIL_PANEL_SECTION_HEIGHT_PX
-        }
-        sx={{
-          m: 0,
-          width: "100%",
-          alignContent: "flex-start",
-        }}
+          columns={DETAIL_PANEL_COLUMNS}
+          spacing={1}
+          defaultColumns={Math.max(1, Math.min(resolvedDetailColumns, details.length))}
+          defaultSpacing={1}
+          defaultHeight={
+            Math.ceil(details.length / Math.max(1, Math.min(resolvedDetailColumns, details.length))) *
+            DETAIL_PANEL_SECTION_HEIGHT_PX
+          }
+          sx={{
+            m: 0,
+            width: "100%",
+            alignContent: "flex-start",
+          }}
         >
           {details.map((section) => (
-          <Box
-            key={section.key}
-            component="div"
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 0.55,
-              minWidth: 0,
-              width: "100%",
-              p: 0.75,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 1,
-              bgcolor: alpha(theme.palette.background.paper, 0.72),
-            }}
-          >
-            <Typography
-              component="div"
-              variant="caption"
-              sx={{
-                bgcolor: alpha(accentColor, 0.12),
-                color: accentColor,
-                px: 0.75,
-                py: 0.125,
-                borderRadius: "6px",
-                fontSize: "0.7rem",
-                fontWeight: 700,
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-                whiteSpace: "nowrap",
-                alignSelf: "flex-start",
-              }}
-            >
-              {section.label}
-            </Typography>
-
             <Box
+              key={section.key}
               component="div"
               sx={{
                 display: "flex",
                 flexDirection: "column",
-                alignItems: "stretch",
-                gap: 0.35,
+                gap: 0.55,
                 minWidth: 0,
+                width: "100%",
+                p: 0.75,
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+                bgcolor: alpha(theme.palette.background.paper, 0.72),
               }}
             >
-              {section.items.map((item, itemIndex) => {
-                const itemName = String(item?.name ?? item?.value ?? "").trim() || "Unnamed";
-                const badges = renderDetailItemChips(item)
-                  .map((chipNode, chipIndex) => ({
-                    key: chipNode?.key || `${section.key}-${itemIndex}-chip-${chipIndex}`,
-                    label: chipNode?.props?.label,
-                    color: chipNode?.props?.color || "default",
-                  }))
-                  .filter((badge) => Boolean(String(badge.label || "").trim()));
+              <Typography
+                component="div"
+                variant="caption"
+                sx={{
+                  bgcolor: alpha(accentColor, 0.12),
+                  color: accentColor,
+                  px: 0.75,
+                  py: 0.125,
+                  borderRadius: "6px",
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.03em",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                  alignSelf: "flex-start",
+                }}
+              >
+                {section.label}
+              </Typography>
 
-                return (
-                  <Box
-                    key={`${section.key}-${itemIndex}`}
-                    component="div"
-                    sx={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      flexWrap: "wrap",
-                      gap: "2px 6px",
-                      minWidth: 0,
-                    }}
-                  >
-                    <Typography
-                      component="span"
-                      variant="body2"
-                      sx={
-                        item?.negated || item?.historic
-                          ? {
-                              ...getDetailNameStyle(item),
-                              whiteSpace: "normal",
-                              overflowWrap: "anywhere",
-                              lineHeight: 1.25,
-                            }
-                          : {
-                              ...getDetailNameStyle(item),
-                              color: alpha(theme.palette.text.primary, 0.85),
-                              whiteSpace: "normal",
-                              overflowWrap: "anywhere",
-                              lineHeight: 1.25,
-                            }
-                      }
+              <Box
+                component="div"
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: 0.35,
+                  minWidth: 0,
+                }}
+              >
+                {section.items.map((item, itemIndex) => {
+                  const itemName = String(item?.name ?? item?.value ?? "").trim() || "Unnamed";
+                  const badges = renderDetailItemChips(item)
+                    .map((chipNode, chipIndex) => ({
+                      key: chipNode?.key || `${section.key}-${itemIndex}-chip-${chipIndex}`,
+                      label: chipNode?.props?.label,
+                      color: chipNode?.props?.color || "default",
+                    }))
+                    .filter((badge) => Boolean(String(badge.label || "").trim()));
+
+                  return (
+                    <Box
+                      key={`${section.key}-${itemIndex}`}
+                      component="div"
+                      sx={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        flexWrap: "wrap",
+                        gap: "2px 6px",
+                        minWidth: 0,
+                      }}
                     >
-                      {itemName}
-                    </Typography>
-
-                    {badges.length > 0 ? (
-                      <Box
+                      <Typography
                         component="span"
-                        sx={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 0.5,
-                          flexWrap: "wrap",
-                        }}
+                        variant="body2"
+                        sx={
+                          item?.negated || item?.historic
+                            ? {
+                                ...getDetailNameStyle(item),
+                                whiteSpace: "normal",
+                                overflowWrap: "anywhere",
+                                lineHeight: 1.25,
+                              }
+                            : {
+                                ...getDetailNameStyle(item),
+                                color: alpha(theme.palette.text.primary, 0.85),
+                                whiteSpace: "normal",
+                                overflowWrap: "anywhere",
+                                lineHeight: 1.25,
+                              }
+                        }
                       >
-                        {badges.map((badge) => {
-                          const badgeColor = badgeColorByChipColor[badge.color] || badgeColorByChipColor.default;
-                          return (
-                            <Typography
-                              key={`${section.key}-${itemIndex}-${badge.key}`}
-                              component="span"
-                              variant="caption"
-                              sx={{
-                                px: 0.5,
-                                py: 0,
-                                borderRadius: "9px",
-                                fontSize: "0.65rem",
-                                lineHeight: 1.5,
-                                border: "1px solid",
-                                borderColor: badgeColor.borderColor,
-                                color: badgeColor.color,
-                                bgcolor: badgeColor.bgcolor,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {badge.label}
-                            </Typography>
-                          );
-                        })}
-                      </Box>
-                    ) : null}
-                  </Box>
-                );
-              })}
+                        {itemName}
+                      </Typography>
+
+                      {badges.length > 0 ? (
+                        <Box
+                          component="span"
+                          sx={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          {badges.map((badge) => {
+                            const badgeColor = badgeColorByChipColor[badge.color] || badgeColorByChipColor.default;
+                            return (
+                              <Typography
+                                key={`${section.key}-${itemIndex}-${badge.key}`}
+                                component="span"
+                                variant="caption"
+                                sx={{
+                                  px: 0.5,
+                                  py: 0,
+                                  borderRadius: "9px",
+                                  fontSize: "0.65rem",
+                                  lineHeight: 1.5,
+                                  border: "1px solid",
+                                  borderColor: badgeColor.borderColor,
+                                  color: badgeColor.color,
+                                  bgcolor: badgeColor.bgcolor,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {badge.label}
+                              </Typography>
+                            );
+                          })}
+                        </Box>
+                      ) : null}
+                    </Box>
+                  );
+                })}
+              </Box>
             </Box>
-          </Box>
           ))}
         </Masonry>
       ) : (

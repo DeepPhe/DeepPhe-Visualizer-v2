@@ -19,7 +19,6 @@ import {
   CircularProgress,
   Divider,
   FormControlLabel,
-  IconButton,
   InputAdornment,
   Menu,
   MenuItem,
@@ -31,18 +30,38 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  TableSortLabel,
   TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import PropTypes from "prop-types";
-import { createColumns, SortIndicator } from "./patientGrid/patientGridColumns";
+import { createColumns } from "./patientGrid/patientGridColumns";
 import PatientGridRow from "./patientGrid/PatientGridRow";
 import { exportFilteredSortedRowsToCsv } from "./patientGrid/patientGridExport";
 
 const CLINICAL_SEARCH_FIELDS = ["diagnoses", "biomarkers", "treatments", "procedures", "findings"];
 const DEFAULT_PAGE_SIZE = 10;
+const SUMMARY_COLUMN_IDS = [
+  "diagnosesSummary",
+  "biomarkersSummary",
+  "treatmentsSummary",
+  "proceduresSummary",
+  "findingsSummary",
+];
+
+function getCoreColumnVisibility() {
+  return Object.fromEntries(SUMMARY_COLUMN_IDS.map((columnId) => [columnId, false]));
+}
+
+function getInitialColumnVisibility() {
+  if (typeof window !== "undefined" && window.innerWidth < 1200) {
+    return getCoreColumnVisibility();
+  }
+
+  return {};
+}
 
 function toArray(value) {
   return Array.isArray(value) ? value : [];
@@ -90,7 +109,7 @@ function PatientGrid({
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState([]);
   const [expandedRows, setExpandedRows] = useState({});
-  const [columnVisibility, setColumnVisibility] = useState({});
+  const [columnVisibility, setColumnVisibility] = useState(getInitialColumnVisibility);
   const [columnSizing, setColumnSizing] = useState({});
   const [columnSizingInfo, setColumnSizingInfo] = useState({});
   const [columnMenuAnchorEl, setColumnMenuAnchorEl] = useState(null);
@@ -137,7 +156,9 @@ function PatientGrid({
     },
     getRowCanExpand: (row) => Boolean(row?.original?._raw),
     globalFilterFn: (row, _, filterValue) => {
-      const query = String(filterValue ?? "").trim().toLowerCase();
+      const query = String(filterValue ?? "")
+        .trim()
+        .toLowerCase();
       if (!query) {
         return true;
       }
@@ -184,9 +205,7 @@ function PatientGrid({
     getSortedRowModel: getSortedRowModel(),
   });
 
-  const tableMinWidth = table
-    .getVisibleLeafColumns()
-    .reduce((totalWidth, column) => totalWidth + column.getSize(), 0);
+  const tableMinWidth = table.getVisibleLeafColumns().reduce((totalWidth, column) => totalWidth + column.getSize(), 0);
 
   const filteredCount = table.getFilteredRowModel().rows.length;
   const loadedRowCount = data.length;
@@ -196,10 +215,7 @@ function PatientGrid({
     Number.isFinite(Number(totalCohortCount)) ? Number(totalCohortCount) : Number(cohortSize) || 0
   );
   const safeCurrentPage = Math.max(0, Number(currentPage) || 0);
-  const safeTotalPages = Math.max(
-    Number(totalPages) || 0,
-    Math.ceil(safeTotalCohortCount / safePageSize)
-  );
+  const safeTotalPages = Math.max(Number(totalPages) || 0, Math.ceil(safeTotalCohortCount / safePageSize));
   const visibleColumnCount = table.getVisibleLeafColumns().length;
   const totalColumnCount = columns.length;
   const isColumnMenuOpen = Boolean(columnMenuAnchorEl);
@@ -225,14 +241,14 @@ function PatientGrid({
       }
     >
       <Stack
-        direction={{ xs: "column", sm: "row" }}
-        alignItems={{ xs: "stretch", sm: "center" }}
+        direction={{ xs: "column", lg: "row" }}
+        alignItems={{ xs: "stretch", lg: "center" }}
         justifyContent="space-between"
         spacing={1.5}
         sx={{ mb: 1.5 }}
       >
         {showToolbarTitle || showToolbarSubtitle ? (
-          <Stack spacing={0.25} sx={{ minWidth: 0, flex: "1 1 260px" }}>
+          <Stack spacing={0.25} sx={{ minWidth: 0, flex: { xs: "0 0 auto", lg: "1 1 260px" } }}>
             {showToolbarTitle ? (
               <Typography component="h2" variant={embedded ? "subtitle1" : "h6"} sx={{ fontWeight: 700 }}>
                 {title}
@@ -250,22 +266,26 @@ function PatientGrid({
             ) : null}
           </Stack>
         ) : (
-          <Box sx={{ flex: "1 1 auto" }} />
+          <Box sx={{ flex: { xs: "0 0 auto", lg: "1 1 auto" } }} />
         )}
 
         <Stack
           direction="row"
           alignItems="center"
           spacing={1}
-          sx={{ flexWrap: "wrap", justifyContent: { xs: "flex-start", sm: "flex-end" } }}
+          sx={{
+            flexWrap: "wrap",
+            width: { xs: "100%", lg: "auto" },
+            justifyContent: { xs: "flex-start", lg: "flex-end" },
+          }}
         >
           <TextField
             size="small"
             variant="outlined"
-            placeholder="Search patient details..."
+            placeholder="Search current page…"
             value={globalFilter}
             onChange={(event) => setGlobalFilter(event.target.value)}
-            inputProps={{ "aria-label": "Search patient details" }}
+            inputProps={{ "aria-label": "Search loaded patient page" }}
             sx={{ width: { xs: "100%", sm: 290 } }}
             InputProps={{
               startAdornment: (
@@ -277,23 +297,27 @@ function PatientGrid({
           />
 
           <Tooltip title="Choose visible columns">
-            <IconButton
+            <Button
               size="small"
+              variant="outlined"
+              startIcon={<ViewColumnIcon />}
               aria-label="Toggle visible patient columns"
               onClick={(event) => setColumnMenuAnchorEl(event.currentTarget)}
             >
-              <ViewColumnIcon />
-            </IconButton>
+              {`Columns ${visibleColumnCount}/${totalColumnCount}`}
+            </Button>
           </Tooltip>
 
           <Tooltip title="Export current page to CSV">
-            <IconButton
+            <Button
               size="small"
-              aria-label="Export filtered cohort rows to CSV"
-              onClick={() => exportFilteredSortedRowsToCsv(table, "cohort-patients.csv")}
+              variant="outlined"
+              startIcon={<FileDownloadIcon />}
+              aria-label="Export current patient page to CSV"
+              onClick={() => exportFilteredSortedRowsToCsv(table, `cohort-patients-page-${safeCurrentPage + 1}.csv`)}
             >
-              <FileDownloadIcon />
-            </IconButton>
+              Export page
+            </Button>
           </Tooltip>
 
           {collapsible ? (
@@ -331,6 +355,29 @@ function PatientGrid({
           },
         }}
       >
+        <Stack direction="row" spacing={1} sx={{ px: 1.5, py: 1 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              setColumnVisibility(getCoreColumnVisibility());
+              setColumnMenuAnchorEl(null);
+            }}
+          >
+            Core
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              setColumnVisibility({});
+              setColumnMenuAnchorEl(null);
+            }}
+          >
+            All
+          </Button>
+        </Stack>
+        <Divider sx={{ borderColor: "divider" }} />
         <Box sx={{ px: 1.5, py: 0.75 }}>
           <FormControlLabel
             sx={{ m: 0 }}
@@ -369,7 +416,7 @@ function PatientGrid({
       </Menu>
 
       {showSummaryRow ? (
-        <Stack spacing={0.35} sx={{ mb: 1 }}>
+        <Stack spacing={0.35} sx={{ mb: 1 }} aria-live="polite">
           <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
             {isSearchActive
               ? `Showing ${filteredCount.toLocaleString()} of ${loadedRowCount.toLocaleString()} loaded (filtered) · ${safeTotalCohortCount.toLocaleString()} in cohort`
@@ -394,148 +441,205 @@ function PatientGrid({
           minHeight: embedded ? 0 : undefined,
         }}
       >
-          <TableContainer
-            sx={{
-              maxHeight: embedded ? "none" : 560,
-              overflowX: "auto",
-              overflowY: "auto",
-              flex: embedded ? "1 1 auto" : undefined,
-              minHeight: embedded ? 0 : undefined,
-              border: "1px solid",
-              borderColor: "divider",
-              borderRadius: 1,
-            }}
-          >
-            <Table stickyHeader size="small" sx={{ tableLayout: "fixed", minWidth: tableMinWidth }}>
-          <TableHead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  return (
-                    <TableCell
-                      key={header.id}
-                      data-column-id={header.column.id}
-                      data-column-size={header.getSize()}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                      sx={{
-                        fontWeight: 700,
-                        cursor: canSort ? "pointer" : "default",
-                        userSelect: "none",
-                        whiteSpace: "nowrap",
-                        width: header.getSize(),
-                        minWidth: header.getSize(),
-                        maxWidth: header.getSize(),
-                        position: "relative",
-                        pr: 1.5,
-                        bgcolor: (muiTheme) =>
-                          alpha(
-                            muiTheme.palette.background.paper,
-                            muiTheme.palette.mode === "dark" ? 0.92 : 0.98
-                          ),
-                      }}
-                    >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                      {canSort ? <SortIndicator column={header.column} /> : null}
-                      {header.column.getCanResize() ? (
-                        <Box
-                          role="separator"
-                          aria-label={`Resize ${String(header.column.columnDef.header || header.column.id)} column`}
-                          aria-orientation="vertical"
-                          data-testid={`patient-grid-column-resizer-${header.column.id}`}
-                          onMouseDown={(event) => {
-                            event.stopPropagation();
-                            header.getResizeHandler()(event);
-                          }}
-                          onTouchStart={(event) => {
-                            event.stopPropagation();
-                            header.getResizeHandler()(event);
-                          }}
-                          sx={{
-                            position: "absolute",
-                            top: 0,
-                            right: -5,
-                            height: "100%",
-                            width: 10,
-                            cursor: "col-resize",
-                            touchAction: "none",
-                            zIndex: 2,
-                            "&::after": {
-                              content: '""',
+        <TableContainer
+          sx={{
+            maxHeight: embedded ? "none" : 560,
+            overflowX: "auto",
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            scrollbarGutter: "stable",
+            flex: embedded ? "1 1 auto" : undefined,
+            minHeight: embedded ? 0 : undefined,
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+          }}
+        >
+          <Table stickyHeader size="small" sx={{ tableLayout: "fixed", minWidth: tableMinWidth }}>
+            <TableHead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sortDirection = header.column.getIsSorted();
+                    const columnMeta = header.column.columnDef.meta || {};
+                    const headerDefinition = header.column.columnDef.header;
+                    const headerLabel = typeof headerDefinition === "string" ? headerDefinition : header.column.id;
+                    return (
+                      <TableCell
+                        key={header.id}
+                        data-column-id={header.column.id}
+                        data-column-size={header.getSize()}
+                        sortDirection={sortDirection || false}
+                        sx={{
+                          fontWeight: 700,
+                          userSelect: "none",
+                          whiteSpace: "nowrap",
+                          width: header.getSize(),
+                          minWidth: header.getSize(),
+                          maxWidth: header.getSize(),
+                          position: "sticky",
+                          top: 0,
+                          left: columnMeta.pinned ? columnMeta.stickyLeft : "auto",
+                          zIndex: columnMeta.pinned ? 4 : 3,
+                          pr: 1.5,
+                          bgcolor: "background.paper",
+                          boxShadow:
+                            header.column.id === "patientId"
+                              ? (muiTheme) => `2px 0 4px ${alpha(muiTheme.palette.common.black, 0.1)}`
+                              : "none",
+                        }}
+                      >
+                        {canSort ? (
+                          <TableSortLabel
+                            active={Boolean(sortDirection)}
+                            direction={sortDirection || "asc"}
+                            onClick={header.column.getToggleSortingHandler()}
+                            aria-label={`Sort ${headerLabel} on current page`}
+                            title={`Sort ${headerLabel} on current page`}
+                          >
+                            {flexRender(headerDefinition, header.getContext())}
+                          </TableSortLabel>
+                        ) : (
+                          flexRender(headerDefinition, header.getContext())
+                        )}
+                        {header.column.getCanResize() ? (
+                          <Box
+                            role="separator"
+                            tabIndex={0}
+                            aria-label={`Resize ${headerLabel} column`}
+                            aria-orientation="vertical"
+                            aria-valuemin={header.column.columnDef.minSize || 20}
+                            aria-valuemax={header.column.columnDef.maxSize || 1000}
+                            aria-valuenow={header.column.getSize()}
+                            data-testid={`patient-grid-column-resizer-${header.column.id}`}
+                            onMouseDown={(event) => {
+                              event.stopPropagation();
+                              header.getResizeHandler()(event);
+                            }}
+                            onTouchStart={(event) => {
+                              event.stopPropagation();
+                              header.getResizeHandler()(event);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+                                return;
+                              }
+
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const direction = event.key === "ArrowRight" ? 1 : -1;
+                              const step = event.shiftKey ? 25 : 10;
+                              const minSize = header.column.columnDef.minSize || 20;
+                              const maxSize = header.column.columnDef.maxSize || 1000;
+                              const nextSize = Math.max(
+                                minSize,
+                                Math.min(maxSize, header.column.getSize() + direction * step)
+                              );
+                              setColumnSizing((previous) => ({
+                                ...previous,
+                                [header.column.id]: nextSize,
+                              }));
+                            }}
+                            sx={{
                               position: "absolute",
-                              top: "20%",
-                              bottom: "20%",
-                              left: "50%",
-                              transform: "translateX(-50%)",
-                              width: 2,
-                              borderRadius: 999,
-                              bgcolor: header.column.getIsResizing()
-                                ? "primary.main"
-                                : alpha(theme.palette.text.primary, 0.18),
-                            },
-                          }}
-                        />
-                      ) : null}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHead>
+                              top: 0,
+                              right: -5,
+                              height: "100%",
+                              width: 10,
+                              cursor: "col-resize",
+                              touchAction: "none",
+                              zIndex: 2,
+                              "&:focus-visible": {
+                                outline: "2px solid",
+                                outlineColor: "primary.main",
+                                outlineOffset: -2,
+                              },
+                              "&::after": {
+                                content: '""',
+                                position: "absolute",
+                                top: "20%",
+                                bottom: "20%",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                width: 2,
+                                borderRadius: 999,
+                                bgcolor: header.column.getIsResizing()
+                                  ? "primary.main"
+                                  : alpha(theme.palette.text.primary, 0.18),
+                              },
+                            }}
+                          />
+                        ) : null}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHead>
 
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 3 }}>
-                  <Stack direction="row" alignItems="center" justifyContent="center" spacing={1}>
-                    <CircularProgress size={16} />
-                    <Typography color="text.secondary">Loading patient details...</Typography>
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            ) : error ? (
-              <TableRow>
-                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 2.5 }}>
-                  <Stack
-                    direction={{ xs: "column", sm: "row" }}
-                    alignItems="center"
-                    justifyContent="center"
-                    spacing={1}
-                  >
-                    <Typography color="error.main">
-                      {String(error || "Failed to load patient details.")}
-                    </Typography>
-                    <Button size="small" variant="outlined" onClick={onRetry}>
-                      Retry
-                    </Button>
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row, rowIndex) => (
-                <PatientGridRow
-                  key={row.id}
-                  row={row}
-                  rowIndex={rowIndex}
-                  columnCount={totalColumnCount}
-                  onToggleExpansion={toggleRowExpansion}
-                  onPatientOpen={onPatientOpen}
-                  onDetailContextMenu={handleDetailRowContextMenu}
-                />
-              ))
-            )}
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount || totalColumnCount} align="center" sx={{ py: 3 }}>
+                    <Stack direction="row" alignItems="center" justifyContent="center" spacing={1}>
+                      <CircularProgress size={16} />
+                      <Typography color="text.secondary">Loading patient details...</Typography>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount || totalColumnCount} align="center" sx={{ py: 2.5 }}>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      alignItems="center"
+                      justifyContent="center"
+                      spacing={1}
+                    >
+                      <Typography color="error.main">{String(error || "Failed to load patient details.")}</Typography>
+                      <Button size="small" variant="outlined" onClick={onRetry}>
+                        Retry
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                table
+                  .getRowModel()
+                  .rows.map((row, rowIndex) => (
+                    <PatientGridRow
+                      key={row.id}
+                      row={row}
+                      rowIndex={rowIndex}
+                      columnCount={visibleColumnCount}
+                      onToggleExpansion={toggleRowExpansion}
+                      onPatientOpen={onPatientOpen}
+                      onDetailContextMenu={handleDetailRowContextMenu}
+                    />
+                  ))
+              )}
 
-            {!isLoading && !error && table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={totalColumnCount || visibleColumnCount} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">No patients match your search.</Typography>
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-            </Table>
-          </TableContainer>
+              {!isLoading && !error && table.getRowModel().rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount || totalColumnCount} align="center" sx={{ py: 4 }}>
+                    <Typography color="text.secondary">No patients match your search.</Typography>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </TableContainer>
 
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "center" }}
+          justifyContent="space-between"
+          spacing={0.5}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ px: 1, py: { xs: 1, sm: 0 } }}>
+            Search, sort, and export apply to this loaded page.
+          </Typography>
           <TablePagination
             component="div"
             count={safeTotalCohortCount}
@@ -548,17 +652,16 @@ function PatientGrid({
             }
             backIconButtonProps={{ disabled: isLoading || safeCurrentPage <= 0 }}
             nextIconButtonProps={{
-              disabled:
-                isLoading ||
-                safeTotalPages <= 0 ||
-                safeCurrentPage >= Math.max(0, safeTotalPages - 1),
+              disabled: isLoading || safeTotalPages <= 0 || safeCurrentPage >= Math.max(0, safeTotalPages - 1),
             }}
             sx={{
+              ml: { sm: "auto" },
               ".MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows": {
                 color: "text.secondary",
               },
             }}
           />
+        </Stack>
       </Box>
 
       {/* Right-click context menu on detail rows */}
@@ -566,9 +669,7 @@ function PatientGrid({
         open={Boolean(contextMenu)}
         onClose={handleContextMenuClose}
         anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined
-        }
+        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
       >
         {contextMenu && Array.isArray(openPatientIds) && openPatientIds.includes(contextMenu.patientId) ? (
           [

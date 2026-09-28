@@ -1,5 +1,7 @@
+import { scaleTime } from "d3-scale";
 import {
   buildEventRelationHeatmap,
+  buildEventRelationOverviewRows,
   computeEventRelationAgeAxis,
   buildEventRelationTooltip,
   checkOverlapWithPadding,
@@ -9,15 +11,23 @@ import {
   getEventRelationGlyph,
   packSpansIntoLanes,
 } from "../eventRelationTimelineLayout";
-import { zoomIdentity } from "d3-zoom";
+import { buildDocumentOverviewRows } from "../timelineChartLayout";
+import { computeOverviewStripLayout, viewportToDateWindow } from "../timelineViewport";
 import {
   LANE,
   MARGINS,
+  NEGATED_RELATION_COLOR,
   PLOT_RIGHT_GUTTER,
+  RELATION_COLOR,
   TIMELINE_PADDING_DAYS,
+  VIEWBOX_TOP,
 } from "../../../constants/eventRelationTimeline";
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+// TSV dates are calendar dates at local midnight, like the document timeline's.
+function localMidnight(isoDate) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day).getTime();
+}
 
 function span(id, laneGroup, startIso, endIso, overrides = {}) {
   return {
@@ -25,8 +35,8 @@ function span(id, laneGroup, startIso, endIso, overrides = {}) {
     laneGroup,
     start: startIso,
     end: endIso,
-    startTime: Date.parse(`${startIso}T00:00:00Z`),
-    endTime: Date.parse(`${endIso}T00:00:00Z`),
+    startTime: localMidnight(startIso),
+    endTime: localMidnight(endIso),
     relation1: "Overlaps",
     relation2: "Overlaps",
     relationKey: "Overlaps/Overlaps",
@@ -45,12 +55,10 @@ describe("event relation timeline layout", () => {
     ];
     const domain = computeEventRelationDomain(spans);
 
-    expect(domain.startDate.getTime()).toBe(
-      Date.parse("2009-03-15T00:00:00Z") - TIMELINE_PADDING_DAYS * MS_PER_DAY
-    );
-    expect(domain.endDate.getTime()).toBe(
-      Date.parse("2011-02-20T00:00:00Z") + TIMELINE_PADDING_DAYS * MS_PER_DAY
-    );
+    // Padded by calendar days, so both ends stay on local midnight.
+    expect(TIMELINE_PADDING_DAYS).toBe(50);
+    expect(domain.startDate.getTime()).toBe(new Date(2009, 0, 24).getTime());
+    expect(domain.endDate.getTime()).toBe(new Date(2011, 3, 11).getTime());
   });
 
   it("packs non-overlapping spans onto one lane and pushes overlaps down", () => {
@@ -196,14 +204,14 @@ describe("event relation timeline layout", () => {
     const axis = computeEventRelationAgeAxis(
       layout.domain,
       layout.mainX,
-      new Date(Date.UTC(1960, 3, 1))
+      new Date(1960, 3, 1)
     );
 
     expect(axis.available).toBe(true);
     expect(axis.encounters.map((e) => e.age)).toEqual([48, 51]);
     // Birthdays falling inside the domain, labelled with the age reached.
     expect(axis.interiors.map((i) => i.age)).toEqual([49, 50, 51]);
-    expect(axis.interiors[0].date.toISOString()).toBe("2009-04-01T00:00:00.000Z");
+    expect(axis.interiors[0].date.getTime()).toBe(new Date(2009, 3, 1).getTime());
     expect(axis.interiors.every((i) => i.x > 0 && i.x <= layout.dimensions.svgWidth)).toBe(
       true
     );
@@ -214,14 +222,18 @@ describe("event relation timeline layout", () => {
       containerWidth: 1040,
       spans: [span("a", "Finding", "2009-01-28", "2011-03-01")],
     });
-    const zoomedX = zoomIdentity
-      .translate(-layout.dimensions.svgWidth * 0.35, 0)
-      .scale(1.8)
-      .rescaleX(layout.mainX);
+    // 180% zoom showing roughly the middle of the range, derived the way the
+    // card derives its zoomed scale.
+    const { startDate, endDate } = viewportToDateWindow(
+      { zoom: 1.8, panRatio: 0.35 / 1.8 },
+      layout.domain.startDate,
+      layout.domain.endDate
+    );
+    const zoomedX = scaleTime().domain([startDate, endDate]).range(layout.mainX.range());
     const axis = computeEventRelationAgeAxis(
       layout.domain,
       zoomedX,
-      new Date(Date.UTC(1960, 3, 1))
+      new Date(1960, 3, 1)
     );
     const allTicks = [...axis.encounters, ...axis.interiors];
 
@@ -261,6 +273,83 @@ describe("event relation timeline layout", () => {
       withAge.dimensions.svgTotalHeight
     );
     expect(withoutAge.dimensions.overviewTop).toBeLessThan(withAge.dimensions.overviewTop);
+  });
+
+  it("takes its plot gutters from the frame it shares with the document timeline", () => {
+    const spans = [span("a", "Finding", "2010-01-01", "2010-06-01")];
+    const framed = computeEventRelationTimelineLayout({
+      containerWidth: 1200,
+      spans,
+      plotInsets: { left: 237, right: 26 },
+    });
+
+    expect(framed.dimensions.marginLeft).toBe(237);
+    expect(framed.dimensions.svgWidth).toBe(1200 - 237 - 26);
+    expect(framed.dimensions.viewBoxWidth).toBe(1200);
+    expect(framed.mainX.range()).toEqual([0, 1200 - 237 - 26]);
+  });
+
+  it("sizes the SVG to end below an overview strip with a mini-row per lane group", () => {
+    const oneGroup = computeEventRelationTimelineLayout({
+      containerWidth: 1040,
+      spans: [span("a", "Finding", "2010-01-01", "2010-06-01")],
+      showAgeAxis: false,
+    });
+    const twoGroups = computeEventRelationTimelineLayout({
+      containerWidth: 1040,
+      spans: [
+        span("a", "Finding", "2010-01-01", "2010-06-01"),
+        span("b", "Treatment", "2010-02-01", "2010-03-01"),
+      ],
+      showAgeAxis: false,
+    });
+
+    [oneGroup, twoGroups].forEach((layout) => {
+      const { dimensions, groups } = layout;
+      expect(dimensions.overviewHeight).toBe(
+        computeOverviewStripLayout({ rowCount: groups.length }).height
+      );
+      expect(dimensions.viewBoxTop + dimensions.svgTotalHeight).toBe(
+        dimensions.overviewTop + dimensions.overviewHeight + MARGINS.bottom
+      );
+      expect(dimensions.viewBoxTop).toBe(VIEWBOX_TOP);
+    });
+  });
+
+  it("builds overview rows from lane groups at full-domain positions", () => {
+    const layout = computeEventRelationTimelineLayout({
+      containerWidth: 1040,
+      spans: [
+        span("a", "Finding", "2010-01-01", "2010-06-01"),
+        span("b", "Treatment", "2010-02-01", "2010-02-01", { negated: true }),
+      ],
+      collapsedGroups: new Set(["Treatment"]),
+    });
+
+    const rows = buildEventRelationOverviewRows(layout.groups);
+    expect(rows.map((row) => row.key)).toEqual(["Finding", "Treatment"]);
+    expect(rows[0].marks[0]).toEqual({
+      key: "a",
+      x1: layout.mainX(new Date(2010, 0, 1)),
+      x2: layout.mainX(new Date(2010, 5, 1)),
+      color: RELATION_COLOR,
+    });
+    // A collapsed group keeps its row; negation keeps its color.
+    expect(rows[1].marks[0].color).toBe(NEGATED_RELATION_COLOR);
+    expect(rows[1].marks[0].x1).toBe(rows[1].marks[0].x2);
+
+    const documentRows = buildDocumentOverviewRows(
+      [{ type: "Note" }, { type: "Pathology" }],
+      [
+        { id: "d1", type: "Note", x: 40, episodeColor: "#111111", dateObject: new Date(2010, 0, 1) },
+        { id: "d2", type: "Pathology", x: 90, episodeColor: "#222222", dateObject: new Date(2010, 1, 1) },
+        { id: "undated", type: "Note", x: 0, episodeColor: "#333333", dateObject: null },
+      ]
+    );
+    expect(documentRows).toEqual([
+      { key: "Note", marks: [{ key: "d1", x1: 40, x2: 40, color: "#111111" }] },
+      { key: "Pathology", marks: [{ key: "d2", x1: 90, x2: 90, color: "#222222" }] },
+    ]);
   });
 
   it("formats the alpha's duration and tooltip text", () => {

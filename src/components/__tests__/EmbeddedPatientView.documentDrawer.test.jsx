@@ -53,7 +53,12 @@ jest.mock("../patient/PatientDocumentsCard", () => {
         },
         "Open timeline document"
       ),
-      React.createElement("span", null, ` selected:${props.selectedDocumentId || "none"}`)
+      React.createElement("span", null, ` selected:${props.selectedDocumentId || "none"}`),
+      React.createElement(
+        "span",
+        null,
+        ` eventRelated:${(props.eventRelatedDocumentIds || []).join(",") || "none"}`
+      )
     );
   };
 });
@@ -65,6 +70,14 @@ jest.mock("../patient/EventRelationTimelineCard", () => {
     return React.createElement(
       "section",
       { "data-testid": "mock-event-timeline-card" },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => props.onSelectConceptIds?.(["concept-neoplasm"]),
+        },
+        "Select event concepts"
+      ),
       `Event Timeline selected:${props.selectedDocument?.id || "none"}`
     );
   };
@@ -267,11 +280,11 @@ describe("EmbeddedPatientView document drawer layout", () => {
 
       await waitFor(() => {
         expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
-        expect(document.body.textContent).toContain("Clinical Note");
-        expect(
-          container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
-        ).toContain("selected:doc-1");
       });
+      expect(document.body.textContent).toContain("Clinical Note");
+      expect(
+        container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
+      ).toContain("selected:doc-1");
 
       act(() => {
         container
@@ -281,10 +294,10 @@ describe("EmbeddedPatientView document drawer layout", () => {
 
       await waitFor(() => {
         expect(document.body.textContent).toContain("Pathology Report");
-        expect(
-          container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
-        ).toContain("selected:doc-2");
       });
+      expect(
+        container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
+      ).toContain("selected:doc-2");
 
       act(() => {
         container
@@ -294,10 +307,10 @@ describe("EmbeddedPatientView document drawer layout", () => {
 
       await waitFor(() => {
         expect(document.body.textContent).toContain("Related Consult");
-        expect(
-          container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
-        ).toContain("selected:doc-3");
       });
+      expect(
+        container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
+      ).toContain("selected:doc-3");
 
       expect(container.querySelector('[data-testid="patient-document-panel"]')).toBeNull();
 
@@ -310,10 +323,10 @@ describe("EmbeddedPatientView document drawer layout", () => {
 
       await waitFor(() => {
         expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).toBeNull();
-        expect(
-          container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
-        ).toContain("selected:doc-3");
       });
+      expect(
+        container.querySelector('[data-testid="mock-event-timeline-card"]').textContent
+      ).toContain("selected:doc-3");
 
       // The same report can be reopened after dismissing its drawer.
       act(() => {
@@ -322,6 +335,32 @@ describe("EmbeddedPatientView document drawer layout", () => {
       });
       await waitFor(() => {
         expect(document.body.querySelector('[data-testid="patient-document-drawer"]')).not.toBeNull();
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("passes selected event concept document ids into the document timeline", async () => {
+    const { container, unmount } = renderComponent(
+      <EmbeddedPatientView patientId="fake_patient1" />
+    );
+
+    try {
+      await flushEffects();
+
+      expect(container.querySelector('[data-testid="mock-document-timeline-card"]').textContent)
+        .toContain("eventRelated:none");
+
+      act(() => {
+        container
+          .querySelector('[data-testid="mock-event-timeline-card"] button')
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="mock-document-timeline-card"]').textContent)
+          .toContain("eventRelated:doc-1,doc-2,doc-3");
       });
     } finally {
       unmount();

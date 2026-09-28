@@ -39,17 +39,85 @@ const demographicsRecords = readJson(DEMOGRAPHICS_FILE, []);
 // anything, so serve the real API's spec verbatim.
 const openApiSpec = readJson(path.join(__dirname, "openapi.json"), { openapi: "3.0.0", paths: {} });
 
-const patientIds = fs
-  .readdirSync(FIXTURE_DIR)
-  .filter((name) => /^fake_patient\d+\.json$/.test(name))
-  .map((name) => name.replace(/\.json$/, ""))
-  .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+function sortPatientIds(left, right) {
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function sortFileNames(left, right) {
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function discoverPatientSources(fixtureDir) {
+  const sources = new Map();
+  const entries = fs.readdirSync(fixtureDir, { withFileTypes: true });
+
+  entries.forEach((entry) => {
+    if (entry.isFile() && /^fake_patient\d+\.json$/.test(entry.name)) {
+      const patientId = entry.name.replace(/\.json$/, "");
+      sources.set(patientId, {
+        kind: "flat",
+        path: path.join(fixtureDir, entry.name),
+      });
+      return;
+    }
+
+    if (entry.isDirectory() && /^fake_patient\d+$/.test(entry.name)) {
+      const patientId = entry.name;
+      const patientDir = path.join(fixtureDir, patientId);
+      const patientFile = path.join(patientDir, `${patientId}.json`);
+      if (fs.existsSync(patientFile)) {
+        sources.set(patientId, {
+          kind: "directory",
+          path: patientDir,
+        });
+      }
+    }
+  });
+
+  return sources;
+}
+
+function loadDirectoryPatient(patientId, patientDir) {
+  const patient = readJson(path.join(patientDir, `${patientId}.json`), {
+    id: patientId,
+    name: patientId,
+  });
+  const fileNames = fs.readdirSync(patientDir).sort(sortFileNames);
+  const documents = fileNames
+    .filter((fileName) => /_Doc\.json$/.test(fileName))
+    .map((fileName) => readJson(path.join(patientDir, fileName), null))
+    .filter(Boolean);
+  const cancers = readJson(path.join(patientDir, `${patientId}_Cancers.json`), []);
+  const conceptsPayload = readJson(path.join(patientDir, `${patientId}_Concepts.json`), {
+    concepts: [],
+    conceptRelations: [],
+  });
+
+  return {
+    ...patient,
+    documents,
+    cancers: Array.isArray(cancers) ? cancers : [],
+    concepts: Array.isArray(conceptsPayload?.concepts) ? conceptsPayload.concepts : [],
+    conceptRelations: Array.isArray(conceptsPayload?.conceptRelations)
+      ? conceptsPayload.conceptRelations
+      : [],
+  };
+}
+
+const patientSources = discoverPatientSources(FIXTURE_DIR);
+const patientIds = [...patientSources.keys()].sort(sortPatientIds);
 
 const fixtureCache = new Map();
 function loadPatient(patientId) {
-  if (!patientIds.includes(patientId)) return null;
+  const source = patientSources.get(patientId);
+  if (!source) return null;
   if (!fixtureCache.has(patientId)) {
-    fixtureCache.set(patientId, readJson(path.join(FIXTURE_DIR, `${patientId}.json`), null));
+    fixtureCache.set(
+      patientId,
+      source.kind === "directory"
+        ? loadDirectoryPatient(patientId, source.path)
+        : readJson(source.path, null)
+    );
   }
   return fixtureCache.get(patientId);
 }
