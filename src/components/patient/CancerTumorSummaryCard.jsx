@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import PropTypes from "prop-types";
 import {
   Box,
@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import { toDisplayName } from "../../utils/displayNames";
 import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
+import { buildCancerComparisonMatrix } from "../../controllers/cancerComparison";
 import CancerComparisonMatrix from "./CancerComparisonMatrix";
 import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
@@ -281,10 +282,21 @@ export default function CancerTumorSummaryCard({
   sectionLabel = "Cancer and Tumor Detail",
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
-  const normalizedCancers = Array.isArray(cancers) ? cancers : [];
+  const normalizedCancers = useMemo(() => (Array.isArray(cancers) ? cancers : []), [cancers]);
   // The improved view compares the cancers in one matrix; the alpha view keeps
   // the per-cancer cards.
   const { isImproved } = usePatientViewPresentation();
+  const comparison = useMemo(
+    () => (isImproved ? buildCancerComparisonMatrix(normalizedCancers) : null),
+    [isImproved, normalizedCancers]
+  );
+  // With the panel collapsed, the header still says whether the cancers differ.
+  const differingCount = comparison
+    ? comparison.sections.reduce(
+        (total, section) => total + section.rows.filter((row) => row.differs).length,
+        0
+      )
+    : 0;
 
   return (
     <Card
@@ -330,6 +342,11 @@ export default function CancerTumorSummaryCard({
                 {normalizedCancers.length} cancer{normalizedCancers.length !== 1 ? "s" : ""}
               </Typography>
             ) : null}
+            {isImproved && differingCount > 0 ? (
+              <Typography variant="caption" color="text.secondary" data-testid="cancer-summary-differences">
+                {`${differingCount} attribute${differingCount === 1 ? "" : "s"} differ`}
+              </Typography>
+            ) : null}
             {onToggleExpanded ? (
               <SectionCollapseToggle
                 expanded={expanded}
@@ -365,6 +382,7 @@ export default function CancerTumorSummaryCard({
           </Typography>
         ) : isImproved ? (
           <CancerComparisonMatrix
+            matrix={comparison}
             cancers={normalizedCancers}
             activeFactId={activeFactId}
             onFactSelect={onFactSelect}

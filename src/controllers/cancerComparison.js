@@ -13,6 +13,7 @@ export const CANCER_COMPARISON_CATEGORIES = Object.freeze([
 ]);
 
 const TNM_KEYS = Object.freeze(["T", "N", "M"]);
+export const TNM_CATEGORY = "TNM";
 
 export function getFactLabel(fact = {}) {
   const rawLabel = String(fact?.value || fact?.prettyName || fact?.name || "").trim();
@@ -40,11 +41,15 @@ function getCancerFactsByCategory(cancer = {}) {
     byCategory.set(categoryName, [...(byCategory.get(categoryName) || []), ...facts]);
   });
 
+  // TNM is read as one value ("T1 N0 M0"), so it is one row with the stage
+  // letter carried on each fact rather than three rows a third full.
   const tnmData = cancer?.tnm?.[0]?.data || {};
-  TNM_KEYS.forEach((key) => {
-    const facts = Array.isArray(tnmData[key]) ? tnmData[key] : [];
-    byCategory.set(`TNM ${key}`, facts);
-  });
+  const tnmFacts = TNM_KEYS.flatMap((key) =>
+    (Array.isArray(tnmData[key]) ? tnmData[key] : [])
+      .filter((fact) => String(fact?.id || "").trim())
+      .map((fact) => ({ ...fact, comparisonPrefix: key }))
+  );
+  byCategory.set(TNM_CATEGORY, tnmFacts);
 
   return byCategory;
 }
@@ -102,13 +107,23 @@ function buildRow({ key, label, factsByColumn, columns, cancerValueKeys }) {
     };
   });
 
+  const documentedCount = cells.filter((cell) => !cell.isUnknown).length;
+  const allUnknown = documentedCount === 0;
+  // A tumor row that only repeats its cancer adds nothing to the comparison.
+  const repeatsCancer =
+    !allUnknown && cells.every((cell) => cell.matchesCancer || cell.isUnknown);
+
   return {
     key,
     label,
     cells,
     // What the reader is here for: where the cancers disagree.
     differs: new Set(cells.map((cell) => cell.valueKey)).size > 1,
-    documentedCount: cells.filter((cell) => !cell.isUnknown).length,
+    documentedCount,
+    allUnknown,
+    repeatsCancer,
+    // Nothing to compare: folded away behind a count rather than taking a line.
+    isFoldable: allUnknown || repeatsCancer,
   };
 }
 
@@ -137,7 +152,7 @@ export function buildCancerComparisonMatrix(cancers = []) {
   const cancerCategories = new Set();
   cancerFacts.forEach((byCategory) => {
     byCategory.forEach((facts, category) => {
-      if (facts.length > 0 || category.startsWith("TNM ")) {
+      if (facts.length > 0 || category === TNM_CATEGORY) {
         cancerCategories.add(category);
       }
     });

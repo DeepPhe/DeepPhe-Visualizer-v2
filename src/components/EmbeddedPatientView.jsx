@@ -250,7 +250,10 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   // expanded; collapsing is opt-in and preserves the multi-panel comparison
   // workflow (e.g. keep the timeline + document open, hide the rest).
   const [collapsedSections, setCollapsedSections] = useState({
-    cancer: false,
+    // The improved view opens with the cancer detail folded to its header, so
+    // the timelines stay above the fold; its header says whether the cancers
+    // differ, and one click opens the comparison.
+    cancer: isImproved,
     timeline: false,
     eventTimeline: false,
     summary: false,

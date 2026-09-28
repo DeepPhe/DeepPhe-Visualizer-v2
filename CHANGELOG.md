@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four text sizes, bands alternate event lanes, marks negated events with a
   dashed line as well as red, names the visible date range against the whole
   range, and replaces the two magnifier icons with + and −
+- The improved Cancer and Tumor Detail keeps its height down: TNM reads as one
+  row ("T1 M0") rather than three, rows with nothing to compare (nothing
+  documented, or a tumor only repeating its cancer) fold behind a count, and in
+  the patient drawer the panel opens folded to its header, which reports how
+  many attributes differ. Nothing is dropped: the completeness count still
+  counts every field, and one click shows the folded rows
 
 ### Changed
 - The Patient Document Timeline's date range slider was drawn against the full

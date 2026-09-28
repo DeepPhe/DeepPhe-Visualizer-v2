@@ -60,12 +60,18 @@ describe("cancer comparison matrix", () => {
     expect(matrix.columns[0].documentedCount).toBeGreaterThan(matrix.columns[1].documentedCount);
   });
 
-  it("orders attributes clinically and keeps every TNM row", () => {
+  it("orders attributes clinically and reads TNM as one row", () => {
     const matrix = buildCancerComparisonMatrix(CANCERS);
-    const labels = matrix.sections.find((section) => section.key === "cancer").rows.map((row) => row.label);
+    const cancerSection = matrix.sections.find((section) => section.key === "cancer");
+    const labels = cancerSection.rows.map((row) => row.label);
 
     expect(labels.slice(0, 3)).toEqual(["Location", "Grade", "Gene(s)"]);
-    expect(labels).toEqual(expect.arrayContaining(["TNM T", "TNM N", "TNM M"]));
+    // "T1 N0 M0" is how the stage is read, so it is one row, not three.
+    expect(labels).toContain("TNM");
+    expect(labels).not.toContain("TNM T");
+    const tnm = cancerSection.rows.find((row) => row.label === "TNM");
+    expect(tnm.cells[0].facts.map((f) => f.comparisonPrefix)).toEqual(["T", "M"]);
+    expect(tnm.cells[1].isUnknown).toBe(true);
   });
 
   it("marks the rows where the cancers disagree", () => {
@@ -80,11 +86,35 @@ describe("cancer comparison matrix", () => {
 
   it("flags undocumented cells instead of dropping them", () => {
     const matrix = buildCancerComparisonMatrix(CANCERS);
-    const nodes = rowByLabel(matrix, "cancer", "TNM N");
+    const genes = rowByLabel(matrix, "cancer", "Gene(s)");
 
-    expect(nodes.cells.every((cell) => cell.isUnknown)).toBe(true);
-    expect(rowByLabel(matrix, "cancer", "Gene(s)").cells[1].isUnknown).toBe(true);
-    expect(rowByLabel(matrix, "cancer", "Gene(s)").cells[0].facts).toHaveLength(1);
+    expect(genes.cells[1].isUnknown).toBe(true);
+    expect(genes.cells[0].facts).toHaveLength(1);
+    expect(genes.allUnknown).toBe(false);
+    expect(genes.isFoldable).toBe(false);
+  });
+
+  it("folds rows that hold nothing to compare", () => {
+    const matrix = buildCancerComparisonMatrix([
+      {
+        cancerId: "only",
+        collatedCancerFacts: [{ categoryName: "Grade", facts: [fact("g", "3")] }],
+        tnm: [{ data: { T: [], N: [], M: [] } }],
+        tumors: {
+          listViewData: [{ id: "t", data: [{ category: "Grade", facts: [fact("tg", "3")] }] }],
+        },
+      },
+    ]);
+
+    // Nothing staged at all: the TNM row has nothing to say.
+    expect(rowByLabel(matrix, "cancer", "TNM").allUnknown).toBe(true);
+    expect(rowByLabel(matrix, "cancer", "TNM").isFoldable).toBe(true);
+    // The tumor only repeats its cancer's grade.
+    const tumorGrade = rowByLabel(matrix, "tumor-1", "Grade");
+    expect(tumorGrade.repeatsCancer).toBe(true);
+    expect(tumorGrade.isFoldable).toBe(true);
+    // A row that says something stays.
+    expect(rowByLabel(matrix, "cancer", "Grade").isFoldable).toBe(false);
   });
 
   it("nests tumors and says when a tumor just repeats its cancer", () => {

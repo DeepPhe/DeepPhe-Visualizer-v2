@@ -165,6 +165,43 @@ describe("CancerTumorSummaryCard", () => {
       },
     ];
 
+
+    it("folds away rows with nothing documented, and can show them", () => {
+      // Neither cancer stages N or M, so those rows carry nothing to compare.
+      const sparseCancers = twoCancers.map((cancer) => ({
+        ...cancer,
+        tnm: [{ data: { T: [], N: [], M: [] } }],
+      }));
+      const { container, unmount } = renderComponent(
+        <CancerTumorSummaryCard cancers={sparseCancers} />
+      );
+
+      try {
+        const rowLabels = () =>
+          [...container.querySelectorAll("th[scope='row']")].map((n) => n.textContent);
+        const toggle = () =>
+          container.querySelector("[data-testid='cancer-comparison-undocumented-toggle']");
+
+        // Neither cancer is staged, so the TNM row is folded away by default.
+        expect(rowLabels().some((label) => label.startsWith("TNM"))).toBe(false);
+        expect(toggle().textContent).toMatch(/^Show \d+ undocumented or repeated fields?$/);
+        expect(toggle().getAttribute("aria-expanded")).toBe("false");
+        const foldedCount = rowLabels().length;
+
+        act(() => {
+          toggle().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+
+        expect(rowLabels().some((label) => label.startsWith("TNM"))).toBe(true);
+        expect(rowLabels().length).toBeGreaterThan(foldedCount);
+        expect(toggle().textContent).toMatch(/^Hide \d+ undocumented or repeated fields?$/);
+        // The completeness count still counts every field, folded or not.
+        expect(container.textContent).toMatch(/\d+\/\d+ documented/);
+      } finally {
+        unmount();
+      }
+    });
+
     it("compares the cancers in one matrix instead of separate cards", () => {
       const onFactSelect = jest.fn();
       const { container, unmount } = renderComponent(
@@ -180,7 +217,7 @@ describe("CancerTumorSummaryCard", () => {
         expect(headers[1]).toContain("Cancer 1");
         expect(headers[2]).toContain("Cancer 2");
         // Sparse records read as sparse.
-        expect(headers[1]).toMatch(/\d+ of \d+ documented/);
+        expect(headers[1]).toMatch(/\d+\/\d+ documented/);
 
         // The differences are what the reader came for.
         const gradeRow = [...matrix.querySelectorAll("th[scope='row']")].find((n) =>
