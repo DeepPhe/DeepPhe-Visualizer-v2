@@ -54,6 +54,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts every field, and one click shows the folded rows
 
 ### Changed
+- **Filter cards use the free space beside them.** In Standard density a long
+  filter card is capped and scrolls even when the column next to it has empty
+  room. Each section's real columns are now planned (the same shortest-column-
+  first placement the grid uses), and a scrolling card grows into free space in
+  its own column, in whole rows, never taller than its own content. Short cards
+  keep their natural size. This covers every filter section, including the
+  Cancer Type & Primary Site section where attribute cards share a grid with
+  the OMOP cards
+- Scrolling filter cards now end on a whole row instead of mid-row, at any font
+  size, so the last visible row is complete and the cut-off is unmistakable
 - The Patient Document Timeline's date range slider was drawn against the full
   date range but sat under the zoomed axis, so its handle positions were easy to
   misread by months. Its handles now sit on the overview strip's own fixed axis

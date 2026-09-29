@@ -57,7 +57,7 @@ Only sections present in the current dataset appear. See [Filter categories](../
 
 ## Filter cards
 
-Each card shows the filter name, its values, a bar for relative frequency, and a patient count per value. A long card **scrolls internally** so it never pushes the rest of the page down. Select the card header (**Details**) to open a larger, searchable, sortable list — see [Filter Details dialog](filter-details.md).
+Each card shows the filter name, its values, a bar for relative frequency, and a patient count per value. A long card **scrolls internally** so it never pushes the rest of the page down, and it always ends on a whole row, so the last row you see is complete and the cut-off shows there is more below. Where a neighboring column has free space, a long card grows into it — one whole row at a time, and never taller than its own list — so space is not left empty while a card scrolls beside it. Short cards keep their natural size. Select the card header (**Details**) to open a larger, searchable, sortable list — see [Filter Details dialog](filter-details.md).
 
 ## Selected Patients drawer
 

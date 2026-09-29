@@ -36,7 +36,11 @@ import {
 import { normalizeClassName, summarizeInstances } from "../utils/dataProcessing";
 import { endSpan, logMilestone, startSpan } from "../utils/perfTracker";
 import { resolveFilterSetsWithExtras, resolveFilterSetsForAttributesAndConcepts } from "./filterSets";
-import { buildFilterSectionLayout, estimateCardHeight } from "./filterLayout";
+import {
+  buildFilterSectionLayout,
+  estimateCardHeight,
+  snapCardHeightToWholeRows,
+} from "./filterLayout";
 import FilterSectionCard from "./filters/FilterSectionCard";
 import FilterDetailModal from "./filters/FilterDetailModal";
 import ThemeBuilderDialog from "./filters/ThemeBuilderDialog";
@@ -466,6 +470,10 @@ function FiltersView() {
   // last row" bug). Stays in sync with cardNaturalHeightByKey: written in the
   // same useLayoutEffect, frozen by the same data-card-height-override guard.
   const [cardDesiredHeightByKey, setCardDesiredHeightByKey] = useState({});
+  // Per-card row geometry (row height, first-row offset, card chrome), measured
+  // from the DOM so scrolling cards can be sized to end on a whole row at any
+  // font scale.
+  const [cardRowMetricsByKey, setCardRowMetricsByKey] = useState({});
   // Reveal gate: the filter sections mount (so they can be measured) but stay
   // visually hidden until the layout stops moving. This keeps the user on
   // "Loading filters…" through the burst of post-mount work — height
@@ -1341,6 +1349,7 @@ function FiltersView() {
 
     const nextHeights = {};
     const nextDesiredHeights = {};
+    const nextRowMetrics = {};
     entries.forEach(([key, node]) => {
       // Capture the chart's true natural content height before any cap is
       // applied. The SVG's height attribute is intrinsic — it's computed by
@@ -1398,6 +1407,34 @@ function FiltersView() {
       if (desiredHeight > 0) {
         nextDesiredHeights[key] = desiredHeight;
       }
+      // Row geometry for whole-row snapping. Both rects move together when the
+      // chart is scrolled, so the offset between them is scroll-independent.
+      const firstRowNode = chartSvgNode?.querySelector?.(".horizontal-bar-filter-row");
+      const firstRowRect = firstRowNode?.getBoundingClientRect?.();
+      const svgRect = chartSvgNode?.getBoundingClientRect?.();
+      // The height applied to a card includes its border (border-box), so the
+      // chrome to subtract is measured from the outer height, not clientHeight.
+      const cardOuterChromeHeight =
+        Number(node?.offsetHeight) > 0 && chartViewportClientHeight > 0
+          ? Math.max(0, Number(node.offsetHeight) - chartViewportClientHeight)
+          : 0;
+      // Measured only while the card is at its natural size: a stretched card
+      // lays its content area out a little differently, so its chrome reads
+      // slightly off. The natural-size reading is kept once taken.
+      const isStretched = Boolean(node?.hasAttribute?.("data-card-height-override"));
+      if (
+        !isStretched &&
+        firstRowRect &&
+        svgRect &&
+        firstRowRect.height > 0 &&
+        cardOuterChromeHeight > 0
+      ) {
+        nextRowMetrics[key] = {
+          rowHeight: Math.round(firstRowRect.height * 100) / 100,
+          firstRowOffset: Math.max(0, Math.round((firstRowRect.top - svgRect.top) * 100) / 100),
+          chromeHeight: cardOuterChromeHeight,
+        };
+      }
 
       // Natural-height freeze: when the card has an explicit override, its
       // DOM-measured outer height reflects the forced size, not the natural
@@ -1406,6 +1443,16 @@ function FiltersView() {
       // layout treats stretched as natural → recomputes differently → loop).
       // So preserve the previously stored natural height. Desired stays fresh.
       if (node?.hasAttribute?.("data-card-height-override")) {
+        // Its rendered height is the stretched one, so derive the natural height
+        // instead: what the card would be unstretched is its own cap, or its
+        // whole content if that is shorter. (An old reading of it goes stale
+        // when the cap changes, e.g. once row metrics arrive and it is snapped
+        // to whole rows, and the planner then overestimates the card.)
+        const naturalCap = Number(node?.getAttribute?.("data-card-natural-cap"));
+        if (Number.isFinite(naturalCap) && naturalCap > 0) {
+          nextHeights[key] = desiredHeight > 0 ? Math.min(naturalCap, desiredHeight) : naturalCap;
+          return;
+        }
         const previousHeight = Number(cardNaturalHeightByKey[key]);
         if (Number.isFinite(previousHeight) && previousHeight > 0) {
           nextHeights[key] = previousHeight;
@@ -1451,6 +1498,24 @@ function FiltersView() {
         }
       }
       return nextHeights;
+    });
+
+    setCardRowMetricsByKey((previousMetrics) => {
+      // Merge rather than replace, so a card that is stretched right now keeps
+      // the reading taken while it was at its natural size.
+      const changedKeys = Object.keys(nextRowMetrics).filter((key) => {
+        const before = previousMetrics[key];
+        const after = nextRowMetrics[key];
+        return !(
+          before &&
+          Math.abs(before.rowHeight - after.rowHeight) < 0.5 &&
+          Math.abs(before.firstRowOffset - after.firstRowOffset) < 0.5 &&
+          Math.abs(before.chromeHeight - after.chromeHeight) < 0.5
+        );
+      });
+      return changedKeys.length === 0
+        ? previousMetrics
+        : { ...previousMetrics, ...Object.fromEntries(changedKeys.map((key) => [key, nextRowMetrics[key]])) };
     });
 
     setCardDesiredHeightByKey((previousDesired) => {
@@ -2682,7 +2747,7 @@ function FiltersView() {
     });
   };
   const buildSectionLayout = (type, filters, classChartDataByClass, options = {}) => {
-    const { maxColumns: maxColumnsOverride } = options;
+    const { maxColumns: maxColumnsOverride, planMasonryColumns = true } = options;
     const sectionHeightCap = resolveSectionHeightCapPx();
     const classNames = filters.map((filter) => filter.key);
     const filterByClassName = Object.fromEntries(filters.map((filter) => [filter.key, filter]));
@@ -2751,6 +2816,20 @@ function FiltersView() {
       stackableCardMaxHeight: FILTER_CARD_MAX_HEIGHT_PX,
       allowNonContiguousPacking: isCompactPlusDensity,
       slackDistributionMode,
+      // Attribute sections render in a Masonry. In Standard density, tell the
+      // planner how many columns it will use so a long card can grow into free
+      // space in its own column (see packColumnsInOrder). The default
+      // per-card layout hands every card to the Masonry individually, which is
+      // exactly why the planner otherwise never sees the real columns.
+      masonryColumnCount:
+        planMasonryColumns && !isCompactPlusDensity ? resolvedLayoutColumnCap : 0,
+      // Measured row heights, so free space is handed out in whole rows.
+      rowQuantumByClass: Object.fromEntries(
+        classNames.map((className) => [
+          className,
+          cardRowMetricsByKey[getCardMeasureKey(getLayoutMeasureType(className), className)]?.rowHeight || 0,
+        ])
+      ),
       // Cards with 25+ rows claim their own column in any density.
       // A 25+ row list is "a browseable lane" regardless of density mode — the
       // ergonomic argument doesn't depend on whether layout uses LPT or DP.
@@ -2768,7 +2847,10 @@ function FiltersView() {
     const hasOversizedCards = classNames.some(
       (className) => (Number(rowCountByClass[className]) || 0) > OVERSIZED_ROW_THRESHOLD
     );
-    const useColumnWrappers = isCompactPlusDensity || hasOversizedCards;
+    // A section whose real columns were planned renders those columns as
+    // wrappers, one per Masonry column, so the plan is what appears on screen.
+    const useColumnWrappers =
+      isCompactPlusDensity || hasOversizedCards || Boolean(sectionLayout.plansMasonryColumns);
 
     if (!isPerCardColumnLayout || useColumnWrappers) {
       return {
@@ -2781,12 +2863,13 @@ function FiltersView() {
         // The measurement hook skips re-measuring cards that carry
         // data-card-height-override, so natural heights are preserved and the
         // layout converges within 2 passes.
-        ...(isCompactPlusDensity
-          ? {
-              cardHeightOverrideByClass: scrollableCardStretchByClass,
-              cardMarginBottomByClass: {},
-            }
-          : {}),
+        // Standard density stretches too (whenever the section renders in
+        // column wrappers): a long card next to free space in its own column
+        // grows into it, up to its natural content height, instead of
+        // scrolling with empty room beneath a sibling. Compact+ additionally
+        // clears the per-card margins because it spaces columns with flex gap.
+        cardHeightOverrideByClass: scrollableCardStretchByClass,
+        ...(isCompactPlusDensity ? { cardMarginBottomByClass: {} } : {}),
       };
     }
 
@@ -2954,32 +3037,52 @@ function FiltersView() {
   // renderAttributeFilterSet (which wraps these in a Stack with its own
   // header) and by the omop renderer when injecting cohort-overview attribute
   // filters inline into a sibling omop section's grid.
+  // The rows an attribute or concept filter card charts.
+  const getAttributeFilterChartData = (filter) => {
+    const className = filter.key;
+    if (String(filter.type || "attributes").toLowerCase() === "concepts") {
+      const classData = conceptDisplayChartDataByClass[className] || [];
+      return conceptChartDataWithIncludedByClass[className] || classData;
+    }
+    const classData = attributeDisplayChartDataByClass[className] || [];
+    return attributeChartDataWithIncludedByClass[className] || classData;
+  };
   const renderAttributeFilterCards = (filterSet, keyPrefix, options = {}) => {
-    const { sectionHeightCap: overrideSectionHeightCap } = options;
+    const {
+      sectionHeightCap: overrideSectionHeightCap,
+      planMasonryColumns = true,
+      // Sizing from a section-wide plan (see renderOmopFilterSet), which covers
+      // these cards together with the section's other cards. When given, this
+      // set's own layout is ignored and its cards come back one per class, in
+      // order, for the caller to place in the planned columns.
+      layoutOverride = null,
+    } = options;
     const renderedFilters = filterSet.filters;
     const classChartDataByClass = {};
     renderedFilters.forEach((filter) => {
-      const className = filter.key;
-      const filterType = String(filter.type || "attributes").toLowerCase();
-      if (filterType === "concepts") {
-        const classData = conceptDisplayChartDataByClass[className] || [];
-        classChartDataByClass[className] = conceptChartDataWithIncludedByClass[className] || classData;
-      } else {
-        const classData = attributeDisplayChartDataByClass[className] || [];
-        classChartDataByClass[className] = attributeChartDataWithIncludedByClass[className] || classData;
-      }
+      classChartDataByClass[filter.key] = getAttributeFilterChartData(filter);
     });
     const layoutColumnCap = getFilterGridColumnCount(renderedFilters.length, filterSet.id);
-    const {
-      columnGroups,
-      measuredCardHeightByClass,
-      cardHeightOverrideByClass,
-      cardMarginBottomByClass,
-      sectionHeightCap: computedSectionHeightCap,
-      useColumnWrappers,
-    } = buildSectionLayout("attributes", renderedFilters, classChartDataByClass, {
+    const ownLayout = buildSectionLayout("attributes", renderedFilters, classChartDataByClass, {
       maxColumns: layoutColumnCap,
+      planMasonryColumns: layoutOverride ? false : planMasonryColumns,
     });
+    const columnGroups = ownLayout.columnGroups;
+    const measuredCardHeightByClass =
+      layoutOverride?.measuredCardHeightByClass ?? ownLayout.measuredCardHeightByClass;
+    const cardHeightOverrideByClass =
+      layoutOverride?.cardHeightOverrideByClass ?? ownLayout.cardHeightOverrideByClass;
+    const cardMarginBottomByClass =
+      layoutOverride?.cardMarginBottomByClass ?? ownLayout.cardMarginBottomByClass;
+    const computedSectionHeightCap = ownLayout.sectionHeightCap;
+    // Two separate questions: does this call return planned column wrappers
+    // (never, when the caller places the cards), and may a long card grow into
+    // free space (yes whenever its columns were planned, by this set or by the
+    // section-wide plan that supplied the override).
+    const useColumnWrappers = layoutOverride ? false : ownLayout.useColumnWrappers;
+    const stretchIntoSlack = layoutOverride
+      ? Boolean(layoutOverride.stretchIntoSlack)
+      : ownLayout.useColumnWrappers;
     const sectionHeightCap = overrideSectionHeightCap ?? computedSectionHeightCap;
     const filterByClassName = Object.fromEntries(renderedFilters.map((filter) => [filter.key, filter]));
     const orderedClassNames = renderedFilters.map((filter) => filter.key);
@@ -3013,13 +3116,13 @@ function FiltersView() {
       const measuredCardHeight = Number(measuredCardHeightByClass[className]) || 0;
       const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
       const configuredCardHeightCapPx = getFilterMaxHeightPx("attributes", className);
-      const resolvedCardHeightCapPx = Math.min(
+      const baseCardHeightCapPx = Math.min(
         FILTER_CARD_MAX_HEIGHT_PX,
         configuredCardHeightCapPx == null
           ? resolvedSectionHeightCapPx
           : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
       );
-      const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
+      const rawCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
       const cardMarginBottom = Math.max(0, Number(cardMarginBottomByClass[className]) || 0);
       const rowCount = classChartData.length;
       const estimatedCardHeight = estimateCardHeight(
@@ -3035,8 +3138,26 @@ function FiltersView() {
           ]
         ) || estimatedCardHeight
       );
+      // Long cards end on a whole row, so the last visible row is never cut in
+      // half and "there is more below" is obvious. Metrics are measured from
+      // the DOM, so this holds at any font scale; until they exist the sizes
+      // are left as computed.
+      const rowMetrics = cardRowMetricsByKey[getCardMeasureKey(filterType, className)];
+      const resolvedCardHeightCapPx =
+        desiredCardHeight > baseCardHeightCapPx + 0.5
+          ? Math.min(baseCardHeightCapPx, snapCardHeightToWholeRows(baseCardHeightCapPx, rowMetrics))
+          : baseCardHeightCapPx;
+      // A stretched card showing all of its rows is left alone; otherwise it
+      // stops at the last whole row that fits in the room it was given.
+      const requestedCardHeightOverride =
+        rawCardHeightOverride > 0 && rawCardHeightOverride < desiredCardHeight - 1
+          ? Math.max(
+              resolvedCardHeightCapPx,
+              snapCardHeightToWholeRows(rawCardHeightOverride, rowMetrics)
+            )
+          : rawCardHeightOverride;
       const shouldStretchScrollableCard =
-        isCompactPlusDensity &&
+        stretchIntoSlack &&
         desiredCardHeight > resolvedCardHeightCapPx + 0.5;
       // Stretched cards grow to natural desired height — see renderOmopFilterCard
       // for the equivalent reasoning. Pre-measurement (measuredCardHeight === 0)
@@ -3051,7 +3172,7 @@ function FiltersView() {
       const boundedCardHeightOverride = Math.min(stretchedCardHeightCapPx, requestedCardHeightOverride);
       const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
       const shouldApplyCardHeightOverride =
-        canApplyCardHeightOverride && (!isCompactPlusDensity || shouldStretchScrollableCard);
+        canApplyCardHeightOverride && (!stretchIntoSlack || shouldStretchScrollableCard);
       const packedSpan = resolvePackedGridSpan({
         displayName: classDisplayName,
         rowCount,
@@ -3102,6 +3223,7 @@ function FiltersView() {
             cardOuterStyle={cardOuterStyle}
             cardMarginBottom={cardMarginBottom}
             cardHeightCapPx={stretchedCardHeightCapPx}
+            cardNaturalCapPx={resolvedCardHeightCapPx}
             cardHeightOverride={shouldApplyCardHeightOverride ? Math.round(boundedCardHeightOverride) : undefined}
             cardSx={getCardSx(classIndex)}
             contentAreaSx={getCardContentAreaSx(sectionHeightCap, { fillHeight: shouldApplyCardHeightOverride })}
@@ -3157,7 +3279,21 @@ function FiltersView() {
           : chartDataByClass[className] || [];
       classChartDataByClass[className] = omopChartDataWithIncludedByClass[className] || classData;
     });
-    const omopLayoutColumnCap = getFilterGridColumnCount(renderedFilters.length, filterSet.id);
+    // Attribute cards injected into this section share its Masonry with the OMOP
+    // cards, so in Standard density the layout is planned over all of them
+    // together: a long card can only grow into free space in its column if the
+    // plan knows which cards are in that column. (Compact+ keeps planning the
+    // OMOP cards alone.)
+    const injectedFilters = inlineAttributeFilterSets.flatMap((set) => set.filters || []);
+    const plansInjectedCards = !isCompactPlusDensity && injectedFilters.length > 0;
+    const filtersForLayout = plansInjectedCards ? [...renderedFilters, ...injectedFilters] : renderedFilters;
+    const chartDataForLayout = { ...classChartDataByClass };
+    if (plansInjectedCards) {
+      injectedFilters.forEach((filter) => {
+        chartDataForLayout[filter.key] = getAttributeFilterChartData(filter);
+      });
+    }
+    const omopLayoutColumnCap = getFilterGridColumnCount(filtersForLayout.length, filterSet.id);
     const {
       columnGroups,
       measuredCardHeightByClass,
@@ -3166,7 +3302,7 @@ function FiltersView() {
       sectionHeight,
       sectionHeightCap,
       useColumnWrappers,
-    } = buildSectionLayout("omop", renderedFilters, classChartDataByClass, {
+    } = buildSectionLayout("omop", filtersForLayout, chartDataForLayout, {
       maxColumns: omopLayoutColumnCap,
     });
     const filterByClassName = Object.fromEntries(renderedFilters.map((filter) => [filter.key, filter]));
@@ -3177,7 +3313,12 @@ function FiltersView() {
     );
     const omopGridItemCount = Math.max(1, renderedFilters.length);
     const compactPlusOmopGridItemCount = useColumnWrappers ? Math.max(1, columnGroups.length) : omopGridItemCount;
-    const totalGridItemCount = Math.max(1, compactPlusOmopGridItemCount + injectedAttributeCardCount);
+    // Planned columns already contain the injected cards; otherwise each is its
+    // own item in the Masonry.
+    const totalGridItemCount = Math.max(
+      1,
+      compactPlusOmopGridItemCount + (useColumnWrappers && plansInjectedCards ? 0 : injectedAttributeCardCount)
+    );
 
     const renderOmopFilterCard = (className, classIndex, cardKeyPrefix = "") => {
       const filter = filterByClassName[className];
@@ -3197,13 +3338,13 @@ function FiltersView() {
       const measuredCardHeight = Number(measuredCardHeightByClass[className]) || 0;
       const resolvedSectionHeightCapPx = resolveSectionHeightCapPx(sectionHeightCap);
       const configuredCardHeightCapPx = getFilterMaxHeightPx("omop", className);
-      const resolvedCardHeightCapPx = Math.min(
+      const baseCardHeightCapPx = Math.min(
         FILTER_CARD_MAX_HEIGHT_PX,
         configuredCardHeightCapPx == null
           ? resolvedSectionHeightCapPx
           : Math.min(resolvedSectionHeightCapPx, configuredCardHeightCapPx)
       );
-      const requestedCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
+      const rawCardHeightOverride = Math.max(0, Number(cardHeightOverride) || 0);
       const cardMarginBottom = Math.max(0, Number(cardMarginBottomByClass[className]) || 0);
       const rowCount = classChartData.length;
       const estimatedCardHeight = estimateCardHeight(
@@ -3217,8 +3358,26 @@ function FiltersView() {
           cardDesiredHeightByKey[getCardMeasureKey("omop", className)]
         ) || estimatedCardHeight
       );
+      // Long cards end on a whole row, so the last visible row is never cut in
+      // half and "there is more below" is obvious. Metrics are measured from
+      // the DOM, so this holds at any font scale; until they exist the sizes
+      // are left as computed.
+      const rowMetrics = cardRowMetricsByKey[getCardMeasureKey("omop", className)];
+      const resolvedCardHeightCapPx =
+        desiredCardHeight > baseCardHeightCapPx + 0.5
+          ? Math.min(baseCardHeightCapPx, snapCardHeightToWholeRows(baseCardHeightCapPx, rowMetrics))
+          : baseCardHeightCapPx;
+      // A stretched card showing all of its rows is left alone; otherwise it
+      // stops at the last whole row that fits in the room it was given.
+      const requestedCardHeightOverride =
+        rawCardHeightOverride > 0 && rawCardHeightOverride < desiredCardHeight - 1
+          ? Math.max(
+              resolvedCardHeightCapPx,
+              snapCardHeightToWholeRows(rawCardHeightOverride, rowMetrics)
+            )
+          : rawCardHeightOverride;
       const shouldStretchScrollableCard =
-        isCompactPlusDensity &&
+        useColumnWrappers &&
         desiredCardHeight > resolvedCardHeightCapPx + 0.5;
       // Stretched cards grow to their natural desired height (requestedCardHeightOverride
       // is already capped at the chart's natural content height by distributeSlack).
@@ -3231,7 +3390,7 @@ function FiltersView() {
       const boundedCardHeightOverride = Math.min(stretchedCardHeightCapPx, requestedCardHeightOverride);
       const canApplyCardHeightOverride = boundedCardHeightOverride > 0 && measuredCardHeight > 0;
       const shouldApplyCardHeightOverride =
-        canApplyCardHeightOverride && (!isCompactPlusDensity || shouldStretchScrollableCard);
+        canApplyCardHeightOverride && (!useColumnWrappers || shouldStretchScrollableCard);
       const cardOuterStyle = stabilizeStyle(`outer:omop:${className}`, {
         "--filter-section-height-cap": `${stretchedCardHeightCapPx}px`,
         "--filter-card-chart-height-cap": `${resolveCardChartHeightCapPx(stretchedCardHeightCapPx)}px`,
@@ -3270,6 +3429,7 @@ function FiltersView() {
           cardOuterStyle={cardOuterStyle}
           cardMarginBottom={cardMarginBottom}
           cardHeightCapPx={stretchedCardHeightCapPx}
+          cardNaturalCapPx={resolvedCardHeightCapPx}
           cardHeightOverride={shouldApplyCardHeightOverride ? Math.round(boundedCardHeightOverride) : undefined}
           cardSx={getCardSx(classIndex)}
           contentAreaSx={getCardContentAreaSx(sectionHeightCap, { fillHeight: shouldApplyCardHeightOverride })}
@@ -3290,6 +3450,29 @@ function FiltersView() {
     const renderedOmopCardsByClassName = new Map(
       orderedClassNames.map((className, classIndex) => [className, renderOmopFilterCard(className, classIndex)])
     );
+    // Injected attribute cards, sized by this section's plan and keyed by class,
+    // ready to be placed in a planned column.
+    const injectedCardsByClassName = new Map();
+    const injectedElements = plansInjectedCards
+      ? inlineAttributeFilterSets.map((attributeFilterSet) => ({
+          filterSet: attributeFilterSet,
+          elements: renderAttributeFilterCards(attributeFilterSet, `cohort-inline:${filterSet.id}`, {
+            sectionHeightCap,
+            planMasonryColumns: false,
+            layoutOverride: {
+              measuredCardHeightByClass,
+              cardHeightOverrideByClass,
+              cardMarginBottomByClass,
+              stretchIntoSlack: useColumnWrappers,
+            },
+          }),
+        }))
+      : [];
+    injectedElements.forEach(({ filterSet: attributeFilterSet, elements }) => {
+      (attributeFilterSet.filters || []).forEach((filter, index) => {
+        injectedCardsByClassName.set(filter.key, elements[index]);
+      });
+    });
     const compactPlusOmopColumns = useColumnWrappers
       ? columnGroups.map((group, groupIndex) => (
           <Box
@@ -3307,7 +3490,10 @@ function FiltersView() {
               },
             }}
           >
-            {group.map((className) => renderedOmopCardsByClassName.get(className))}
+            {group.map(
+              (className) =>
+                renderedOmopCardsByClassName.get(className) ?? injectedCardsByClassName.get(className)
+            )}
           </Box>
         ))
       : null;
@@ -3346,11 +3532,16 @@ function FiltersView() {
                 </Box>
               );
             })}
-          {inlineAttributeFilterSets.flatMap((attributeFilterSet) =>
-            renderAttributeFilterCards(attributeFilterSet, `cohort-inline:${filterSet.id}`, {
-              sectionHeightCap,
-            })
-          )}
+          {useColumnWrappers && plansInjectedCards
+            ? null
+            : plansInjectedCards
+              ? injectedElements.flatMap(({ elements }) => elements)
+              : inlineAttributeFilterSets.flatMap((attributeFilterSet) =>
+                  renderAttributeFilterCards(attributeFilterSet, `cohort-inline:${filterSet.id}`, {
+                    sectionHeightCap,
+                    planMasonryColumns: false,
+                  })
+                )}
         </Masonry>
       </Stack>
     );
@@ -3360,15 +3551,7 @@ function FiltersView() {
     const renderedFilters = filterSet.filters;
     const classChartDataByClass = {};
     renderedFilters.forEach((filter) => {
-      const className = filter.key;
-      const isConcept = String(filter.type || "").toLowerCase() === "concepts";
-      if (isConcept) {
-        const classData = conceptDisplayChartDataByClass[className] || [];
-        classChartDataByClass[className] = conceptChartDataWithIncludedByClass[className] || classData;
-      } else {
-        const classData = attributeDisplayChartDataByClass[className] || [];
-        classChartDataByClass[className] = attributeChartDataWithIncludedByClass[className] || classData;
-      }
+      classChartDataByClass[filter.key] = getAttributeFilterChartData(filter);
     });
     const attributeGridColumns = getFilterGridColumnCount(renderedFilters.length, filterSet.id);
     const { sectionHeight, sectionHeightCap } = buildSectionLayout(
