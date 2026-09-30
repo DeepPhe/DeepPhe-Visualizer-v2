@@ -226,7 +226,7 @@ async function loadPatientOmopDetails(patientId) {
 
 export default function EmbeddedPatientView({ patientId = "" }) {
   const theme = useTheme();
-  const { isImproved } = usePatientViewPresentation();
+  const { isImproved, isBeta } = usePatientViewPresentation();
   const { patientData, timelineData, cancerSummary, isLoading, errorMessage, loadPatient } =
     usePatientData();
   const [factSelection, setFactSelection] = useState(null);
@@ -252,8 +252,9 @@ export default function EmbeddedPatientView({ patientId = "" }) {
   const [collapsedSections, setCollapsedSections] = useState({
     // The improved view opens with the cancer detail folded to its header, so
     // the timelines stay above the fold; its header says whether the cancers
-    // differ, and one click opens the comparison.
-    cancer: isImproved,
+    // differ, and one click opens the comparison. Beta's table is a header and a
+    // few short rows, small enough to leave open.
+    cancer: isImproved && !isBeta,
     timeline: false,
     eventTimeline: false,
     summary: false,

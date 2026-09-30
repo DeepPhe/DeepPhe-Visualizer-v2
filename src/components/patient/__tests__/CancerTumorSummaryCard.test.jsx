@@ -252,6 +252,106 @@ describe("CancerTumorSummaryCard", () => {
     });
   });
 
+
+  describe("beta view", () => {
+    const renderBeta = (element) => {
+      localStorage.setItem(PATIENT_VIEW_PRESENTATION_STORAGE_KEY, "beta");
+      return renderComponent(<PatientViewPresentationProvider>{element}</PatientViewPresentationProvider>);
+    };
+    const betaCancers = [
+      cancers[0],
+      {
+        cancerId: "cancer-2",
+        title: "cancer-2",
+        collatedCancerFacts: [
+          {
+            categoryName: "Location",
+            facts: [fact("c2-location", "Upper-Outer Quadrant of the Breast")],
+          },
+          { categoryName: "Grade", facts: [fact("c2-grade", "1")] },
+        ],
+        tnm: [{ data: { T: [], N: [], M: [] } }],
+        tumors: {
+          listViewData: [
+            {
+              id: "tumor-2",
+              data: [{ category: "Location", facts: [fact("t2-location", "Nipple")] }],
+            },
+          ],
+        },
+      },
+    ];
+
+    it("turns the comparison on its side: the cancers as rows, the attributes as columns", () => {
+      const onFactSelect = jest.fn();
+      const { container, unmount } = renderBeta(
+        <CancerTumorSummaryCard cancers={betaCancers} onFactSelect={onFactSelect} />
+      );
+
+      try {
+        const table = container.querySelector("[data-testid='cancer-comparison-table']");
+        expect(table).not.toBeNull();
+        expect(container.querySelector("[data-testid='cancer-comparison-matrix']")).toBeNull();
+        expect(container.querySelectorAll("[data-testid='cancer-summary-record']")).toHaveLength(0);
+
+        // A row per cancer, so a few short rows rather than one per attribute.
+        const rows = [...container.querySelectorAll("[data-testid='cancer-comparison-table-row']")];
+        expect(rows).toHaveLength(2);
+        expect(rows[0].querySelector("th[scope='row']").textContent).toContain("Cancer 1");
+        expect(rows[1].querySelector("th[scope='row']").textContent).toContain("Cancer 2");
+
+        // Attributes are column headings, grouped under Cancer and Tumor.
+        const columnHeads = [...table.querySelectorAll("th[scope='col']")].map((n) => n.textContent);
+        expect(columnHeads.some((text) => text.startsWith("Grade"))).toBe(true);
+        const groups = [...table.querySelectorAll("th[scope='colgroup']")].map((n) => n.textContent);
+        expect(groups).toEqual(expect.arrayContaining(["Cancer", "Tumor 1"]));
+
+        // The columns where the cancers disagree are marked.
+        const gradeHead = [...table.querySelectorAll("th[scope='col']")].find((n) =>
+          n.textContent.startsWith("Grade")
+        );
+        expect(gradeHead.getAttribute("data-differs")).toBe("true");
+        expect(gradeHead.textContent).toContain("differs");
+
+        // Values are still clickable and link to their documents.
+        const gradeValue = [...rows[0].querySelectorAll("button")].find((b) => b.textContent === "3");
+        act(() => {
+          gradeValue.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        expect(onFactSelect).toHaveBeenCalledWith("c-grade");
+      } finally {
+        unmount();
+      }
+    });
+
+    it("keeps a tumor's repeated value short, and folds columns with nothing to compare", () => {
+      const sparse = betaCancers.map((cancer) => ({
+        ...cancer,
+        tnm: [{ data: { T: [], N: [], M: [] } }],
+      }));
+      const { container, unmount } = renderBeta(<CancerTumorSummaryCard cancers={sparse} />);
+
+      try {
+        const toggle = () =>
+          container.querySelector("[data-testid='cancer-comparison-undocumented-toggle']");
+        const heads = () =>
+          [...container.querySelectorAll("th[scope='col']")].map((n) => n.textContent);
+
+        // Neither cancer is staged, so the TNM column is folded away.
+        expect(heads().some((text) => text.startsWith("TNM"))).toBe(false);
+        expect(toggle().textContent).toMatch(/^Show \d+ undocumented or repeated columns?$/);
+
+        act(() => {
+          toggle().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        expect(heads().some((text) => text.startsWith("TNM"))).toBe(true);
+        expect(toggle().textContent).toMatch(/^Hide \d+ undocumented or repeated columns?$/);
+      } finally {
+        unmount();
+      }
+    });
+  });
+
   it("renders only the header when collapsed", () => {
     const { container, unmount } = renderComponent(
       <CancerTumorSummaryCard
