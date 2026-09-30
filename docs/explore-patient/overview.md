@@ -22,7 +22,7 @@ The patient opens as a tab in the drawer.
 
 ## Choose how the patient view reads
 
-The **View** control at the top of the patient view switches between two presentations. Your choice is remembered, and it applies to both the embedded and the standalone view.
+The **View** control at the top of the patient view switches between three presentations. Your choice is remembered, and it applies to both the embedded and the standalone view.
 
 **Improved** (the default) is laid out for scanning:
 
@@ -32,9 +32,11 @@ The **View** control at the top of the patient view switches between two present
 - The timelines say which range they are showing, band alternate event lanes, and mark negated events with a **dashed** line as well as red.
 - Zoom in and out read as **+** and **−** rather than two similar magnifiers.
 
+**Beta** is Improved with the cancer comparison turned on its side: **the cancers are rows and the attributes are columns**, each column only as wide as its values. It takes a header and a row or two of vertical space instead of one row per attribute, and it opens expanded because it is short. Tumor attributes get columns only where a tumor differs from its cancer, under their own "Tumor" heading; columns that differ between cancers are marked "differs"; undocumented or repeated columns fold behind a count. If the panel is too narrow for the columns, it falls back to Improved's vertical matrix rather than scrolling sideways.
+
 **Alpha** keeps the original reading, faithful to the DeepPhe-Viz-v2-alpha code the Event Timeline was ported from: per-cancer cards, solid marks that carry negation in color alone, and the alpha's wording and controls.
 
-Both show the same data. Only the presentation changes.
+All three show the same data. Only the presentation changes.
 
 ## What the embedded view contains
 

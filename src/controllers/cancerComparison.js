@@ -223,3 +223,45 @@ export function buildCancerComparisonMatrix(cancers = []) {
     hasData: columns.length > 0 && allRows.length > 0,
   };
 }
+
+/**
+ * The same comparison turned on its side: one row per cancer, one column per
+ * attribute. A comparison matrix with the cancers as columns is tall (a row per
+ * attribute) and wide (each cancer column takes an equal share however short its
+ * values are); with the cancers as rows it is a header and a few short rows,
+ * and each column is only as wide as its values.
+ *
+ * Derived from buildCancerComparisonMatrix, so the fold rules match: a column
+ * with nothing documented for any cancer, or a tumor column that only repeats
+ * its cancer, is `isFoldable`.
+ *
+ * Returns `{ rows, columns, hasData }`. Each row is a cancer (with its
+ * completeness) and holds one cell per column, in column order.
+ */
+export function buildCancerComparisonTable(cancers = []) {
+  const matrix = buildCancerComparisonMatrix(cancers);
+  const columns = matrix.sections.flatMap((section) =>
+    section.rows.map((row) => ({
+      key: row.key,
+      groupKey: section.key,
+      groupLabel: section.label,
+      label: row.label,
+      differs: row.differs,
+      allUnknown: row.allUnknown,
+      repeatsCancer: row.repeatsCancer,
+      isFoldable: row.isFoldable,
+    }))
+  );
+  const cellRows = matrix.sections.flatMap((section) => section.rows);
+
+  const rows = matrix.columns.map((cancer, cancerIndex) => ({
+    key: cancer.key,
+    label: cancer.label,
+    title: cancer.title,
+    documentedCount: cancer.documentedCount,
+    fieldCount: cancer.fieldCount,
+    cells: cellRows.map((row) => row.cells[cancerIndex]),
+  }));
+
+  return { rows, columns, hasData: matrix.hasData && rows.length > 0 && columns.length > 0 };
+}

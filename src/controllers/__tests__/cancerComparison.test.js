@@ -1,4 +1,4 @@
-import { buildCancerComparisonMatrix } from "../cancerComparison";
+import { buildCancerComparisonMatrix, buildCancerComparisonTable } from "../cancerComparison";
 
 const fact = (id, value) => ({ id, value });
 
@@ -132,5 +132,50 @@ describe("cancer comparison matrix", () => {
   it("has nothing to show without cancers", () => {
     expect(buildCancerComparisonMatrix([]).hasData).toBe(false);
     expect(buildCancerComparisonMatrix(null).hasData).toBe(false);
+  });
+});
+
+describe("cancer comparison table (cancers as rows)", () => {
+  it("turns the matrix on its side: a row per cancer, a column per attribute", () => {
+    const matrix = buildCancerComparisonMatrix(CANCERS);
+    const table = buildCancerComparisonTable(CANCERS);
+
+    expect(table.hasData).toBe(true);
+    expect(table.rows.map((row) => row.label)).toEqual(["Cancer 1", "Cancer 2"]);
+    expect(table.rows[0].title).toBe("patient_cancer_1");
+    // One column per matrix row, in the same order, tagged with its section.
+    const matrixRows = matrix.sections.flatMap((section) => section.rows);
+    expect(table.columns.map((column) => column.key)).toEqual(matrixRows.map((row) => row.key));
+    expect(table.columns[0]).toMatchObject({ groupKey: "cancer", groupLabel: "Cancer", label: "Location" });
+    expect(table.columns.some((column) => column.groupKey === "tumor-1")).toBe(true);
+    // Every row has a cell per column.
+    table.rows.forEach((row) => expect(row.cells).toHaveLength(table.columns.length));
+  });
+
+  it("puts each cancer's own value in its own row", () => {
+    const table = buildCancerComparisonTable(CANCERS);
+    const column = (label) => table.columns.findIndex((c) => c.groupKey === "cancer" && c.label === label);
+
+    expect(table.rows[0].cells[column("Grade")].facts[0].value).toBe("3");
+    expect(table.rows[1].cells[column("Grade")].facts[0].value).toBe("1");
+    expect(table.rows[1].cells[column("Gene(s)")].isUnknown).toBe(true);
+    // Which columns differ is carried over, and so is completeness.
+    expect(table.columns[column("Grade")].differs).toBe(true);
+    expect(table.columns[column("Location")].differs).toBe(false);
+    expect(table.rows[0].documentedCount).toBeGreaterThan(table.rows[1].documentedCount);
+    expect(table.rows[0].fieldCount).toBe(table.rows[1].fieldCount);
+  });
+
+  it("marks the same columns foldable as the matrix marks rows", () => {
+    const matrix = buildCancerComparisonMatrix(CANCERS);
+    const table = buildCancerComparisonTable(CANCERS);
+    const matrixFoldable = matrix.sections.flatMap((s) => s.rows).map((row) => row.isFoldable);
+
+    expect(table.columns.map((column) => column.isFoldable)).toEqual(matrixFoldable);
+  });
+
+  it("has nothing to show without cancers", () => {
+    expect(buildCancerComparisonTable([]).hasData).toBe(false);
+    expect(buildCancerComparisonTable(null).hasData).toBe(false);
   });
 });

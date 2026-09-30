@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the patient drawer the panel opens folded to its header, which reports how
   many attributes differ. Nothing is dropped: the completeness count still
   counts every field, and one click shows the folded rows
+- A **Beta** option on the **View** control: Improved with the cancer comparison
+  flipped so the cancers are rows and the attributes are columns, sized to their
+  values. It is a header and a few short rows rather than a row per attribute,
+  opens expanded, adds tumor columns only where a tumor differs from its cancer,
+  and falls back to the vertical matrix when the panel is too narrow to fit the
+  columns without scrolling sideways. Improved and Alpha are unchanged
 
 ### Changed
 - The Patient Document Timeline's date range slider was drawn against the full

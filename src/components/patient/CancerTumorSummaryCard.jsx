@@ -15,6 +15,7 @@ import { toDisplayName } from "../../utils/displayNames";
 import usePatientViewPresentation from "../../hooks/usePatientViewPresentation";
 import { buildCancerComparisonMatrix } from "../../controllers/cancerComparison";
 import CancerComparisonMatrix from "./CancerComparisonMatrix";
+import CancerComparisonTable from "./CancerComparisonTable";
 import { PATIENT_VIEW_TYPE } from "../../constants/patientViewTypography";
 import SectionCollapseToggle from "./SectionCollapseToggle";
 
@@ -283,9 +284,10 @@ export default function CancerTumorSummaryCard({
 }) {
   const activeFactId = String(factSelection?.factId || "").trim();
   const normalizedCancers = useMemo(() => (Array.isArray(cancers) ? cancers : []), [cancers]);
-  // The improved view compares the cancers in one matrix; the alpha view keeps
-  // the per-cancer cards.
-  const { isImproved } = usePatientViewPresentation();
+  // The improved view compares the cancers in one matrix (cancers as columns);
+  // beta turns it on its side (cancers as rows); the alpha view keeps the
+  // per-cancer cards.
+  const { isImproved, isBeta } = usePatientViewPresentation();
   const comparison = useMemo(
     () => (isImproved ? buildCancerComparisonMatrix(normalizedCancers) : null),
     [isImproved, normalizedCancers]
@@ -380,6 +382,12 @@ export default function CancerTumorSummaryCard({
           <Typography variant="body2" color="text.secondary">
             No cancer summary data available for this patient.
           </Typography>
+        ) : isBeta ? (
+          <CancerComparisonTable
+            cancers={normalizedCancers}
+            activeFactId={activeFactId}
+            onFactSelect={onFactSelect}
+          />
         ) : isImproved ? (
           <CancerComparisonMatrix
             matrix={comparison}

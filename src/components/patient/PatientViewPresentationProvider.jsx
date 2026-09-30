@@ -45,7 +45,11 @@ export default function PatientViewPresentationProvider({ children }) {
     () => ({
       presentation,
       setPresentation,
-      isImproved: presentation === PATIENT_VIEW_PRESENTATION.IMPROVED,
+      // Beta is Improved plus a different cancer table, so it is improved too.
+      isImproved:
+        presentation === PATIENT_VIEW_PRESENTATION.IMPROVED ||
+        presentation === PATIENT_VIEW_PRESENTATION.BETA,
+      isBeta: presentation === PATIENT_VIEW_PRESENTATION.BETA,
       isAlpha: presentation === PATIENT_VIEW_PRESENTATION.ALPHA,
     }),
     [presentation, setPresentation]

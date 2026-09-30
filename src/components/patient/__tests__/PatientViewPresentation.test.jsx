@@ -50,7 +50,7 @@ describe("patient view presentation", () => {
     expect(seen.current.presentation).toBe(DEFAULT_PATIENT_VIEW_PRESENTATION);
     expect(seen.current.isImproved).toBe(true);
     const radios = container.querySelectorAll('input[type="radio"]');
-    expect(radios).toHaveLength(2);
+    expect(radios).toHaveLength(3);
     expect(container.querySelector('[data-testid="patient-view-presentation-improved"]').checked).toBe(
       true
     );
@@ -62,6 +62,35 @@ describe("patient view presentation", () => {
     expect(seen.current.presentation).toBe("alpha");
     expect(seen.current.isAlpha).toBe(true);
     expect(localStorage.getItem(PATIENT_VIEW_PRESENTATION_STORAGE_KEY)).toBe("alpha");
+
+    unmount();
+  });
+
+  it("treats Beta as Improved plus a different cancer table", () => {
+    const seen = { current: null };
+    const { container, unmount } = renderRoot(
+      <PatientViewPresentationProvider>
+        <PatientViewPresentationToggle />
+        <Probe seen={seen} />
+      </PatientViewPresentationProvider>
+    );
+
+    act(() => {
+      container.querySelector('[data-testid="patient-view-presentation-beta"]').click();
+    });
+
+    expect(seen.current.presentation).toBe("beta");
+    expect(seen.current.isBeta).toBe(true);
+    // Everything Improved changes applies to Beta too.
+    expect(seen.current.isImproved).toBe(true);
+    expect(seen.current.isAlpha).toBe(false);
+    expect(localStorage.getItem(PATIENT_VIEW_PRESENTATION_STORAGE_KEY)).toBe("beta");
+
+    act(() => {
+      container.querySelector('[data-testid="patient-view-presentation-improved"]').click();
+    });
+    expect(seen.current.isBeta).toBe(false);
+    expect(seen.current.isImproved).toBe(true);
 
     unmount();
   });
@@ -112,6 +141,7 @@ describe("patient view presentation", () => {
     expect(label.textContent).toBe("View");
     expect(container.textContent).toContain("Alpha");
     expect(container.textContent).toContain("Improved");
+    expect(container.textContent).toContain("Beta");
 
     unmount();
   });
