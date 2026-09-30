@@ -27,6 +27,10 @@ function FilterSectionCard({
   cardOuterStyle = undefined,
   cardMarginBottom = 0,
   cardHeightCapPx = 0,
+  // The card's height when not stretched into free space (its own, row-snapped
+  // cap). Stretching changes the rendered height, so measurement reads this
+  // instead of trusting an old reading of it.
+  cardNaturalCapPx = 0,
   cardHeightOverride = undefined,
   cardSx = undefined,
   contentAreaSx = undefined,
@@ -40,6 +44,7 @@ function FilterSectionCard({
       style={cardOuterStyle}
       data-card-margin-bottom={Math.round(cardMarginBottom)}
       data-card-height-cap={cardHeightCapPx}
+      data-card-natural-cap={cardNaturalCapPx || undefined}
       data-card-height-override={cardHeightOverride}
       sx={cardSx}
     >
@@ -143,6 +148,7 @@ FilterSectionCard.propTypes = {
   cardOuterStyle: PropTypes.object,
   cardMarginBottom: PropTypes.number,
   cardHeightCapPx: PropTypes.number,
+  cardNaturalCapPx: PropTypes.number,
   cardHeightOverride: PropTypes.number,
   cardSx: PropTypes.object,
   contentAreaSx: PropTypes.object,

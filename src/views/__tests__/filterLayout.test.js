@@ -2,6 +2,8 @@ import {
   buildFilterSectionLayout,
   buildTallestAlignedLayout,
   estimateCardHeight,
+  packColumnsInOrder,
+  snapCardHeightToWholeRows,
 } from "../filterLayout";
 import {
   OVERSIZED_MIN_ROWS_BY_DENSITY,
@@ -507,5 +509,307 @@ describe("filterLayout helpers", () => {
     // LPT pairs Body Part (300px) with Tissue (300px) — equal heights fill the
     // same bin. Natural order within the column is preserved.
     expect(bodyPartColumn).toEqual(["Tissue", "Body Part"]);
+  });
+});
+
+describe("planning the Masonry's real columns", () => {
+  // The Staging section as measured in Standard density: card order, natural
+  // heights (long cards capped at 212), and how much of each list is hidden.
+  const CLASS_NAMES = [
+    "Stage",
+    "T Stage",
+    "N Stage",
+    "M Stage",
+    "Generic TNM Finding",
+    "Pathologic TNM Finding",
+    "Lymph Involvement",
+    "Lymph Node",
+    "Metastatic Site",
+    "Metastatic Behavior",
+    "Finding",
+  ];
+  const NATURAL = {
+    Stage: 153,
+    "T Stage": 93,
+    "N Stage": 123,
+    "M Stage": 93,
+    "Generic TNM Finding": 212,
+    "Pathologic TNM Finding": 212,
+    "Lymph Involvement": 153,
+    "Lymph Node": 153,
+    "Metastatic Site": 93,
+    "Metastatic Behavior": 123,
+    Finding: 212,
+  };
+  // What each card would be with no cap: content that scrolls has more to show.
+  const DESIRED = { ...NATURAL, "Generic TNM Finding": 331, "Pathologic TNM Finding": 421, Finding: 1261 };
+  const GAP = 16;
+
+  it("places cards the way a Masonry does: in order, into the shortest column", () => {
+    const columns = packColumnsInOrder(CLASS_NAMES, NATURAL, 2, GAP);
+
+    // The grouping the running app shows.
+    expect(columns).toEqual([
+      ["Stage", "M Stage", "Pathologic TNM Finding", "Lymph Node", "Metastatic Behavior"],
+      [
+        "T Stage",
+        "N Stage",
+        "Generic TNM Finding",
+        "Lymph Involvement",
+        "Metastatic Site",
+        "Finding",
+      ],
+    ]);
+    expect(packColumnsInOrder(["a", "b", "c"], { a: 10, b: 10, c: 10 }, 5, 0)).toEqual([
+      ["a"],
+      ["b"],
+      ["c"],
+    ]);
+    expect(packColumnsInOrder([], {}, 2, GAP)).toEqual([]);
+    // A single column is just a stack.
+    expect(packColumnsInOrder(["a", "b"], { a: 5, b: 5 }, 1, GAP)).toEqual([["a", "b"]]);
+  });
+
+  it("lets a scrolling card grow into free space in its own column, and no further", () => {
+    const layout = buildFilterSectionLayout({
+      classNames: CLASS_NAMES,
+      measuredCardHeightByClass: NATURAL,
+      desiredCardHeightByClass: DESIRED,
+      rowCountByClass: Object.fromEntries(CLASS_NAMES.map((name) => [name, 5])),
+      naturalGapPx: GAP,
+      maxColumns: 11,
+      stackableCardMaxHeight: 212,
+      masonryColumnCount: 2,
+    });
+
+    expect(layout.plansMasonryColumns).toBe(true);
+    expect(layout.columnGroups).toHaveLength(2);
+
+    const tallest = Math.max(
+      ...layout.columnGroups.map(
+        (group) =>
+          group.reduce((sum, name) => sum + NATURAL[name], 0) + (group.length - 1) * GAP
+      )
+    );
+    const left = layout.columnGroups[0];
+    const leftNatural = left.reduce((sum, name) => sum + NATURAL[name], 0) + (left.length - 1) * GAP;
+    const grown = layout.scrollableCardStretchByClass["Pathologic TNM Finding"];
+
+    // It takes the column's free space...
+    expect(grown).toBe(212 + (tallest - leftNatural));
+    // ...but never past what it has to show.
+    expect(grown).toBeLessThanOrEqual(DESIRED["Pathologic TNM Finding"]);
+    // The tallest column has no free space, so its cards stay as they are.
+    expect(layout.scrollableCardStretchByClass["Generic TNM Finding"]).toBeUndefined();
+    expect(layout.scrollableCardStretchByClass.Finding).toBeUndefined();
+    // Short cards never stretch, which is what left empty panels before.
+    expect(layout.scrollableCardStretchByClass.Stage).toBeUndefined();
+  });
+
+  it("never grows a card past its own content, even with plenty of room", () => {
+    const layout = buildFilterSectionLayout({
+      classNames: ["Short list", "Long list", "Filler"],
+      measuredCardHeightByClass: { "Short list": 212, "Long list": 100, Filler: 600 },
+      // Long list is short enough to fit already, so it has nothing to grow into.
+      desiredCardHeightByClass: { "Short list": 230, "Long list": 100, Filler: 600 },
+      rowCountByClass: { "Short list": 8, "Long list": 2, Filler: 20 },
+      naturalGapPx: GAP,
+      maxColumns: 3,
+      stackableCardMaxHeight: 212,
+      masonryColumnCount: 2,
+    });
+
+    // Short list wants 18px more; it gets exactly that, however much room there is.
+    expect(layout.scrollableCardStretchByClass["Short list"]).toBe(230);
+    expect(layout.scrollableCardStretchByClass["Long list"]).toBeUndefined();
+  });
+
+  it("leaves a section alone when nothing in it scrolls, or there is one column", () => {
+    const flat = buildFilterSectionLayout({
+      classNames: ["a", "b", "c"],
+      measuredCardHeightByClass: { a: 100, b: 120, c: 90 },
+      desiredCardHeightByClass: { a: 100, b: 120, c: 90 },
+      rowCountByClass: { a: 2, b: 3, c: 2 },
+      naturalGapPx: GAP,
+      maxColumns: 3,
+      stackableCardMaxHeight: 212,
+      masonryColumnCount: 2,
+    });
+    expect(flat.plansMasonryColumns).toBe(false);
+    expect(flat.scrollableCardStretchByClass).toEqual({});
+
+    const single = buildFilterSectionLayout({
+      classNames: CLASS_NAMES,
+      measuredCardHeightByClass: NATURAL,
+      desiredCardHeightByClass: DESIRED,
+      rowCountByClass: Object.fromEntries(CLASS_NAMES.map((name) => [name, 5])),
+      naturalGapPx: GAP,
+      maxColumns: 11,
+      stackableCardMaxHeight: 212,
+      masonryColumnCount: 1,
+    });
+    expect(single.plansMasonryColumns).toBe(false);
+  });
+
+  it("plans from natural heights, so the plan doesn't move as cards grow", () => {
+    const first = packColumnsInOrder(CLASS_NAMES, NATURAL, 2, GAP);
+    // Same plan whether or not a card has been stretched: planning reads the
+    // natural heights, which the measurement hook preserves.
+    const second = packColumnsInOrder(CLASS_NAMES, { ...NATURAL }, 2, GAP);
+    expect(second).toEqual(first);
+  });
+});
+
+describe("sharing free column space between scrolling cards", () => {
+  const GAP = 16;
+  // One column holding two scrolling cards next to a taller column.
+  const build = (desired) =>
+    buildTallestAlignedLayout(
+      ["big", "hides-a-lot", "spacer", "tall"],
+      { big: 300, "hides-a-lot": 212, spacer: 100, tall: 900 },
+      { big: 300, "hides-a-lot": 212, spacer: 100, tall: 900 },
+      GAP,
+      2,
+      212,
+      {
+        forcedColumnGroups: [["big", "hides-a-lot", "spacer"], ["tall"]],
+        scrollableCardByClass: { big: true, "hides-a-lot": true },
+        desiredCardHeightByClass: desired,
+        slackDistributionMode: "proportional",
+      }
+    );
+
+  it("finishes a card that needs little, and hands the rest to the one that needs more", () => {
+    // Column is 300+212+100+2*16 = 644 against 900: 256px free.
+    const layout = build({ big: 320, "hides-a-lot": 700, spacer: 100, tall: 900 });
+    const stretch = layout.scrollableCardStretchByClass;
+
+    // "big" only needs 20px more: filled completely, so it stops scrolling...
+    expect(stretch.big).toBe(320);
+    // ...and everything it didn't need goes to the card hiding the most.
+    expect(stretch["hides-a-lot"]).toBe(212 + (256 - 20));
+  });
+
+  it("splits free space equally between cards that both need more than their share", () => {
+    const layout = build({ big: 700, "hides-a-lot": 512, spacer: 100, tall: 900 });
+    const stretch = layout.scrollableCardStretchByClass;
+
+    // big hides 400px and the other 300px; each takes half of the 256px free.
+    expect(stretch.big - 300).toBeCloseTo(128, 5);
+    expect(stretch["hides-a-lot"] - 212).toBeCloseTo(128, 5);
+    // No free space is wasted while either card still scrolls.
+    expect(stretch.big - 300 + (stretch["hides-a-lot"] - 212)).toBeCloseTo(256, 5);
+  });
+
+  it("leaves space unused rather than growing past what there is to show", () => {
+    const layout = build({ big: 310, "hides-a-lot": 220, spacer: 100, tall: 900 });
+    const stretch = layout.scrollableCardStretchByClass;
+
+    expect(stretch.big).toBe(310);
+    expect(stretch["hides-a-lot"]).toBe(220);
+  });
+});
+
+describe("ending a scrolling card on a whole row", () => {
+  // Measured from the running app: 30px rows starting 10px into the chart, and
+  // 36px of card chrome (header plus a 1px border either side).
+  const METRICS = { rowHeight: 30, firstRowOffset: 10, chromeHeight: 36 };
+
+  it("rounds down to the last whole row that fits", () => {
+    // 36 + 10 + 30*n
+    expect(snapCardHeightToWholeRows(212, METRICS)).toBe(196);
+    expect(snapCardHeightToWholeRows(196, METRICS)).toBe(196);
+    expect(snapCardHeightToWholeRows(380, METRICS)).toBe(376);
+    // Never taller than it was asked to be.
+    [150, 212, 333, 380, 519].forEach((height) => {
+      expect(snapCardHeightToWholeRows(height, METRICS)).toBeLessThanOrEqual(height);
+    });
+  });
+
+  it("leaves the height alone without usable measurements, or when no row fits", () => {
+    expect(snapCardHeightToWholeRows(212, undefined)).toBe(212);
+    expect(snapCardHeightToWholeRows(212, { rowHeight: 0, chromeHeight: 36 })).toBe(212);
+    expect(snapCardHeightToWholeRows(212, { rowHeight: 30 })).toBe(212);
+    // Less than one row of room: leave it, rather than showing none.
+    expect(snapCardHeightToWholeRows(60, METRICS)).toBe(60);
+    expect(snapCardHeightToWholeRows(Number.NaN, METRICS)).toBeNaN();
+  });
+
+  it("scales with the row height, so it holds at other font sizes", () => {
+    const large = { rowHeight: 37.5, firstRowOffset: 12, chromeHeight: 40 };
+    const snapped = snapCardHeightToWholeRows(300, large);
+    expect((snapped - 40 - 12) / 37.5).toBe(Math.round((snapped - 40 - 12) / 37.5));
+    expect(snapped).toBeLessThanOrEqual(300);
+    expect(300 - snapped).toBeLessThan(37.5);
+  });
+});
+
+describe("handing out free column space in whole rows", () => {
+  const GAP = 16;
+  const ROW = 30;
+  const tallFor = (slack) => 620 + slack;
+  const layoutFor = (slack, desired, quanta) =>
+    buildTallestAlignedLayout(
+      ["a", "b", "c", "tall"],
+      { a: 196, b: 196, c: 196, tall: tallFor(slack) },
+      { a: 196, b: 196, c: 196, tall: tallFor(slack) },
+      GAP,
+      2,
+      212,
+      {
+        forcedColumnGroups: [["a", "b", "c"], ["tall"]],
+        scrollableCardByClass: { a: true, b: true, c: true },
+        desiredCardHeightByClass: desired,
+        rowQuantumByClass: quanta,
+        slackDistributionMode: "proportional",
+      }
+    );
+  const HUNGRY = { a: 500, b: 700, c: 600, tall: 1000 };
+  const ROWS = { a: ROW, b: ROW, c: ROW, tall: ROW };
+
+  it("gives one whole row to one card rather than three unusable slivers", () => {
+    // 37px free: enough for exactly one 30px row.
+    const stretch = layoutFor(37, HUNGRY, ROWS).scrollableCardStretchByClass;
+    const grown = ["a", "b", "c"].filter((name) => stretch[name] !== undefined);
+
+    expect(grown).toHaveLength(1);
+    // The neediest card (b hides the most) takes it.
+    expect(grown[0]).toBe("b");
+    expect(stretch.b).toBe(196 + ROW);
+  });
+
+  it("spreads rows evenly across needy cards as room allows", () => {
+    // 100px: three whole rows, one each.
+    const stretch = layoutFor(100, HUNGRY, ROWS).scrollableCardStretchByClass;
+    expect(stretch.a - 196).toBe(ROW);
+    expect(stretch.b - 196).toBe(ROW);
+    expect(stretch.c - 196).toBe(ROW);
+
+    // 130px: four rows, so the neediest gets the extra.
+    const more = layoutFor(130, HUNGRY, ROWS).scrollableCardStretchByClass;
+    expect(more.b - 196).toBe(2 * ROW);
+    expect((more.a - 196) + (more.b - 196) + (more.c - 196)).toBe(4 * ROW);
+  });
+
+  it("uses only what fits, and lets a card that needs less than a row finish", () => {
+    // Less than one row free: nothing is given away.
+    expect(layoutFor(20, HUNGRY, ROWS).scrollableCardStretchByClass).toEqual({});
+
+    // "a" has only 12px more to show. With 45px free the neediest card takes a
+    // whole row (30), and the 15 left is enough for "a" to finish completely.
+    const finishing = layoutFor(45, { ...HUNGRY, a: 208 }, ROWS).scrollableCardStretchByClass;
+    expect(finishing.b).toBe(196 + ROW);
+    expect(finishing.a).toBe(208);
+    // With only 40, the row goes to the neediest and 10 is too little to finish "a".
+    const tight = layoutFor(40, { ...HUNGRY, a: 208 }, ROWS).scrollableCardStretchByClass;
+    expect(tight.b).toBe(196 + ROW);
+    expect(tight.a).toBeUndefined();
+  });
+
+  it("falls back to an even split when row heights are unknown", () => {
+    const stretch = layoutFor(90, HUNGRY, {}).scrollableCardStretchByClass;
+    expect(stretch.a - 196).toBeCloseTo(30, 5);
+    expect(stretch.b - 196).toBeCloseTo(30, 5);
+    expect(stretch.c - 196).toBeCloseTo(30, 5);
   });
 });

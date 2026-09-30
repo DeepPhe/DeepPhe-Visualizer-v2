@@ -26,6 +26,77 @@ export function estimateCardHeight(
   return safeCardOverhead + safeRowCount * safeRowHeight;
 }
 
+/**
+ * Rounds a scrolling card's height down so its chart viewport ends on a row
+ * boundary, so the last visible row is whole and the cut-off is unmistakable.
+ * Without it a card ends mid-row, which reads as a rendering glitch rather than
+ * "there is more below".
+ *
+ * `metrics` come from the DOM: `rowHeight`, the `firstRowOffset` of the first
+ * row within the chart, and the card's `chromeHeight` (everything but the chart
+ * viewport). Any missing or nonsensical metric returns the height unchanged.
+ * The result is never taller than `height` and never shows fewer than one row.
+ */
+export function snapCardHeightToWholeRows(height, metrics) {
+  const total = Number(height);
+  const rowHeight = Number(metrics?.rowHeight);
+  const chromeHeight = Number(metrics?.chromeHeight);
+  const firstRowOffset = Math.max(0, Number(metrics?.firstRowOffset) || 0);
+  if (
+    !Number.isFinite(total) ||
+    !(rowHeight >= 8) ||
+    !Number.isFinite(chromeHeight) ||
+    chromeHeight < 0
+  ) {
+    return total;
+  }
+
+  const viewportHeight = total - chromeHeight - firstRowOffset;
+  const wholeRows = Math.floor(viewportHeight / rowHeight + LAYOUT_EPSILON);
+  if (wholeRows < 1) {
+    return total;
+  }
+  return chromeHeight + firstRowOffset + wholeRows * rowHeight;
+}
+
+/**
+ * Plans the real visual columns the way a Masonry does: each card, in reading
+ * order, goes into whichever column is currently shortest (ties go left).
+ *
+ * The section grid is a Masonry, so it decides the actual columns; a layout
+ * planner that doesn't know them can't tell how much free space a column has,
+ * and so never lets a long card grow into it. Planning them here, with the same
+ * rule, makes the columns known without changing where cards land.
+ *
+ * `heightByClass` must be the cards' natural (unstretched) heights, so the plan
+ * doesn't move as cards grow.
+ */
+export function packColumnsInOrder(
+  classNames,
+  heightByClass,
+  columnCount,
+  gapPx = 0
+) {
+  const names = Array.isArray(classNames) ? classNames : [];
+  const count = Math.max(1, Math.floor(Number(columnCount) || 1));
+  const gap = Math.max(0, Number(gapPx) || 0);
+  const columns = Array.from({ length: count }, () => ({ items: [], height: 0 }));
+
+  names.forEach((className) => {
+    const height = Math.max(0, Number(heightByClass?.[className]) || 0);
+    let target = columns[0];
+    for (let index = 1; index < columns.length; index += 1) {
+      if (columns[index].height < target.height - LAYOUT_EPSILON) {
+        target = columns[index];
+      }
+    }
+    target.height += height + (target.items.length > 0 ? gap : 0);
+    target.items.push(className);
+  });
+
+  return columns.filter((column) => column.items.length > 0).map((column) => column.items);
+}
+
 export function buildTallestAlignedLayout(
   classNames,
   baseCardHeightByClass,
@@ -67,6 +138,20 @@ export function buildTallestAlignedLayout(
       ? options.desiredCardHeightByClass
       : {};
   const allowNonContiguousPacking = Boolean(options?.allowNonContiguousPacking);
+  // Height of one chart row, per card. When every card that could grow has one,
+  // free space is handed out in whole rows (see distributeSlack).
+  const rowQuantumByClass =
+    options?.rowQuantumByClass && typeof options.rowQuantumByClass === "object"
+      ? options.rowQuantumByClass
+      : {};
+  // Columns planned by the caller (see packColumnsInOrder). When present they
+  // replace this function's own packing: the caller already knows the real
+  // visual columns, and only slack distribution is left to do.
+  const forcedColumnGroups = Array.isArray(options?.forcedColumnGroups)
+    ? options.forcedColumnGroups
+        .map((group) => (Array.isArray(group) ? group.filter((name) => normalizedClassNames.includes(name)) : []))
+        .filter((group) => group.length > 0)
+    : null;
   const rowCountByClass =
     options?.rowCountByClass && typeof options.rowCountByClass === "object"
       ? options.rowCountByClass
@@ -116,7 +201,9 @@ export function buildTallestAlignedLayout(
   );
   const useNonContiguousPacking = allowNonContiguousPacking || hasOversizedCards;
 
-  if (useNonContiguousPacking) {
+  if (forcedColumnGroups && forcedColumnGroups.length > 0) {
+    activeColumnGroups = forcedColumnGroups;
+  } else if (useNonContiguousPacking) {
     const k = resolvedMaxColumns;
 
     // Phase 1: every oversized card gets its own column (capped at k columns
@@ -399,14 +486,68 @@ export function buildTallestAlignedLayout(
       }
       case "proportional":
       default: {
-        const totalWeight = eligible.reduce(
-          (sum, c) => sum + getEffectiveHeight(c),
-          0
-        );
+        // With known row heights, hand space out a whole row at a time: a card
+        // can only use whole rows (it is sized to end on one), so splitting a
+        // little free space into several partial shares wastes all of it, where
+        // one row to one card is used in full. Rows go round-robin to the cards
+        // that have been given the fewest, the neediest first, until none fits.
+        const quantumOf = (c) => Math.max(0, Number(rowQuantumByClass[c]) || 0);
+        if (eligible.every((c) => quantumOf(c) > 0)) {
+          const givenRows = Object.fromEntries(eligible.map((c) => [c, 0]));
+          const givenRowCount = Object.fromEntries(eligible.map((c) => [c, 0]));
+          let room = slack;
+          // Whether card `c` can take its next chunk out of `roomLeft`.
+          const canTakeChunk = (c, roomLeft) => {
+            const stillWants = wantsByClass[c] - givenRows[c];
+            return stillWants > LAYOUT_EPSILON && Math.min(quantumOf(c), stillWants) <= roomLeft + LAYOUT_EPSILON;
+          };
+          for (;;) {
+            const roomNow = room;
+            const candidates = eligible.filter((c) => canTakeChunk(c, roomNow));
+            if (candidates.length === 0) break;
+            candidates.sort(
+              (left, right) =>
+                givenRowCount[left] - givenRowCount[right] ||
+                wantsByClass[right] - givenRows[right] - (wantsByClass[left] - givenRows[left])
+            );
+            const pick = candidates[0];
+            const chunk = Math.min(quantumOf(pick), wantsByClass[pick] - givenRows[pick]);
+            givenRows[pick] += chunk;
+            givenRowCount[pick] += 1;
+            room -= chunk;
+          }
+          eligible.forEach((c) => {
+            if (givenRows[c] > LAYOUT_EPSILON) {
+              scrollableCardStretchByClass[c] = getEffectiveHeight(c) + givenRows[c];
+            }
+          });
+          return;
+        }
+        // Progressive filling: free space is shared equally among the cards that
+        // still hide content, and a card that needs less than its share is
+        // filled completely and stops, handing the rest on. Finishing a card
+        // removes its scrolling altogether, which is worth more than leaving
+        // two cards each a sliver short (an even split by need would do that).
+        // No space is left over while any card still scrolls.
+        const given = Object.fromEntries(eligible.map((c) => [c, 0]));
+        let remaining = slack;
+        let unsatisfied = [...eligible];
+        while (remaining > LAYOUT_EPSILON && unsatisfied.length > 0) {
+          const share = remaining / unsatisfied.length;
+          let distributed = 0;
+          unsatisfied.forEach((c) => {
+            const give = Math.min(wantsByClass[c] - given[c], share);
+            given[c] += give;
+            distributed += give;
+          });
+          remaining -= distributed;
+          unsatisfied = unsatisfied.filter(
+            (c) => wantsByClass[c] - given[c] > LAYOUT_EPSILON
+          );
+          if (distributed <= LAYOUT_EPSILON) break;
+        }
         eligible.forEach((c) => {
-          const share = (getEffectiveHeight(c) / totalWeight) * slack;
-          const give = Math.min(share, wantsByClass[c]);
-          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + give;
+          scrollableCardStretchByClass[c] = getEffectiveHeight(c) + given[c];
         });
       }
     }
@@ -463,6 +604,12 @@ export function buildFilterSectionLayout({
   allowNonContiguousPacking = false,
   slackDistributionMode = "proportional",
   oversizedRowThreshold = Number.POSITIVE_INFINITY,
+  // The number of visual columns the section's Masonry will use. When set (2+)
+  // and a card is long enough to scroll, the real columns are planned here so
+  // that a scrolling card can grow into free space in its own column.
+  masonryColumnCount = 0,
+  // Height of one chart row per card, so free space can be handed out in whole rows.
+  rowQuantumByClass = {},
 } = {}) {
   const normalizedClassNames = Array.isArray(classNames) ? classNames : [];
   const measuredCardHeightByClass = {};
@@ -506,6 +653,29 @@ export function buildFilterSectionLayout({
       stackableCardMaxHeight + LAYOUT_EPSILON;
   });
 
+  // Planning the real columns only helps a section with a card that scrolls;
+  // otherwise the Masonry's own placement is already the plan.
+  const plansMasonryColumns =
+    Math.floor(Number(masonryColumnCount) || 0) >= 2 &&
+    normalizedClassNames.length > 1 &&
+    normalizedClassNames.some((className) => scrollableCardByClass[className]);
+  const forcedColumnGroups = plansMasonryColumns
+    ? packColumnsInOrder(
+        normalizedClassNames,
+        Object.fromEntries(
+          normalizedClassNames.map((className) => {
+            // Unmeasured long cards are estimated at their full length, but
+            // they render capped, and the cap is what occupies the column.
+            const isMeasured = measuredCardHeightByClass[className] > 0;
+            const base = baseCardHeightByClass[className];
+            return [className, isMeasured ? base : Math.min(base, stackableCardMaxHeight)];
+          })
+        ),
+        masonryColumnCount,
+        naturalGapPx
+      )
+    : null;
+
   const {
     tallestFilterBoxHeight,
     tallestMeasuredFilterBoxHeight,
@@ -528,6 +698,8 @@ export function buildFilterSectionLayout({
       slackDistributionMode,
       rowCountByClass,
       oversizedRowThreshold,
+      forcedColumnGroups,
+      rowQuantumByClass,
     }
   );
 
@@ -580,6 +752,7 @@ export function buildFilterSectionLayout({
     cardHeightOverrideByClass,
     cardMarginBottomByClass,
     scrollableCardStretchByClass,
+    plansMasonryColumns,
     sectionHeight,
     tallestFilterBoxHeight,
     tallestMeasuredFilterBoxHeight,
